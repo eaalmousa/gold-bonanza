@@ -22,7 +22,7 @@ function App() {
   const {
     sniperSignals, breakoutSignals, marketRows,
     scannerRunning, queueSignal, setBinanceStatus,
-    setScannerActive
+    setAutoTradeActive
   } = useTradingStore();
 
   const { scanProgress, lastScanAt, scanError } = useScanner();
@@ -33,14 +33,16 @@ function App() {
       try {
         const config = await api.getAutoTradeConfig();
         if (config.enabled !== undefined) {
-          setScannerActive(config.enabled);
+          setAutoTradeActive(config.enabled);
         }
+        // Scanner is local state, default to OFF on boot unless we want it persistent.
+        // For now, we keep them separate. User has to manually 'Start Engine'.
       } catch (e) {
         console.warn('[Sync] Could not fetch initial state from cloud');
       }
     };
     sync();
-  }, [setScannerActive]);
+  }, [setAutoTradeActive]);
 
   // 2. Check binance connectivity
   useEffect(() => {

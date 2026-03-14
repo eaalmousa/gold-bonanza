@@ -3,12 +3,12 @@ import { Crosshair, Power, Wifi, WifiOff } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function Header() {
-  const { balance, setBalance, isDataLive, activeMode, activeTrades, binanceStatus, isScannerActive, setScannerActive } = useTradingStore();
+  const { balance, setBalance, isDataLive, activeMode, activeTrades, binanceStatus, isAutoTradeActive, setAutoTradeActive } = useTradingStore();
 
   const handleToggleAutoTrade = async () => {
     try {
-      const res = await api.toggleAutoTrade(!isScannerActive);
-      setScannerActive(res.isAutoTradingEnabled);
+      const res = await api.toggleAutoTrade(!isAutoTradeActive);
+      setAutoTradeActive(res.isAutoTradingEnabled);
     } catch (e) {
       console.error(e);
     }
@@ -106,14 +106,14 @@ export default function Header() {
             padding: '10px 20px',
             borderRadius: 'var(--radius-full)',
             fontSize: 11, fontWeight: 900,
-            border: `1px solid ${isScannerActive ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
-            background: isScannerActive ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-            color: isScannerActive ? 'var(--green)' : 'var(--red)',
+            border: `1px solid ${isAutoTradeActive ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+            background: isAutoTradeActive ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+            color: isAutoTradeActive ? 'var(--green)' : 'var(--red)',
             letterSpacing: '0.2em', cursor: 'pointer', transition: 'all 0.2s'
           }}
         >
           <Power size={14} />
-          AUTO-TRADE: {isScannerActive ? 'ON' : 'OFF'}
+          AUTO-TRADE: {isAutoTradeActive ? 'ON' : 'OFF'}
         </button>
       </div>
 

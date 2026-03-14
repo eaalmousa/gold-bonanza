@@ -19,6 +19,7 @@ interface TradingState {
   isDataLive: boolean;
   scannerRunning: boolean;
   isScannerActive: boolean;
+  isAutoTradeActive: boolean;
   binanceStatus: 'INIT' | 'CONNECTED' | 'ERROR';
 
   // Prices / Market
@@ -54,6 +55,7 @@ interface TradingState {
   setDataLive: (live: boolean) => void;
   setScannerRunning: (running: boolean) => void;
   setScannerActive: (active: boolean) => void;
+  setAutoTradeActive: (active: boolean) => void;
   setBinanceStatus: (status: 'CONNECTED' | 'ERROR') => void;
   updatePrices: (prices: Record<string, PriceData>) => void;
   setMarketRows: (rows: MarketRow[]) => void;
@@ -86,6 +88,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   isDataLive: false,
   scannerRunning: false,
   isScannerActive: false,
+  isAutoTradeActive: false,
   binanceStatus: 'INIT' as const,
   currentPrices: {},
   marketRows: [],
@@ -123,6 +126,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   setSymbols: (symbols) => set({ symbols }),
   setDataLive: (isDataLive) => set({ isDataLive }),
   setScannerActive: (active) => set({ isScannerActive: active }),
+  setAutoTradeActive: (active) => set({ isAutoTradeActive: active }),
   setScannerRunning: (scannerRunning) => set({ scannerRunning }),
   setBinanceStatus: (status) => set({ binanceStatus: status }),
   updatePrices: (newPrices) => set(state => ({

@@ -5,7 +5,10 @@ import { Shield, Zap, Flame } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function SystemStatus() {
-  const { activeMode, setMode, activeTrades, symbols, isScannerActive, setScannerActive } = useTradingStore();
+  const { 
+    activeMode, setMode, activeTrades, symbols, 
+    isScannerActive, setScannerActive 
+  } = useTradingStore();
 
   const [config, setConfig] = useState({
     riskPct: 0.04,
@@ -97,12 +100,11 @@ export default function SystemStatus() {
 
         {/* Mode switches */}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          
           <button
             onClick={() => {
               const newState = !isScannerActive;
               setScannerActive(newState);
-              api.toggleAutoTrade(newState).catch(console.error);
+              // Removed api.toggleAutoTrade so they are separate
             }}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,

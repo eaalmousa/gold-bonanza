@@ -66,10 +66,17 @@ export function evaluateBreakoutSignal(
       const currentClosed = tf15m[tf15m.length - 2];
       const atr = pastBreakout.atr15;
 
-      // INVALIDATION 1: Price closed cleanly back through the break level
+      // INVALIDATION 1: Price closed cleanly back through the break level OR broke structure entirely
       if (closedAgainst) {
         pastBreakout.entryType = 'INVALIDATED' as any;
         pastBreakout.debugLog?.push('REJECT: Retest invalidated — closed back into compression');
+        return pastBreakout;
+      }
+      
+      // Structural failure block specifically for longs in tough macro
+      if (side === 'LONG' && minL < bLevel - (atr * 0.7)) {
+        pastBreakout.entryType = 'INVALIDATED' as any;
+        pastBreakout.debugLog?.push('REJECT: Breakout structure destroyed (wicked too deep)');
         return pastBreakout;
       }
 
@@ -82,17 +89,41 @@ export function evaluateBreakoutSignal(
 
       if (hasRetested) {
         // Evaluate the confirmation of the rejection on the current candle
-        const isBullish = currentClosed.close > currentClosed.open;
-        const isBearish = currentClosed.close < currentClosed.open;
-        const closedAboveBreak = currentClosed.close > bLevel;
-        const closedBelowBreak = currentClosed.close < bLevel;
+        const cOpen = currentClosed.open;
+        const cClose = currentClosed.close;
+        const cHigh = currentClosed.high;
+        const cLow = currentClosed.low;
+        const cBody = Math.abs(cClose - cOpen);
+        const cRange = Math.max(1e-9, cHigh - cLow);
+
+        const isBullish = cClose > cOpen;
+        const isBearish = cClose < cOpen;
+        const closedAboveBreak = cClose > bLevel;
+        const closedBelowBreak = cClose < bLevel;
         
+        let validLongRetest = false;
         if (side === 'LONG' && isBullish && closedAboveBreak) {
+          const upperWick = cHigh - cClose;
+          const upperWickRatio = upperWick / Math.max(1e-9, cBody);
+          const retestAtrRatio = cRange / atr;
+          // Longs fight gravity. If upper wick > 1.25x the body, the buyers were swamped.
+          if (upperWickRatio >= 1.25) {
+            pastBreakout.debugLog?.push('Retest ignored: Heavy upper wick rejection against LONG breakout');
+          } else if (retestAtrRatio > 1.1) {
+            pastBreakout.debugLog?.push(`Retest ignored: Bounce was exhausted expansion candle (${retestAtrRatio.toFixed(2)}x ATR)`);
+          } else {
+            validLongRetest = true;
+          }
+        }
+
+        let validShortRetest = (side === 'SHORT' && isBearish && closedBelowBreak);
+
+        if (validLongRetest) {
           pastBreakout.entryType = 'RETEST_CONFIRMED' as any;
           pastBreakout.debugLog?.push('ACCEPT: Retest confirmed for LONG breakout');
           pastBreakout.entryPrice = currentClosed.close * 1.0010;
           return pastBreakout;
-        } else if (side === 'SHORT' && isBearish && closedBelowBreak) {
+        } else if (validShortRetest) {
           pastBreakout.entryType = 'RETEST_CONFIRMED' as any;
           pastBreakout.debugLog?.push('ACCEPT: Retest confirmed for SHORT breakout');
           pastBreakout.entryPrice = currentClosed.close * (1 - 0.0010);

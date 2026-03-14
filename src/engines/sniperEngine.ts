@@ -139,15 +139,16 @@ export function evaluateSniperSignal(
   const range  = Math.max(1e-9, high15 - low15);
   const body   = Math.abs(close15 - open15);
 
-  // ─── GATE 4a: EXPANSION-CANDLE BLOCKER ─────────────────────────────
-  // Tightened: 1.5x → 1.1x ATR. Avg candle/ATR of 1.07x means
-  // many signals were on candles right at the old limit. Lower it.
   const candleAtrRatio = range / atr!;
-  if (candleAtrRatio > 1.1) {
-    debugLog.push(`REJECT: Expansion candle — range=${candleAtrRatio.toFixed(2)}x ATR > 1.1x`);
+
+  // ─── EXPANSION CAP (tightened for entry quality)
+  // Reversals/pullbacks on huge candles have exhausted short-term momentum.
+  // We cap sniper signals at 1.15x ATR.
+  if (candleAtrRatio > 1.15) {
+    debugLog.push(`REJECT: Huge expansion candle ${candleAtrRatio.toFixed(2)}x ATR > 1.15x`);
     return null;
   }
-  debugLog.push(`PASS: Candle size ${candleAtrRatio.toFixed(2)}x ATR (limit 1.1x)`);
+  debugLog.push(`PASS: Candle size ${candleAtrRatio.toFixed(2)}x ATR (limit 1.15x)`);
 
   // ─── MANDATORY RETEST CHECK FOR MODERATE EXPANSION ───────────────
   // If candle range > 0.9x ATR (moderate expansion), require the
@@ -230,7 +231,12 @@ export function evaluateSniperSignal(
     const distFrom1hE20 = (close15 - e20_1h!) / e20_1h!;
     const distFrom1hE50 = (close15 - e50_1h!) / e50_1h!;
     if (modeKey !== 'AGGRESSIVE' && (distFrom1hE20 < -guard || distFrom1hE50 < -guard * 1.4)) {
-      debugLog.push('REJECT: Price too far below 1H EMA structure');
+      debugLog.push('REJECT: Price too far below 1H EMA structure (-guard limit)');
+      return null;
+    }
+    // Hard floor for LONGs even in aggressive mode. Buying 1.25% below the 1H EMA20 into a downtrend is suicide.
+    if (distFrom1hE20 < -0.0125 || distFrom1hE50 < -0.015) {
+      debugLog.push('REJECT: Price massively submerged beneath 1H macro trend (-1.5% limit)');
       return null;
     }
 
@@ -273,14 +279,24 @@ export function evaluateSniperSignal(
     score += volScore;
     reasons.push(`Bull volume (${volRatio.toFixed(2)}x)`);
 
-    // Candle anatomy
+    // ─── CANDLE ANATOMY (Knife-catching protection) ───────────────
+    // Must close strong to confirm buyers stepped in.
     const bodyPct    = (body / range) * 100;
     const closePos   = (close15 - low15) / range;
     const isBullCandle = close15 > open15;
-    const minBody    = modeKey === 'AGGRESSIVE' ? 10 : 55;
-    const minClosePos = modeKey === 'AGGRESSIVE' ? 0.20 : 0.70;
-    if (modeKey !== 'AGGRESSIVE' && !(isBullCandle && bodyPct >= minBody && closePos >= minClosePos)) {
-      debugLog.push(`REJECT: Weak candle anatomy — body ${bodyPct.toFixed(0)}%, closePos ${closePos.toFixed(2)}`);
+    const minBody    = modeKey === 'AGGRESSIVE' ? 35 : 55;
+    const minClosePos = modeKey === 'AGGRESSIVE' ? 0.65 : 0.70; // 0.50 was too loose, caused 47% wrong direction
+    if (!(isBullCandle && bodyPct >= minBody && closePos >= minClosePos)) {
+      debugLog.push(`REJECT: Weak bullish confirmation — body:${bodyPct.toFixed(0)}% pos:${closePos.toFixed(2)}`);
+      return null;
+    }
+    score += 2;
+    reasons.push('Bullish confirmation candle');
+
+    // ─── DEEP PULLBACK PROTECTION ────────────────────────────────
+    // If the lowest point of the pullback went too far below EMA50, structure is broken.
+    if ((e50_15! - low15) / atr! > 1.0) {
+      debugLog.push(`REJECT: Deep pullback — wick went > 1.0x ATR below EMA50`);
       return null;
     }
 
@@ -304,41 +320,70 @@ export function evaluateSniperSignal(
     }
 
     // ─── REVERSAL vs CONTINUATION specific requirements ─────────────
-    // REVERSAL: needs stronger confirmation (double-bar or major reversal candle + must reclaim EMA20)
-    // CONTINUATION: easier (just needs to hold EMA20)
-    const prevE20    = ema20_15[lastIdx - 1];
-    const reclaimHold = (prevE20 != null) && (prev.close > prevE20) && (close15 > e20_15!) &&
-      (prev.low <= prevE20 * (1 + slack) || low15 <= e20_15! * (1 + slack));
-    const lowerWick     = Math.min(open15, close15) - low15;
-    const lowerWickRatio = lowerWick / Math.max(1e-9, body);
-    const nearE50       = low15 <= e50_15! * (1 + slack * 1.2);
-    const reversalCandle = isBullCandle && nearE50 && (lowerWickRatio >= 1.35) && (closePos >= 0.62);
-    const higherLow     = (low15 > prev.low) && (low15 >= e50_15! * (1 - slack)) && (close15 > e20_15!);
-    const prevCandleBull = prev.close > prev.open;
-    const twoBarReversal = prevCandleBull && isBullCandle && (prev.low < e20_15!) && (close15 > e20_15!);
-
+    // REVERSAL: MUST reclaim EMA20. Catching falling knives below EMA20 is banned in all modes.
     if (entryType === 'REVERSAL') {
-      // Stricter: must have double-bottom OR two-bar OR reversal candle
-      const hasStrongReversal = reversalCandle || twoBarReversal || doublePattern === 'DOUBLE_BOTTOM';
-      if (!hasStrongReversal && modeKey !== 'AGGRESSIVE') {
-        debugLog.push('REJECT: REVERSAL setup needs stronger confirmation (pinbar, two-bar, or double-bottom)');
+      if (close15 < e20_15!) {
+        debugLog.push('REJECT: REVERSAL setup failed to reclaim EMA20');
         return null;
       }
-      score += reversalCandle || twoBarReversal ? 4 : 2;
-      reasons.push('Reversal confirmed');
+      
+      const prevIsBear = prev.close < prev.open;
+      const isEngulfing = isBullCandle && prevIsBear && close15 > prev.open && open15 <= prev.close;
+      const closedAbovePrevHigh = close15 > prev.high;
+
+      if (isEngulfing) {
+        score += 2;
+        reasons.push('Bullish Engulfing Reversal');
+      } else {
+        if (!closedAbovePrevHigh) {
+          debugLog.push('REJECT: Poor reversal structure (not engulfing and failed to close above prev high)');
+          return null;
+        }
+
+        if (modeKey !== 'AGGRESSIVE' && score < cfg.scoreMin + 2) {
+          debugLog.push('REJECT: REVERSAL setup requires higher base score since not engulfing');
+          return null;
+        }
+      }
     } else {
       // CONTINUATION: normal gate
-      const confirmed = modeKey === 'AGGRESSIVE' || reclaimHold || (higherLow && rsiNow! > 50) || twoBarReversal;
-      if (!confirmed) {
-        debugLog.push('REJECT: CONTINUATION setup not confirmed (need EMA retest or higher-low)');
-        return null;
-      }
+      const prevE20    = ema20_15[lastIdx - 1];
+      const reclaimHold = (prevE20 != null) && (prev.close > prevE20) && (close15 > e20_15!) &&
+        (prev.low <= prevE20 * (1 + slack) || low15 <= e20_15! * (1 + slack));
+      const lowerWick     = Math.min(open15, close15) - low15;
+      const lowerWickRatio = lowerWick / Math.max(1e-9, body);
+      const nearE50       = low15 <= e50_15! * (1 + slack * 1.2);
+      const reversalCandle = isBullCandle && nearE50 && (lowerWickRatio >= 1.35) && (closePos >= 0.62);
+      const higherLow     = (low15 > prev.low) && (low15 >= e50_15! * (1 - slack)) && (close15 > e20_15!);
+      const prevCandleBull = prev.close > prev.open;
+      const twoBarReversal = prevCandleBull && isBullCandle && (prev.low < e20_15!) && (close15 > e20_15!);
+      // REMOVED `modeKey === 'AGGRESSIVE'` bypass. Longs MUST show real structural confirmation.
+      const confirmed = reclaimHold || (higherLow && rsiNow! > 50) || twoBarReversal;
+      
       const closedAbovePrevHigh  = close15 > prev.high;
       const heldAboveE20ByClose  = close15 >= e20_15! * 1.001;
-      if (modeKey !== 'AGGRESSIVE' && !(closedAbovePrevHigh && heldAboveE20ByClose)) {
-        debugLog.push('REJECT: Did not close above prev high while holding EMA20');
+
+      if (!heldAboveE20ByClose) {
+        debugLog.push('REJECT: Failed to hold EMA20 by close (strict requirement for longs)');
         return null;
       }
+
+      if (modeKey === 'AGGRESSIVE') {
+        if (!confirmed && !closedAbovePrevHigh) {
+          debugLog.push('REJECT: Unconfirmed aggressive long continuation must close above prev high');
+          return null;
+        }
+      } else {
+        if (!confirmed) {
+          debugLog.push('REJECT: CONTINUATION setup not confirmed (need EMA retest or higher-low)');
+          return null;
+        }
+        if (!closedAbovePrevHigh) {
+          debugLog.push('REJECT: Normal continuation must close above prev high');
+          return null;
+        }
+      }
+
       score += 2;
       reasons.push('Continuation hold confirmed');
     }

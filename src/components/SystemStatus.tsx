@@ -76,7 +76,10 @@ export default function SystemStatus() {
       background: 'var(--bg-panel)',
       border: '1px solid var(--border-gold)',
       backdropFilter: 'blur(40px)',
-      boxShadow: '0 30px 80px -20px rgba(0,0,0,1)'
+      boxShadow: '0 30px 80px -20px rgba(0,0,0,1)',
+      opacity: isLoaded ? 1 : 0.5,
+      pointerEvents: isLoaded ? 'auto' : 'none',
+      transition: 'opacity 0.3s'
     }}>
       {/* Top row */}
       <div style={{
@@ -85,7 +88,7 @@ export default function SystemStatus() {
       }}>
         <div>
           <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.35em', fontWeight: 900, marginBottom: 4 }}>
-            SYSTEM STATUS
+            {!isLoaded ? 'SYNCING WITH CLOUD...' : 'SYSTEM STATUS'}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
             {symbols.length} Pairs Monitored · {activeTrades.length}/{config.maxTrades} Positions Open
@@ -96,7 +99,11 @@ export default function SystemStatus() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           
           <button
-            onClick={() => setScannerActive(!isScannerActive)}
+            onClick={() => {
+              const newState = !isScannerActive;
+              setScannerActive(newState);
+              api.toggleAutoTrade(newState).catch(console.error);
+            }}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '12px 24px',

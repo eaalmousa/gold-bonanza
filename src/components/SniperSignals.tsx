@@ -1,0 +1,250 @@
+// SniperSignals component
+import { useEffect, useState } from 'react';
+import type { SignalRow } from '../types/trading';
+import { Crosshair, TrendingUp, ShieldCheck, Zap, BarChart2 } from 'lucide-react';
+import ChartModal from './ChartModal';
+
+interface Props {
+  signals: SignalRow[];
+  onDeploy?: (signal: SignalRow) => void;
+}
+
+export default function SniperSignals({ signals, onDeploy }: Props) {
+  if (!signals.length) {
+    return (
+      <section>
+        <SectionHeader
+          title="INSTITUTIONAL SNIPER SIGNALS"
+          subtitle="Pullback into EMA value zone during confirmed uptrend"
+          icon={<Crosshair size={20} color="var(--gold)" />}
+          count={0}
+        />
+        <EmptyState label="No sniper signals detected. Scanner is actively monitoring..." />
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <SectionHeader
+        title="INSTITUTIONAL SNIPER SIGNALS"
+        subtitle="Pullback into EMA value zone during confirmed uptrend"
+        icon={<Crosshair size={20} color="var(--gold)" />}
+        count={signals.length}
+      />
+      <div className="signal-grid">
+        {signals.map((s, i) => (
+          <SniperCard key={`${s.symbol}-${i}`} row={s} onDeploy={onDeploy} index={i} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SniperCard({ row, onDeploy, index }: { row: SignalRow; onDeploy?: (r: SignalRow) => void; index: number }) {
+  const sig = row.signal;
+  const sym = row.symbol.replace('USDT', '');
+  const changePct = row.change24h ?? 0;
+  const [chartOpen, setChartOpen] = useState(false);
+
+  useEffect(() => {
+    // Only play on the very first mount of this specific card
+    // AND only if the signal was actually discovered in the last 10 seconds (not a historical initial load)
+    const isNew = !row.timestamp || (Date.now() - row.timestamp < 10000);
+    
+    if (isNew && sig.score >= 17) {
+      if (sig.kind === 'SUPER_SNIPER') {
+        new Audio('/super_sniper_alert.mp3').play().catch((e) => console.warn('Audio play failed', e));
+      } else {
+        new Audio('/sniper_alert.mp3').play().catch((e) => console.warn('Audio play failed', e));
+      }
+    }
+  }, []);
+
+  return (
+    <div
+      className="opportunity-card sniper-glow card-entry"
+      style={{ padding: '24px 22px', animationDelay: `${index * 0.08}s` }}
+    >
+      {/* Header */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 'var(--radius-sm)',
+            background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+          }}>
+            <Crosshair size={16} color="var(--gold)" />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="font-mono" style={{ fontWeight: 900, fontSize: 16, fontStyle: 'italic', lineHeight: 1 }}>
+                {sym}<span style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 600 }}>USDT</span>
+              </div>
+              <div style={{
+                fontSize: 9, fontWeight: 900, padding: '2px 6px', borderRadius: 4, letterSpacing: '0.1em',
+                background: sig.side === 'LONG' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                color: sig.side === 'LONG' ? 'var(--green)' : 'var(--red)',
+                border: `1px solid ${sig.side === 'LONG' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+              }}>
+                {sig.side}
+              </div>
+            </div>
+            <div style={{ fontSize: 10, color: changePct >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
+              {changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%
+            </div>
+          </div>
+        </div>
+        <div style={{
+          padding: '6px 14px', borderRadius: 'var(--radius-full)',
+          background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.3)',
+          fontSize: 11, fontWeight: 900, color: 'var(--gold-light)', letterSpacing: '0.1em',
+          whiteSpace: 'nowrap', flexShrink: 0
+        }}>
+          SCORE {sig.score}
+        </div>
+      </div>
+
+      {/* Reasons */}
+      <div style={{ marginBottom: 16 }}>
+        {sig.reasons.slice(0, 3).map((r, i) => (
+          <div key={i} style={{
+            display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 5
+          }}>
+            <ShieldCheck size={11} color="var(--gold)" style={{ marginTop: 2, flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{r}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Metrics */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, marginBottom: 20,
+        padding: '14px 10px', borderRadius: 'var(--radius-sm)',
+        background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-subtle)'
+      }}>
+        {[
+          { label: 'ENTRY', value: fmtPrice(sig.entryPrice) },
+          { label: 'SL', value: fmtPrice(sig.stopLoss) },
+          { label: 'TP 1', value: fmtPrice(sig.takeProfit) },
+          { label: 'TP 2', value: sig.takeProfit2 ? fmtPrice(sig.takeProfit2) : '--' },
+        ].map(m => (
+          <div key={m.label} style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.15em', fontWeight: 800, marginBottom: 3 }}>
+              {m.label}
+            </div>
+            <div className="font-mono" style={{ fontSize: 11, fontWeight: 900, fontStyle: 'italic' }}>
+              {m.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Size and deploy */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+      }}>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          <span style={{ fontWeight: 700 }}>SIZE:</span>{' '}
+          <span className="font-mono" style={{ fontWeight: 900, color: 'var(--text-primary)' }}>
+            ${sig.sizeUSDT.toFixed(2)}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            style={{
+              padding: '10px 14px', fontSize: 11, cursor: 'pointer',
+              background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)',
+              borderRadius: 'var(--radius-sm)', color: '#818cf8',
+              display: 'flex', alignItems: 'center', gap: 5, fontWeight: 800,
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.2)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.1)')}
+            onClick={() => setChartOpen(true)}
+          >
+            <BarChart2 size={14} />
+            CHART
+          </button>
+          <button
+            className="premium-btn"
+            style={{ padding: '10px 22px', fontSize: 11 }}
+            onClick={() => onDeploy?.(row)}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Zap size={14} />
+              DEPLOY
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* TradingView Chart Modal */}
+      {chartOpen && (
+        <ChartModal
+          symbol={row.symbol}
+          side={sig.side}
+          score={sig.score}
+          onClose={() => setChartOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function SectionHeader({ title, subtitle, icon, count }: { title: string; subtitle: string; icon: React.ReactNode; count: number }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      marginBottom: 20, paddingBottom: 12,
+      borderBottom: '1px solid rgba(212,175,55,0.1)'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {icon}
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.2em', color: 'var(--gold-light)' }}>
+            {title}
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+            {subtitle}
+          </div>
+        </div>
+      </div>
+      {count > 0 && (
+        <div className="animate-pulse-gold" style={{
+          padding: '8px 16px', borderRadius: 'var(--radius-full)',
+          background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.3)',
+          fontSize: 12, fontWeight: 900, color: 'var(--gold-light)'
+        }}>
+          {count} LIVE
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({ label }: { label: string }) {
+  return (
+    <div style={{
+      padding: '40px 24px',
+      borderRadius: 'var(--radius-lg)',
+      border: '1px dashed rgba(255,255,255,0.06)',
+      textAlign: 'center',
+      color: 'var(--text-muted)',
+      fontSize: 12
+    }}>
+      <TrendingUp size={24} style={{ opacity: 0.3, marginBottom: 8 }} />
+      <div>{label}</div>
+    </div>
+  );
+}
+
+function fmtPrice(n: number): string {
+  if (!isFinite(n)) return '--';
+  if (Math.abs(n) >= 1000) return n.toFixed(2);
+  if (Math.abs(n) >= 100) return n.toFixed(2);
+  if (Math.abs(n) >= 1) return n.toFixed(4);
+  return n.toFixed(6);
+}

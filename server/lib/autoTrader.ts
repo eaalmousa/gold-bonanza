@@ -1,0 +1,176 @@
+import { getPositions, getBalance, setLeverage, placeMarketOrder, placeStopMarket, placeTakeProfitMarket } from './binance';
+import { runBonanzaCore } from '../../src/engines/scanner';
+import { MODES } from '../../src/types/trading';
+import { DEFAULT_SYMBOLS } from '../../src/types/trading';
+
+export let RISK_PER_TRADE = parseFloat(process.env.RISK_PER_TRADE || '0.10');
+export let MAX_CONCURRENT_TRADES = parseInt(process.env.MAX_CONCURRENT_TRADES || '8', 10);
+export let LEVERAGE = parseInt(process.env.LEVERAGE || '10', 10);
+export let SL_ENABLED = true;
+export let TP_ENABLED = true;
+export let TP1_RR = 1.25;
+export let TP2_RR = 2.50;
+export let MIN_SCORE = parseInt(process.env.MIN_SCORE_TO_DEPLOY || '15', 10);
+const BASE_CAPITAL = parseFloat(process.env.BASE_CAPITAL || '300'); // Default 300 USD as requested
+
+export function updateTraderConfig(config: { 
+  riskPerTrade?: number; 
+  maxConcurrent?: number; 
+  leverage?: number;
+  slEnabled?: boolean;
+  tpEnabled?: boolean;
+  tp1RR?: number;
+  tp2RR?: number;
+  minScore?: number;
+}) {
+  if (config.riskPerTrade !== undefined) RISK_PER_TRADE = config.riskPerTrade;
+  if (config.maxConcurrent !== undefined) MAX_CONCURRENT_TRADES = config.maxConcurrent;
+  if (config.leverage !== undefined) LEVERAGE = config.leverage;
+  if (config.slEnabled !== undefined) SL_ENABLED = config.slEnabled;
+  if (config.tpEnabled !== undefined) TP_ENABLED = config.tpEnabled;
+  if (config.tp1RR !== undefined) TP1_RR = config.tp1RR;
+  if (config.tp2RR !== undefined) TP2_RR = config.tp2RR;
+  if (config.minScore !== undefined) MIN_SCORE = config.minScore;
+  
+  logMsg(`Config Updated: RISK=${(RISK_PER_TRADE*100).toFixed(1)}% MAX_TRADES=${MAX_CONCURRENT_TRADES} LEVERAGE=${LEVERAGE}x MIN_SCORE=${MIN_SCORE} SL=${SL_ENABLED} TP=${TP_ENABLED} TP1=${TP1_RR}R TP2=${TP2_RR}R`);
+}
+
+export let isAutoTradingEnabled = false;
+
+export function toggleAutoTrade(enabled: boolean) {
+  isAutoTradingEnabled = enabled;
+  logMsg(`State changed to: ${enabled ? 'ON' : 'OFF'}`);
+}
+
+export const tradeLogs: string[] = [];
+
+function logMsg(msg: string) {
+  console.log(`[AutoTrader] ${msg}`);
+  tradeLogs.unshift(`[${new Date().toISOString()}] ${msg}`);
+  if (tradeLogs.length > 200) tradeLogs.pop();
+}
+
+let activeSymbols: string[] = [];
+
+export async function runTraderLoop() {
+  if (!isAutoTradingEnabled) return;
+  
+  try {
+    const positions = await getPositions();
+    if (positions.length >= MAX_CONCURRENT_TRADES) {
+      logMsg(`Max capacity reached (${positions.length}/${MAX_CONCURRENT_TRADES}). Skipping scan.`);
+      return;
+    }
+
+    if (!activeSymbols.length) {
+      try {
+        logMsg(`Fetching latest Top-200 dynamic universe...`);
+        const { initializeSymbolUniverse } = require('../../src/services/binanceApi');
+        activeSymbols = await initializeSymbolUniverse();
+        logMsg(`Loaded ${activeSymbols.length} symbols for backend scanning.`);
+      } catch (e: any) {
+        logMsg(`Failed to load dynamic symbols, falling back to defaults. Error: ${e.message}`);
+        activeSymbols = [...DEFAULT_SYMBOLS, 'XAUUSDT', 'XAGUSDT'];
+      }
+    }
+    logMsg(`Scanning ${activeSymbols.length} dynamic symbols...`);
+    // Use AGGRESSIVE mode mathematically, but we'll enforce the score threshold ourselves.
+    const mode = MODES.AGGRESSIVE;
+    let balance = BASE_CAPITAL;
+    try {
+      const actualBalance = await getBalance();
+      if (actualBalance > 0) balance = actualBalance; // Use real if available, else fallback to BASE_CAPITAL
+    } catch (e) {
+      logMsg(`Could not fetch actual balance, using base capital of ${BASE_CAPITAL} USD`);
+    }
+    
+    // We pass empty objects for snapshots since this is server side mapping
+    const results = await runBonanzaCore(activeSymbols, mode, balance, undefined, {}, undefined);
+    const snipers = results.sniperSignals || [];
+    const breakouts = results.breakoutSignals || [];
+    
+    // Sort combined by score desc
+    const combined = [...snipers, ...breakouts]
+      .filter(s => s.signal.score >= MIN_SCORE)
+      .sort((a, b) => b.signal.score - a.signal.score);
+
+    if (combined.length === 0) {
+      logMsg(`Scan done. No signals >= ${MIN_SCORE} found.`);
+      return;
+    }
+    logMsg(`Found ${combined.length} valid signals (Score >= ${MIN_SCORE}). Attempting execution.`);
+
+    for (const row of combined) {
+      const activePos = await getPositions();
+      if (activePos.length >= MAX_CONCURRENT_TRADES) break;
+
+      const sym = row.symbol;
+      
+      // if already in this symbol, skip it
+      if (activePos.some(p => p.symbol === sym)) {
+        continue;
+      }
+
+      const sig = row.signal;
+      const tradeSizeUSDT = balance * RISK_PER_TRADE; // e.g. 10% of base capital
+      const leverageQty = tradeSizeUSDT * LEVERAGE;
+      const qty = Math.max(0.001, leverageQty / sig.entryPrice); // Note: proper step-size rounding needed per coin ideally
+
+      logMsg(`🚀 EXECUTING: ${sym} ${sig.side} (Score: ${sig.score}) | Risk Size: $${tradeSizeUSDT.toFixed(2)} at ${LEVERAGE}x leverage`);
+
+      try {
+        logMsg(`[${sym}] Setting leverage to ${LEVERAGE}x...`);
+        await setLeverage(sym, LEVERAGE);
+        
+        logMsg(`[${sym}] Placing entry MARKET ${sig.side} order...`);
+        const entryRes = await placeMarketOrder(sym, sig.side === 'LONG' ? 'BUY' : 'SELL', qty);
+        logMsg(`[${sym}] Entry filled. OrderID: ${entryRes.orderId}`);
+        
+        // Wait a bit for entry order to register before setting stops
+        await new Promise(r => setTimeout(r, 1500));
+        
+        const closeSide = sig.side === 'LONG' ? 'SELL' : 'BUY';
+
+        // 🛡️ Place STOP LOSS (Technical - recalculated based on RR if needed, but here we use engine's stopLoss)
+        if (SL_ENABLED) {
+          logMsg(`[${sym}] Setting technical SL at ${sig.stopLoss.toFixed(4)}...`);
+          await placeStopMarket(sym, closeSide, sig.stopLoss);
+        } else {
+          logMsg(`[${sym}] SL disabled in config. Skipping.`);
+        }
+        
+        // 💰 Place TAKE PROFIT orders
+        if (TP_ENABLED) {
+          const stopPrice = sig.entryPrice;
+          const stopDist = Math.abs(stopPrice - sig.stopLoss);
+          
+          const tp1Price = sig.side === 'LONG' ? stopPrice + (stopDist * TP1_RR) : stopPrice - (stopDist * TP1_RR);
+          const tp2Price = sig.side === 'LONG' ? stopPrice + (stopDist * TP2_RR) : stopPrice - (stopDist * TP2_RR);
+
+          const tp1Qty = qty * 0.5;
+          logMsg(`[${sym}] Setting TP1 (50%) at ${tp1Price.toFixed(4)} (${TP1_RR}R)...`);
+          await placeTakeProfitMarket(sym, closeSide, tp1Price, tp1Qty);
+
+          const tp2Qty = qty * 0.5;
+          logMsg(`[${sym}] Setting TP2 (50%) at ${tp2Price.toFixed(4)} (${TP2_RR}R)...`);
+          await placeTakeProfitMarket(sym, closeSide, tp2Price, tp2Qty);
+        } else {
+          logMsg(`[${sym}] TP disabled in config. Skipping.`);
+        }
+
+        logMsg(`✅ DEPLOYED: ${sym} ${sig.side} | SL: ${SL_ENABLED ? sig.stopLoss.toFixed(4) : 'OFF'} | TP1: ${TP_ENABLED ? 'ON' : 'OFF'}`);
+      } catch(e: any) {
+        logMsg(`❌ ERR executing ${sym}: ${e.message}`);
+        console.error(`Full error for ${sym}:`, e);
+      }
+    }
+
+  } catch (error: any) {
+    logMsg(`CRITICAL ERROR inside runTraderLoop: ${error.message}`);
+  }
+}
+
+// Start loop
+setInterval(() => {
+  runTraderLoop();
+}, 60 * 1000); // Poll every 1 minute

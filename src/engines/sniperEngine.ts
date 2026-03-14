@@ -595,6 +595,41 @@ export function evaluateSniperSignal(
       score += 2; reasons.push('Short continuation hold');
     }
 
+    // ─── LOCAL FLOOR / SUPPORT PROXIMITY CHECK (SHORT ENTRY REPAIR) ───
+    // 1. Find the lowest point in the recent consolidation or local down-leg window
+    const recentLows = lows15.slice(Math.max(0, lastIdx - 15), lastIdx);
+    const localFloor = Math.min(...recentLows);
+    
+    // 2. Metrics calculation
+    const isBreakingFloor = close15 <= localFloor + (atr! * 0.15); 
+    const isHoveringAboveFloor = close15 > localFloor + (atr! * 0.15) && close15 < localFloor + (atr! * 0.6);
+    const distanceToFloorPct = ((close15 - localFloor) / localFloor) * 100;
+    const floorDistStr = `[Floor Dist: ${distanceToFloorPct.toFixed(2)}%]`;
+
+    // 3. Breakdown Acceptance Logic & Chop Detection
+    if (isHoveringAboveFloor) {
+       // We are compressing / hovering right above local support.
+       debugLog.push(`REJECT: Compressing immediately above local support floor ${floorDistStr}`);
+       return null;
+    }
+
+    if (isBreakingFloor) {
+      // If we are at/breaking the floor, we require "acceptance" to avoid false breakdowns.
+      // Acceptance = clean close below the local floor with follow-through
+      const cleanCloseBelow = close15 < localFloor;
+      const followThrough = close15 < prev.close && isBearCandle;
+      
+      if (!cleanCloseBelow || !followThrough) {
+        debugLog.push(`REJECT: Poking local support but lacks true breakdown acceptance ${floorDistStr}`);
+        return null;
+      }
+      
+      score += 2; 
+      reasons.push(`Clean floor breakdown accepted`);
+    } else {
+      reasons.push(`Clear airspace below (Dist: ${distanceToFloorPct.toFixed(2)}%)`);
+    }
+
     // Order flow
     const flowCheck = validateOrderFlow(orderFlow, 'SHORT');
     const missingFlowPenalty = flowCheck.missingFlow ? 3 : 0;

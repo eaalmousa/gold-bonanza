@@ -50,8 +50,14 @@ export interface Signal {
   sizeUSDT: number;
   atr15: number;
   volRatio: number;
+  // Quality Report
+  entryType?: 'REVERSAL' | 'CONTINUATION' | 'BREAKOUT';
+  zoneDistancePct?: number;   // How far price is from ideal entry zone (%)
+  btcRegimeAtEntry?: string;  // BTC regime label at signal time
+  entryTiming?: 'EARLY' | 'OPTIMAL' | 'LATE'; // Self-assessed timing
   entryModel?: string;
   entryHint?: string;
+  debugLog?: string[];         // Why this signal was accepted
 }
 
 export interface SignalRow {
@@ -160,7 +166,7 @@ export interface PipelineHealth {
 // Market Regime & Order Flow
 // ============================================
 
-export type MarketRegime = 'TRENDING_UP' | 'TRENDING_DOWN' | 'RANGING' | 'CRASH';
+export type MarketRegime = 'TRENDING_UP' | 'TRENDING_DOWN' | 'RANGING' | 'CRASH' | 'CHOP';
 
 export interface OrderFlowSnapshot {
   cvd: number;            // Cumulative Volume Delta — positive = buyers dominating
@@ -221,16 +227,17 @@ export const MODES: Record<string, ModeConfig> = {
     maxTrades: 8,
     leverage: 7,
     pullback: {
-      rsiMin: 15, rsiMax: 70, volMult: 1.0, // Any volume is fine
+      rsiMin: 15, rsiMax: 70, volMult: 1.0,
       minDollarVol15m: 50000, volSpikeMult: 1.0,
       accelPctMin: 0.00010, atrPctMin: 0.10, atrPctMax: 5.00,
-      valueZoneSlack: 0.02, scoreMin: 5 // Low bar
+      valueZoneSlack: 0.008, // Hard cap at 0.8% — 2% was meaningless
+      scoreMin: 8 // Raised floor from 5 to 8
     },
     breakout: {
-      breakPct: 0.0010, volMult: 1.0, // Any volume is fine
+      breakPct: 0.0010, volMult: 1.0,
       minDollarVol15m: 50000, volSpikeMult: 1.0,
-      accelPctMin: 0.00010, coilBars: 4, coilRangePctMax: 6.00, // Very loose compression
-      rsiMin: 40, rsiMax: 90, scoreMin: 5 // Low bar
+      accelPctMin: 0.00010, coilBars: 4, coilRangePctMax: 4.00, // Tightened from 6%
+      rsiMin: 40, rsiMax: 90, scoreMin: 8
     }
   }
 };

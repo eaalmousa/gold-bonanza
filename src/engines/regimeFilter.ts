@@ -1,21 +1,23 @@
 // ============================================
-// Market Regime Filter — P3
-// Classifies the broader market context using
-// BTC/ETH as the reference anchor.
+// Market Regime Filter — v3
+// - Stricter crash detection (1.8% / 3h instead of 3% / 4h)
+// - New CHOP regime blocks entries in compressed sideways conditions
+// - BTC correlation limiter for position concentration
 // ============================================
 
 import type { Kline, MarketRegime, OrderFlowSnapshot } from '../types/trading';
-import { calcEMA, calcATR } from './indicators';
+import { calcEMA, calcATR, calcRSI } from './indicators';
 
 /**
- * Classify the current market regime based on BTC 1H data and optionally 4H macro context.
- * Returns the regime + a score-modifier for signals.
+ * Classify the current market regime based on BTC 1H + 4H data.
+ * Returns regime + score-modifier for signals.
  */
 export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
   regime: MarketRegime;
   btc4hTrend: 'UP' | 'DOWN' | 'RANGING';
-  scoreBonus: number;  // Applied to signal scores: positive = favorable, negative = hostile
+  scoreBonus: number;
   reason: string;
+  btcRsi?: number;
 } {
   let btc4hTrend: 'UP' | 'DOWN' | 'RANGING' = 'RANGING';
 
@@ -43,93 +45,149 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
   }
 
   const closes = btc1h.map(c => c.close);
-  const highs = btc1h.map(c => c.high);
-  const lows = btc1h.map(c => c.low);
-  
-  const ema20 = calcEMA(closes, 20);
-  const ema50 = calcEMA(closes, 50);
-  const ema200 = calcEMA(closes, 200);
-  const atr14 = calcATR(highs, lows, closes, 14);
+  const highs  = btc1h.map(c => c.high);
+  const lows   = btc1h.map(c => c.low);
 
-  const idx = closes.length - 1;
+  const ema20  = calcEMA(closes, 20);
+  const ema50  = calcEMA(closes, 50);
+  const ema200 = calcEMA(closes, 200);
+  const atr14  = calcATR(highs, lows, closes, 14);
+  const rsi14  = calcRSI(closes, 14);
+
+  const idx   = closes.length - 1;
   const close = closes[idx];
-  const e20 = ema20[idx];
-  const e50 = ema50[idx];
-  const e200 = ema200[idx];
-  const atr = atr14[idx];
+  const e20   = ema20[idx];
+  const e50   = ema50[idx];
+  const e200  = ema200[idx];
+  const atr   = atr14[idx];
+  const btcRsi = rsi14[idx] ?? undefined;
 
   if ([e20, e50, e200, atr].some(v => v == null)) {
     return { regime: 'RANGING', btc4hTrend, scoreBonus: 0, reason: 'EMA not ready' };
   }
 
-  // ─── CRASH DETECTION ──────────────────────────────
-  // Check for sharp BTC drop in last 4 candles (4H equivalent at 1H granularity)
-  const recentClose4 = closes[idx - 4] || close;
-  const drop4h = ((close - recentClose4) / recentClose4) * 100;
-  
-  // Also check 12h (12 candles) for extended selloff  
-  const recentClose12 = closes[idx - 12] || close;
-  const drop12h = ((close - recentClose12) / recentClose12) * 100;
+  // ─── CRASH DETECTION (Tightened: -1.8% over 3h) ──────────────
+  // Previous threshold was -3% over 4h — too late. By the time BTC is 
+  // down 3% in 4h, alts are already down 5-8%. We detect earlier.
+  const close3h  = closes[idx - 3] ?? close;
+  const drop3h   = ((close - close3h) / close3h) * 100;
+  const close10h = closes[idx - 10] ?? close;
+  const drop10h  = ((close - close10h) / close10h) * 100;
 
-  if (drop4h < -3.0 || drop12h < -5.0) {
-    return { regime: 'CRASH', btc4hTrend, scoreBonus: -10, reason: `BTC crash: ${drop4h.toFixed(1)}% (4h) / ${drop12h.toFixed(1)}% (12h)` };
+  if (drop3h < -1.8 || drop10h < -4.5) {
+    return {
+      regime: 'CRASH',
+      btc4hTrend, btcRsi,
+      scoreBonus: -10,
+      reason: `BTC crash detected: ${drop3h.toFixed(2)}% (3h) / ${drop10h.toFixed(2)}% (10h)`
+    };
+  }
+
+  // ─── CHOP DETECTION (NEW) ──────────────────────────────────────
+  // Conditions: EMAs 20/50 are compressed (within 0.3% of each other)
+  // AND recent 8h range is small (<1.2% ATR-ratio). No clear direction.
+  const emaDelta = Math.abs(e20! - e50!) / e50!;
+  const range8h  = Math.max(...highs.slice(idx - 8)) - Math.min(...lows.slice(idx - 8));
+  const atrRatio = range8h / (atr! * 8);
+
+  if (emaDelta < 0.003 && atrRatio < 0.65) {
+    return {
+      regime: 'CHOP',
+      btc4hTrend, btcRsi,
+      scoreBonus: -5,
+      reason: `BTC CHOP: EMA20/50 compressed ${(emaDelta * 100).toFixed(2)}%, range ratio ${atrRatio.toFixed(2)}`
+    };
   }
 
   // ─── TRENDING UP ──────────────────────────────────
   const emaAlignedUp = e20! > e50! && e50! > e200!;
-  const aboveEma200 = close > e200!;
-  const e20SlopeUp = e20! > ema20[idx - 5]!;
-  const e50SlopeUp = e50! > ema50[idx - 5]!;
+  const aboveEma200  = close > e200!;
+  const e20SlopeUp   = e20! > (ema20[idx - 5] ?? e20!);
+  const e50SlopeUp   = e50! > (ema50[idx - 5] ?? e50!);
 
   if (emaAlignedUp && aboveEma200 && e20SlopeUp && e50SlopeUp) {
-    // Strong uptrend — check momentum
-    const recentGain = ((close - recentClose12) / recentClose12) * 100;
-    const isStrong = recentGain > 1.5;
-    return { 
-      regime: 'TRENDING_UP', 
-      btc4hTrend,
-      scoreBonus: isStrong ? 3 : 1, 
-      reason: `BTC uptrend: EMA aligned, +${recentGain.toFixed(1)}% (12h)` 
+    const recentGain = ((close - close10h) / close10h) * 100;
+    const isStrong   = recentGain > 1.5;
+    return {
+      regime: 'TRENDING_UP',
+      btc4hTrend, btcRsi,
+      scoreBonus: isStrong ? 3 : 1,
+      reason: `BTC uptrend: EMA aligned, +${recentGain.toFixed(1)}% (10h)`
     };
   }
 
   // ─── TRENDING DOWN ────────────────────────────────
   const emaAlignedDown = e20! < e50! && e50! < e200!;
-  const belowEma200 = close < e200!;
-  const e20SlopeDown = e20! < ema20[idx - 5]!;
+  const belowEma200    = close < e200!;
+  const e20SlopeDown   = e20! < (ema20[idx - 5] ?? e20!);
 
   if (emaAlignedDown && belowEma200 && e20SlopeDown) {
-    return { 
-      regime: 'TRENDING_DOWN', 
-      btc4hTrend,
-      scoreBonus: -3, 
-      reason: `BTC downtrend: EMA aligned bearish` 
+    return {
+      regime: 'TRENDING_DOWN',
+      btc4hTrend, btcRsi,
+      scoreBonus: -3,
+      reason: `BTC downtrend: EMA aligned bearish`
     };
   }
 
   // ─── RANGING ──────────────────────────────────────
-  // Price oscillating around EMAs, no clear direction
   const distFromE200 = Math.abs(close - e200!) / e200! * 100;
   if (distFromE200 < 2.0) {
-    return { 
-      regime: 'RANGING', 
-      btc4hTrend,
-      scoreBonus: -1, 
-      reason: `BTC ranging: ${distFromE200.toFixed(1)}% from EMA200` 
+    return {
+      regime: 'RANGING',
+      btc4hTrend, btcRsi,
+      scoreBonus: -1,
+      reason: `BTC ranging: ${distFromE200.toFixed(1)}% from EMA200`
     };
   }
 
-  return { 
-    regime: aboveEma200 ? 'TRENDING_UP' : 'TRENDING_DOWN', 
-    btc4hTrend,
-    scoreBonus: 0, 
-    reason: `BTC ambiguous: above EMA200=${aboveEma200}` 
+  return {
+    regime: aboveEma200 ? 'TRENDING_UP' : 'TRENDING_DOWN',
+    btc4hTrend, btcRsi,
+    scoreBonus: 0,
+    reason: `BTC ambiguous: above EMA200=${aboveEma200}`
   };
 }
 
 /**
+ * Market-Correlation Limiter (User Request 3)
+ * Returns how many new positions are safe to open given current BTC regime.
+ * During CHOP/CRASH: heavily restrict new entries.
+ * During TRENDING_DOWN: block new LONG positions.
+ */
+export function getCorrelationPositionLimit(
+  regime: MarketRegime,
+  btc4hTrend: 'UP' | 'DOWN' | 'RANGING',
+  currentOpenCount: number
+): {
+  allowNew: boolean;
+  maxNewPositions: number;
+  reason: string;
+} {
+  if (regime === 'CRASH') {
+    return { allowNew: false, maxNewPositions: 0, reason: 'BTC CRASH — all new entries blocked' };
+  }
+  if (regime === 'CHOP') {
+    return {
+      allowNew: currentOpenCount < 2,
+      maxNewPositions: 2,
+      reason: 'BTC CHOP — max 2 concurrent positions allowed'
+    };
+  }
+  if (regime === 'TRENDING_DOWN' && btc4hTrend === 'DOWN') {
+    return {
+      allowNew: currentOpenCount < 3,
+      maxNewPositions: 3,
+      reason: 'BTC downtrend — limit to 3 positions, LONGS heavily filtered'
+    };
+  }
+  // Normal / up conditions
+  return { allowNew: true, maxNewPositions: 99, reason: 'Normal conditions' };
+}
+
+/**
  * Validate order flow confluence for a signal direction.
- * Returns true if order flow supports the intended trade direction.
+ * If snapshot is unavailable, require higher score to compensate.
  */
 export function validateOrderFlow(
   snapshot: OrderFlowSnapshot | undefined,
@@ -138,17 +196,18 @@ export function validateOrderFlow(
   ok: boolean;
   score: number;
   reasons: string[];
+  missingFlow: boolean;
 } {
+  // If no snapshot, don't pass outright — flag it so caller can raise score threshold
   if (!snapshot) {
-    return { ok: true, score: 0, reasons: ['Order flow data unavailable — bypassed'] };
+    return { ok: true, score: 0, reasons: [], missingFlow: true };
   }
 
   const reasons: string[] = [];
-  let score = 0;
+  let score    = 0;
   let blockers = 0;
 
   if (side === 'LONG') {
-    // ─── CVD must be positive or neutral ────────────
     if (snapshot.cvd > 0) {
       score += 2;
       reasons.push(`CVD positive (+${(snapshot.cvd / 1e6).toFixed(1)}M) — buy pressure`);
@@ -157,7 +216,6 @@ export function validateOrderFlow(
       reasons.push(`CVD deeply negative (${(snapshot.cvd / 1e6).toFixed(1)}M) — sell pressure`);
     }
 
-    // ─── Bid/Ask imbalance favoring buys ────────────
     if (snapshot.imbalanceRatio > 1.3) {
       score += 2;
       reasons.push(`Order book imbalance ${snapshot.imbalanceRatio.toFixed(2)}× — bids strong`);
@@ -166,28 +224,24 @@ export function validateOrderFlow(
       reasons.push(`Order book imbalance ${snapshot.imbalanceRatio.toFixed(2)}× — asks dominate`);
     }
 
-    // ─── No large institutional sell walls ──────────
     if (snapshot.largeBlocksAsk > snapshot.largeBlocksBid * 2) {
       blockers++;
-      reasons.push(`Heavy institutional sell walls (${snapshot.largeBlocksAsk} vs ${snapshot.largeBlocksBid} bid blocks)`);
+      reasons.push(`Heavy institutional sell walls`);
     } else if (snapshot.largeBlocksBid > snapshot.largeBlocksAsk * 1.5) {
       score += 1;
       reasons.push('Institutional bid support present');
     }
 
-    // ─── Last trade aggressor ───────────────────────
     if (snapshot.lastTradeAggressor === 'BUY') {
       score += 1;
       reasons.push('Last aggressive trade was a BUY');
     }
   } else {
-    // SHORT flow validation (mirror logic)
     if (snapshot.cvd < 0) {
       score += 2;
       reasons.push(`CVD negative (${(snapshot.cvd / 1e6).toFixed(1)}M) — sell pressure`);
     } else if (snapshot.cvd > 500000) {
       blockers++;
-      reasons.push(`CVD deeply positive — buy pressure`);
     }
 
     if (snapshot.imbalanceRatio < 0.7) {
@@ -195,7 +249,6 @@ export function validateOrderFlow(
       reasons.push(`Order book imbalance ${snapshot.imbalanceRatio.toFixed(2)}× — asks dominate`);
     } else if (snapshot.imbalanceRatio > 1.3) {
       blockers++;
-      reasons.push(`Order book imbalance — bids too strong for short`);
     }
 
     if (snapshot.largeBlocksBid > snapshot.largeBlocksAsk * 2) {
@@ -208,9 +261,5 @@ export function validateOrderFlow(
     }
   }
 
-  return {
-    ok: blockers < 2,  // Allow signal if at most 1 blocker (not all blockers together)
-    score,
-    reasons
-  };
+  return { ok: blockers < 2, score, reasons, missingFlow: false };
 }

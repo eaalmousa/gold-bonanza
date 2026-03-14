@@ -1,8 +1,7 @@
 // ============================================
-// Breakout Engine v2 — Super Sniper Detection
-// Now with 1H trend gate, regime filter,
-// order flow confluence, false breakout shield,
-// and SHORT support.
+// Breakout Engine v3 — Super Sniper
+// Added: expansion-candle blocker, late-entry
+// check, quality report, correlation to v3 audit.
 // ============================================
 
 import type { Kline, Signal, ModeConfig, MarketRegime, OrderFlowSnapshot } from '../types/trading';
@@ -17,33 +16,39 @@ export function evaluateBreakoutSignal(
   regime?: MarketRegime,
   regimeScoreBonus?: number,
   orderFlow?: OrderFlowSnapshot,
-  btc4hTrend?: 'UP' | 'DOWN' | 'RANGING'
+  btc4hTrend?: 'UP' | 'DOWN' | 'RANGING',
+  btcRegimeLabel?: string,
+  symbol?: string
 ): Signal | null {
-  // modeKey extracted as string to avoid TypeScript narrowing in non-AGGRESSIVE path
   const modeKey: string = activeMode.key;
-
-
+  const debugLog: string[] = [`[BreakoutV3] ${symbol ?? ''}`];
 
   if (!tf1h || tf1h.length < 210 || !tf15m || tf15m.length < 90) return null;
 
-  // ─── REGIME GATE ────────────────────────────────
-  if (regime === 'CRASH' && modeKey !== 'AGGRESSIVE') return null;
+  // ─── GATE: REGIME ───────────────────────────────────
+  if (regime === 'CRASH') {
+    debugLog.push('REJECT: CRASH regime');
+    return null;
+  }
+  if (regime === 'CHOP' && modeKey !== 'AGGRESSIVE') {
+    debugLog.push('REJECT: CHOP — breakouts in chop are false breakouts');
+    return null;
+  }
 
-  // ─── P4: 1H TREND GATE (was missing!) ───────────
-  const closes1h = tf1h.map(c => c.close);
-  const ema20_1h = calcEMA(closes1h, 20);
-  const ema50_1h = calcEMA(closes1h, 50);
+  // ─── 1H TREND GATE ───────────────────────────────────
+  const closes1h  = tf1h.map(c => c.close);
+  const ema20_1h  = calcEMA(closes1h, 20);
+  const ema50_1h  = calcEMA(closes1h, 50);
   const ema200_1h = calcEMA(closes1h, 200);
-  const idx1h = closes1h.length - 1;
-  const close1h = closes1h[idx1h];
-  const e20_1h = ema20_1h[idx1h];
-  const e50_1h = ema50_1h[idx1h];
-  const e200_1h = ema200_1h[idx1h];
+  const idx1h     = closes1h.length - 1;
+  const close1h   = closes1h[idx1h];
+  const e20_1h    = ema20_1h[idx1h];
+  const e50_1h    = ema50_1h[idx1h];
+  const e200_1h   = ema200_1h[idx1h];
 
   if ([e20_1h, e50_1h, e200_1h].some(v => v == null)) return null;
 
-  // Determine direction from 1H structure
-  const isUptrend1h = close1h > e200_1h! && e20_1h! > e50_1h!;
+  const isUptrend1h   = close1h > e200_1h! && e20_1h! > e50_1h!;
   const isDowntrend1h = close1h < e200_1h! && e20_1h! < e50_1h!;
 
   let side: 'LONG' | 'SHORT';
@@ -51,73 +56,77 @@ export function evaluateBreakoutSignal(
     side = close1h > e50_1h! ? 'LONG' : 'SHORT';
   } else if (isUptrend1h) {
     side = 'LONG';
-    if (regime === 'TRENDING_DOWN') return null; // Don't go long in bear regime
+    if (regime === 'TRENDING_DOWN') return null;
   } else if (isDowntrend1h) {
     side = 'SHORT';
-    if (regime === 'TRENDING_UP') return null; // Don't go short in bull regime
+    if (regime === 'TRENDING_UP') return null;
   } else {
-    // No clear 1H direction — require RANGING regime to be lenient
     if (regime !== 'RANGING') return null;
-    // Default to LONG if above EMA200, SHORT if below
     side = close1h > e200_1h! ? 'LONG' : 'SHORT';
   }
 
-  // ─── 4H MACRO TREND GATE ────────────────────────
+  // ─── 4H MACRO GATE ────────────────────────────────────
   if (modeKey !== 'AGGRESSIVE' && btc4hTrend) {
-    if (side === 'LONG' && btc4hTrend === 'DOWN') return null;
-    if (side === 'SHORT' && btc4hTrend === 'UP') return null;
+    if (side === 'LONG'  && btc4hTrend === 'DOWN') return null;
+    if (side === 'SHORT' && btc4hTrend === 'UP')   return null;
   }
 
-  // ─── 15m DATA ───────────────────────────────────
-  const closes15 = tf15m.map(c => c.close);
-  const highs15 = tf15m.map(c => c.high);
-  const lows15 = tf15m.map(c => c.low);
-  const vols15 = tf15m.map(c => c.volume);
-
-  const ema20_15 = calcEMA(closes15, 20);
-  const rsi14_15 = calcRSI(closes15, 14);
-  const atr14_15 = calcATR(highs15, lows15, closes15, 14);
+  // ─── 15m DATA ─────────────────────────────────────────
+  const closes15   = tf15m.map(c => c.close);
+  const highs15    = tf15m.map(c => c.high);
+  const lows15     = tf15m.map(c => c.low);
+  const vols15     = tf15m.map(c => c.volume);
+  const ema20_15   = calcEMA(closes15, 20);
+  const rsi14_15   = calcRSI(closes15, 14);
+  const atr14_15   = calcATR(highs15, lows15, closes15, 14);
   const volSMA20_15 = calcSMA(vols15, 20);
   const volSMA50_15 = calcSMA(vols15, 50);
-  const dollarVols15 = vols15.map((v, i) => v * closes15[i]);
+  const dollarVols15 = vols15.map((v,i) => v * closes15[i]);
   const dollarVolSMA20_15 = calcSMA(dollarVols15, 20);
 
   const lastIdx = closes15.length - 2;
   if (lastIdx < 60) return null;
 
-  const cfg = activeMode.breakout;
+  const cfg   = activeMode.breakout;
   const candle = tf15m[lastIdx];
-  const prev = tf15m[lastIdx - 1];
-  const prev2 = tf15m[lastIdx - 2];
+  const prev   = tf15m[lastIdx - 1];
+  const prev2  = tf15m[lastIdx - 2];
 
   const close15 = candle.close;
-  const open15 = candle.open;
-  const high15 = candle.high;
-  const low15 = candle.low;
+  const open15  = candle.open;
+  const high15  = candle.high;
+  const low15   = candle.low;
 
-  const rsiNow = rsi14_15[lastIdx];
-  const atr = atr14_15[lastIdx];
-  const volNow = vols15[lastIdx];
-  const volAvg = volSMA20_15[lastIdx];
+  const rsiNow     = rsi14_15[lastIdx];
+  const atr        = atr14_15[lastIdx];
+  const volNow     = vols15[lastIdx];
+  const volAvg     = volSMA20_15[lastIdx];
   const volLongAvg = volSMA50_15[lastIdx] ?? volAvg;
-  const e20 = ema20_15[lastIdx];
+  const e20        = ema20_15[lastIdx];
 
-  if ([rsiNow, atr, volAvg, volLongAvg, e20].some(v => v == null)) return null;
+  if ([rsiNow, atr, volAvg, e20].some(v => v == null)) return null;
+
+  const range = Math.max(1e-9, high15 - low15);
+  const body  = Math.abs(close15 - open15);
+
+  // ─── EXPANSION-CANDLE BLOCKER ─────────────────────────
+  const candleAtrRatio = range / atr!;
+  if (candleAtrRatio > 2.0) {
+    // Breakouts tolerate slightly larger candles but not blow-off tops (2.0x)
+    debugLog.push(`REJECT: Expansion candle on breakout ${candleAtrRatio.toFixed(2)}x ATR > 2.0`);
+    return null;
+  }
 
   const reasons: string[] = [];
   let score = 0;
 
   if (side === 'LONG') {
-    // ═══════════════════════════════════════════════
-    //  LONG BREAKOUT
-    // ═══════════════════════════════════════════════
-
-    // RSI range
+    // ─── RSI RANGE ──────────────────────────────────────
     if (!(rsiNow! >= cfg.rsiMin && rsiNow! <= cfg.rsiMax)) return null;
-    score += 1; // Reduced from 2
+    score += 1;
     reasons.push(`RSI in breakout zone (${rsiNow!.toFixed(1)})`);
 
-    // Coil (compression)
+    // ─── COIL DETECTION ─────────────────────────────────
     const coilBars = Math.max(cfg.coilBars, 4);
     let hiCoil = -Infinity, loCoil = Infinity;
     for (let i = lastIdx - coilBars; i < lastIdx; i++) {
@@ -128,124 +137,118 @@ export function evaluateBreakoutSignal(
     const coilRange = hiCoil > 0 ? ((hiCoil - loCoil) / hiCoil) * 100 : 100;
     if (coilRange > cfg.coilRangePctMax) return null;
     score += 3;
-    reasons.push(`Compression detected (${coilRange.toFixed(2)}% range)`);
+    reasons.push(`Compression (${coilRange.toFixed(2)}% range)`);
 
-    // Breakout above coil high
+    // ─── BREAKOUT ABOVE COIL ────────────────────────────
     const breakLevel = hiCoil * (1 + cfg.breakPct);
     if (modeKey !== 'AGGRESSIVE' && close15 < breakLevel) return null;
     score += 3;
     reasons.push('Breakout above compression range');
 
-    // ─── FALSE BREAKOUT SHIELD (P7) ───────────────
-    // The breakout candle close must be >60% of the way from breakLevel to candle high
+    // ─── LATE-ENTRY CHECK for breakouts ─────────────────
+    // If price is already more than 1.5x ATR above the break level, this is chasing
+    const lateExtension = (close15 - breakLevel) / atr!;
+    if (lateExtension > 1.5 && modeKey !== 'AGGRESSIVE') {
+      debugLog.push(`REJECT: Breakout late entry ${lateExtension.toFixed(2)}x ATR past breakLevel`);
+      return null;
+    }
+    const entryTiming: 'EARLY' | 'OPTIMAL' | 'LATE' =
+      lateExtension < 0.5 ? 'OPTIMAL' : lateExtension < 1.0 ? 'EARLY' : 'LATE';
+
+    // ─── FALSE BREAKOUT SHIELD ───────────────────────────
     const breakoutQuality = (close15 - breakLevel) / Math.max(1e-9, high15 - breakLevel);
     if (modeKey !== 'AGGRESSIVE' && breakoutQuality < 0.60) return null;
     score += 1;
-    reasons.push('Strong breakout close (clean break)');
+    reasons.push('Strong breakout close');
 
-    // Check that the PREVIOUS candle wasn't already above the break level (avoid late entries)
+    // Previous candle must not already be broken
     if (modeKey !== 'AGGRESSIVE' && prev.close > breakLevel) return null;
 
-    // Volume confirmation
+    // ─── VOLUME ─────────────────────────────────────────
     const volRatio = volNow / volAvg!;
     const volSpike = volLongAvg ? (volNow / volLongAvg!) : 0;
     if (volRatio < cfg.volMult || volSpike < cfg.volSpikeMult) return null;
-    
-    // Progressive volume scoring
-    let volScore = 2; // base
+    let volScore = 2;
     if (volRatio > 2.0) volScore += 2;
     if (volRatio > 3.0) volScore += 1;
     score += volScore;
     reasons.push(`Volume surge (${volRatio.toFixed(2)}x)`);
 
-    // Dollar volume floor (Gate only, 0 points)
+    // ─── DOLLAR VOL FLOOR ───────────────────────────────
     const dollarVolAvg = dollarVolSMA20_15[lastIdx];
     if (cfg.minDollarVol15m && dollarVolAvg != null && dollarVolAvg < cfg.minDollarVol15m) return null;
-    // Removed score += 1.
 
-    // Candle anatomy
-    const range = Math.max(1e-9, high15 - low15);
-    const body = Math.abs(close15 - open15);
-    const bodyPct = (body / range) * 100;
-    const closePos = (close15 - low15) / range;
+    // ─── CANDLE ANATOMY ─────────────────────────────────
+    const bodyPct    = (body / range) * 100;
+    const closePos   = (close15 - low15) / range;
     const isBullCandle = close15 > open15;
-    
-    // In aggressive mode, we are extremely lenient on candle anatomy
-    const minBody = modeKey === 'AGGRESSIVE' ? 10 : 65;
+    const minBody    = modeKey === 'AGGRESSIVE' ? 10 : 65;
     const minClosePos = modeKey === 'AGGRESSIVE' ? 0.20 : 0.78;
-    
     if (modeKey !== 'AGGRESSIVE' && !(isBullCandle && bodyPct >= minBody && closePos >= minClosePos)) return null;
-    score += 1; // Reduced from 2
-    reasons.push('Strong candle close');
+    score += 1;
+    reasons.push('Strong breakout candle');
 
-    // Acceleration (0 points, just a gate)
+    // ─── ACCELERATION ───────────────────────────────────
     if (prev2) {
-      const accel = (close15 - prev.close) - (prev.close - prev2.close);
+      const accel    = (close15 - prev.close) - (prev.close - prev2.close);
       const accelPct = accel / close15;
       if (modeKey !== 'AGGRESSIVE' && cfg.accelPctMin && accelPct < cfg.accelPctMin) return null;
-      // Removed score += 1
-      if (accelPct > 0.002) {
-         score += 1;
-         reasons.push(`Acceleration (+${(accelPct * 100).toFixed(3)}%)`);
-      }
+      if (accelPct > 0.002) { score += 1; reasons.push(`Acceleration (+${(accelPct*100).toFixed(3)}%)`); }
     }
 
-    // ─── ORDER FLOW CONFLUENCE ─────────────────────
+    // ─── ORDER FLOW ─────────────────────────────────────
     const flowCheck = validateOrderFlow(orderFlow, 'LONG');
+    const missingFlowPenalty = flowCheck.missingFlow ? 3 : 0;
     if (!flowCheck.ok && modeKey !== 'AGGRESSIVE') return null;
-    
     score += flowCheck.score;
-    if (flowCheck.reasons.length > 0) {
-      reasons.push(flowCheck.reasons[0]);
-    }
+    if (flowCheck.reasons.length > 0) reasons.push(flowCheck.reasons[0]);
 
-    // ─── 1H TREND BONUS ───────────────────────────
-    score += 1; // Bonus for having passed 1H gate
+    score += 1; // 1H trend gate bonus
     reasons.push('1H trend confirmed');
 
-    // ─── REGIME BONUS ─────────────────────────────
     score += (regimeScoreBonus || 0);
-    if (regimeScoreBonus && regimeScoreBonus > 0) {
-      reasons.push('Market regime supportive');
-    }
+    if (regimeScoreBonus && regimeScoreBonus > 0) reasons.push('Regime supportive');
 
-    if (score < cfg.scoreMin) return null;
+    const effectiveScoreMin = cfg.scoreMin + missingFlowPenalty;
+    if (score < effectiveScoreMin) return null;
 
-    // Entry/risk calculations
-    const triggerBuffer = 0.0015;
-    const triggerPrice = close15 * (1 + triggerBuffer);
+    // ─── ENTRY/RISK ──────────────────────────────────────
+    const triggerPrice = close15 * 1.0010;
     const riskPerTrade = balance * activeMode.riskPct;
-    const stopBase = Math.max(loCoil, e20! * (1 - 0.002));
-    const atrStop = triggerPrice - (atr! * 1.8);
-    const stopLoss = Math.max(stopBase, atrStop);
+    const stopBase     = Math.max(loCoil, e20! * (1 - 0.002));
+    const atrStop      = triggerPrice - (atr! * 1.8);
+    const minAtrStop   = triggerPrice - (atr! * 1.2);
+    const stopLoss     = Math.min(Math.max(stopBase, atrStop), minAtrStop);
     const stopDistance = Math.max(triggerPrice - stopLoss, triggerPrice * 0.004);
-    const stopPctVal = (stopDistance / triggerPrice) * 100;
-    if (modeKey !== 'AGGRESSIVE' && (stopPctVal > 2.2 || stopPctVal < 0.4)) return null;
-    const takeProfit = triggerPrice + 1.25 * stopDistance;
-    const takeProfit2 = triggerPrice + 2.5 * stopDistance;
+    const stopPctVal   = (stopDistance / triggerPrice) * 100;
+    if (modeKey !== 'AGGRESSIVE' && (stopPctVal > 2.5 || stopPctVal < 0.4)) return null;
+    const takeProfit  = triggerPrice + 1.25 * stopDistance;
+    const takeProfit2 = triggerPrice + 2.5  * stopDistance;
+    const qty         = riskPerTrade / stopDistance;
+    const sizeUSDT    = qty * triggerPrice;
 
-    const qty = riskPerTrade / stopDistance;
-    const sizeUSDT = qty * triggerPrice;
+    const zoneDistancePct = ((close15 - breakLevel) / breakLevel) * 100;
+    debugLog.push(`ACCEPT: LONG BREAKOUT score=${score} timing=${entryTiming}`);
 
     return {
       kind: 'SUPER_SNIPER', side: 'LONG', score, reasons,
       entryPrice: triggerPrice, stopLoss, takeProfit, takeProfit2,
-      qty, sizeUSDT, atr15: atr!, volRatio
+      qty, sizeUSDT, atr15: atr!, volRatio,
+      entryType: 'BREAKOUT',
+      zoneDistancePct: parseFloat(zoneDistancePct.toFixed(3)),
+      btcRegimeAtEntry: btcRegimeLabel ?? 'UNKNOWN',
+      entryTiming,
+      debugLog
     };
 
   } else {
-    // ═══════════════════════════════════════════════
-    //  SHORT BREAKOUT (P2 — new)
-    // ═══════════════════════════════════════════════
-
-    // RSI range (inverted for shorts: bearish momentum)
+    // ─── SHORT BREAKOUT ──────────────────────────────────
     const rsiMinShort = 100 - cfg.rsiMax;
     const rsiMaxShort = 100 - cfg.rsiMin;
     if (!(rsiNow! >= rsiMinShort && rsiNow! <= rsiMaxShort)) return null;
-    score += 1; // Reduced from 2
+    score += 1;
     reasons.push(`RSI in short breakout zone (${rsiNow!.toFixed(1)})`);
 
-    // Coil (compression)
     const coilBars = Math.max(cfg.coilBars, 4);
     let hiCoil = -Infinity, loCoil = Infinity;
     for (let i = lastIdx - coilBars; i < lastIdx; i++) {
@@ -256,100 +259,94 @@ export function evaluateBreakoutSignal(
     const coilRange = hiCoil > 0 ? ((hiCoil - loCoil) / hiCoil) * 100 : 100;
     if (coilRange > cfg.coilRangePctMax) return null;
     score += 3;
-    reasons.push(`Compression detected (${coilRange.toFixed(2)}% range)`);
+    reasons.push(`Compression (${coilRange.toFixed(2)}%)`);
 
-    // Breakdown below coil low
     const breakLevel = loCoil * (1 - cfg.breakPct);
     if (modeKey !== 'AGGRESSIVE' && close15 > breakLevel) return null;
     score += 3;
     reasons.push('Breakdown below compression range');
 
-    // ─── FALSE BREAKOUT SHIELD (P7 - inverted) ────────
+    const lateExtension = (breakLevel - close15) / atr!;
+    if (lateExtension > 1.5 && modeKey !== 'AGGRESSIVE') return null;
+    const entryTiming: 'EARLY' | 'OPTIMAL' | 'LATE' =
+      lateExtension < 0.5 ? 'OPTIMAL' : lateExtension < 1.0 ? 'EARLY' : 'LATE';
+
     const breakoutQuality = (breakLevel - close15) / Math.max(1e-9, breakLevel - low15);
     if (modeKey !== 'AGGRESSIVE' && breakoutQuality < 0.60) return null;
     score += 1;
-    reasons.push('Strong breakdown close (clean break)');
+    reasons.push('Strong breakdown close');
 
-    if (modeKey !== 'AGGRESSIVE' && prev.close < breakLevel) return null; // Previous candle already broken
+    if (modeKey !== 'AGGRESSIVE' && prev.close < breakLevel) return null;
 
-    // Volume confirmation
     const volRatio = volNow / volAvg!;
     const volSpike = volLongAvg ? (volNow / volLongAvg!) : 0;
     if (volRatio < cfg.volMult || volSpike < cfg.volSpikeMult) return null;
-    
-    // Progressive volume scoring
-    let volScore = 2; // base
+    let volScore = 2;
     if (volRatio > 2.0) volScore += 2;
     if (volRatio > 3.0) volScore += 1;
     score += volScore;
     reasons.push(`Volume surge (${volRatio.toFixed(2)}x)`);
 
-    // Dollar volume floor (Gate only, 0 points)
     const dollarVolAvg = dollarVolSMA20_15[lastIdx];
     if (cfg.minDollarVol15m && dollarVolAvg != null && dollarVolAvg < cfg.minDollarVol15m) return null;
-    // Removed score += 1.
 
-    // Candle anatomy
-    const range = Math.max(1e-9, high15 - low15);
-    const body = Math.abs(close15 - open15);
-    const bodyPct = (body / range) * 100;
-    const closePos = (close15 - low15) / range;
+    const bodyPct    = (body / range) * 100;
+    const closePos   = (close15 - low15) / range;
     const isBearCandle = close15 < open15;
-    
-    const minBody = modeKey === 'AGGRESSIVE' ? 10 : 65;
+    const minBody    = modeKey === 'AGGRESSIVE' ? 10 : 65;
     const maxClosePos = modeKey === 'AGGRESSIVE' ? 0.80 : 0.22;
-
     if (modeKey !== 'AGGRESSIVE' && !(isBearCandle && bodyPct >= minBody && closePos <= maxClosePos)) return null;
-    score += 1; // Reduced from 2
-    reasons.push('Strong bearish candle close');
+    score += 1;
+    reasons.push('Strong bearish breakdown candle');
 
-    // Acceleration (downward) (0 points, just a gate)
     if (prev2) {
-      const accel = (prev.close - close15) - (prev2.close - prev.close);
+      const accel    = (prev.close - close15) - (prev2.close - prev.close);
       const accelPct = accel / close15;
       if (modeKey !== 'AGGRESSIVE' && cfg.accelPctMin && accelPct < cfg.accelPctMin) return null;
-      // Removed score += 1
-      if (accelPct > 0.002) {
-         score += 1;
-         reasons.push(`Acceleration (-${(accelPct * 100).toFixed(3)}%)`);
-      }
+      if (accelPct > 0.002) { score += 1; reasons.push(`Downward accel`); }
     }
 
-    // Order flow
     const flowCheck = validateOrderFlow(orderFlow, 'SHORT');
+    const missingFlowPenalty = flowCheck.missingFlow ? 3 : 0;
     if (!flowCheck.ok && modeKey !== 'AGGRESSIVE') return null;
     score += flowCheck.score;
     if (flowCheck.reasons.length > 0) reasons.push(flowCheck.reasons[0]);
 
-    score += 1; // 1H trend gate bonus
+    score += 1;
     reasons.push('1H trend confirmed (bearish)');
 
     const shortRegimeBonus = regime === 'TRENDING_DOWN' ? Math.abs(regimeScoreBonus || 0) : -(regimeScoreBonus || 0);
     score += shortRegimeBonus;
 
-    if (score < cfg.scoreMin) return null;
+    const effectiveScoreMin = cfg.scoreMin + missingFlowPenalty;
+    if (score < effectiveScoreMin) return null;
 
-    // Entry/risk calculations (SHORT)
-    const triggerBuffer = 0.0015;
-    const triggerPrice = close15 * (1 - triggerBuffer);
+    const triggerPrice = close15 * (1 - 0.0010);
     const riskPerTrade = balance * activeMode.riskPct;
-    const stopBase = Math.min(hiCoil, e20! * (1 + 0.002));
-    const atrStop = triggerPrice + (atr! * 1.8);
-    const stopLoss = Math.min(stopBase, atrStop);
+    const stopBase     = Math.min(hiCoil, e20! * (1 + 0.002));
+    const atrStop      = triggerPrice + (atr! * 1.8);
+    const minAtrStop   = triggerPrice + (atr! * 1.2);
+    const stopLoss     = Math.max(Math.min(stopBase, atrStop), minAtrStop);
     const stopDistance = Math.max(stopLoss - triggerPrice, triggerPrice * 0.004);
-    const stopPctVal = (stopDistance / triggerPrice) * 100;
-    if (modeKey !== 'AGGRESSIVE' && (stopPctVal > 2.2 || stopPctVal < 0.4)) return null;
-    const takeProfit = triggerPrice - 1.25 * stopDistance;
-    const takeProfit2 = triggerPrice - 2.5 * stopDistance;
+    const stopPctVal   = (stopDistance / triggerPrice) * 100;
+    if (modeKey !== 'AGGRESSIVE' && (stopPctVal > 2.5 || stopPctVal < 0.4)) return null;
+    const takeProfit  = triggerPrice - 1.25 * stopDistance;
+    const takeProfit2 = triggerPrice - 2.5  * stopDistance;
+    const qty         = riskPerTrade / stopDistance;
+    const sizeUSDT    = qty * triggerPrice;
 
-    const qty = riskPerTrade / stopDistance;
-    const sizeUSDT = qty * triggerPrice;
+    const zoneDistancePct = ((breakLevel - close15) / breakLevel) * 100;
+    debugLog.push(`ACCEPT: SHORT BREAKOUT score=${score} timing=${entryTiming}`);
 
     return {
       kind: 'SUPER_SNIPER', side: 'SHORT', score, reasons,
       entryPrice: triggerPrice, stopLoss, takeProfit, takeProfit2,
-      qty, sizeUSDT, atr15: atr!, volRatio
+      qty, sizeUSDT, atr15: atr!, volRatio,
+      entryType: 'BREAKOUT',
+      zoneDistancePct: parseFloat(zoneDistancePct.toFixed(3)),
+      btcRegimeAtEntry: btcRegimeLabel ?? 'UNKNOWN',
+      entryTiming,
+      debugLog
     };
   }
 }
-

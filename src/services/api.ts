@@ -12,26 +12,38 @@ export function getToken() {
 }
 
 export async function apiRequest(endpoint: string, options: RequestInit = {}) {
+  // Clean up potential double slashes if the user added one to the env var
+  const baseUrl = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const fullUrl = `${baseUrl}${cleanEndpoint}`;
+
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...options.headers,
   } as any;
 
-  const res = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  try {
+    const res = await fetch(fullUrl, {
+      ...options,
+      headers,
+    });
 
-  const data = await res.json();
-  if (!res.ok) {
-    if (res.status === 401) {
-      token = '';
-      localStorage.removeItem('gb_token');
+    const data = await res.json();
+    if (!res.ok) {
+      if (res.status === 401) {
+        token = '';
+        localStorage.removeItem('gb_token');
+      }
+      throw new Error(data.error || 'API Request failed');
     }
-    throw new Error(data.error || 'API Request failed');
+    return data;
+  } catch (err: any) {
+    if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+      throw new Error(`Connection Error: Cannot reach ${baseUrl}. Check your Vercel Environment Variables.`);
+    }
+    throw err;
   }
-  return data;
 }
 
 export const api = {

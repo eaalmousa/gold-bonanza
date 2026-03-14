@@ -139,14 +139,30 @@ export function evaluateSniperSignal(
   const range  = Math.max(1e-9, high15 - low15);
   const body   = Math.abs(close15 - open15);
 
-  // ─── GATE 4a: EXPANSION-CANDLE BLOCKER (User Request 2) ──────────
-  // Reject if trigger candle is >1.5x ATR — the move is already spent
+  // ─── GATE 4a: EXPANSION-CANDLE BLOCKER ─────────────────────────────
+  // Tightened: 1.5x → 1.1x ATR. Avg candle/ATR of 1.07x means
+  // many signals were on candles right at the old limit. Lower it.
   const candleAtrRatio = range / atr!;
-  if (candleAtrRatio > 1.5) {
-    debugLog.push(`REJECT: Expansion candle — range=${(range/atr!).toFixed(2)}x ATR > 1.5x`);
+  if (candleAtrRatio > 1.1) {
+    debugLog.push(`REJECT: Expansion candle — range=${candleAtrRatio.toFixed(2)}x ATR > 1.1x`);
     return null;
   }
-  debugLog.push(`PASS: Candle size ${candleAtrRatio.toFixed(2)}x ATR (limit 1.5x)`);
+  debugLog.push(`PASS: Candle size ${candleAtrRatio.toFixed(2)}x ATR (limit 1.1x)`);
+
+  // ─── MANDATORY RETEST CHECK FOR MODERATE EXPANSION ───────────────
+  // If candle range > 0.9x ATR (moderate expansion), require the
+  // previous candle to show acceptance: it must have closed ABOVE EMA20
+  // confirming price held the zone rather than just spiking through it.
+  if (candleAtrRatio > 0.9) {
+    const prevClose15 = prev.close;
+    const prevE20_15  = ema20_15[lastIdx - 1];
+    const prevAcceptance = prevE20_15 != null && prevClose15 >= prevE20_15 * 0.999;
+    if (!prevAcceptance) {
+      debugLog.push(`REJECT: Expanded candle (${candleAtrRatio.toFixed(2)}x ATR) without prior acceptance candle`);
+      return null;
+    }
+    debugLog.push(`PASS: Expanded candle has prior acceptance (prev closed above EMA20)`);
+  }
 
   // ─── SETUP TYPE CLASSIFIER ─────────────────────────────
   // REVERSAL: price was BELOW EMA50 recently and is now reclaiming EMA20
@@ -184,25 +200,26 @@ export function evaluateSniperSignal(
       return null;
     }
 
-    // ─── GATE 4b: LATE-ENTRY BLOCKER (User Request 1 / Finding 1+5) ───
-    // Close must not already be extended above EMA20 by more than 1.0x ATR
+    // ─── GATE 4b: LATE-ENTRY BLOCKER (tightened round 2) ─────────────
+    // Normal modes: close must not be >0.65x ATR above EMA20 (was 1.0x)
+    // Aggressive mode: hard cap at 0.75x ATR (was 1.5x)
     const extensionAboveZone = (close15 - e20_15!) / atr!;
-    if (extensionAboveZone > 1.0 && modeKey !== 'AGGRESSIVE') {
-      debugLog.push(`REJECT: Late entry — close is ${extensionAboveZone.toFixed(2)}x ATR above EMA20 (limit 1.0x)`);
+    if (extensionAboveZone > 0.65 && modeKey !== 'AGGRESSIVE') {
+      debugLog.push(`REJECT: Late entry — close is ${extensionAboveZone.toFixed(2)}x ATR above EMA20 (limit 0.65x)`);
       return null;
     }
-    if (extensionAboveZone > 1.5) { // Even in aggressive mode, 1.5x is too far
-      debugLog.push(`REJECT: Extreme late entry — ${extensionAboveZone.toFixed(2)}x ATR above zone`);
+    if (extensionAboveZone > 0.75) { // Hard cap even in aggressive mode
+      debugLog.push(`REJECT: Extreme late entry — ${extensionAboveZone.toFixed(2)}x ATR above zone (cap 0.75x)`);
       return null;
     }
 
-    // Calculate zone distance for quality report
+    // Calculate zone distance for quality report (tightened timing boundaries)
     const zoneIdeal         = (e20_15! + e50_15!) / 2; // midpoint of EMA zone
     const zoneDistancePct   = ((close15 - zoneIdeal) / zoneIdeal) * 100;
-    // Timing assessment
+    // Timing: OPTIMAL <0.20, EARLY <0.45, LATE ≥0.45 (was 0.25/0.70)
     const entryTiming: 'EARLY' | 'OPTIMAL' | 'LATE' =
-      extensionAboveZone < 0.3 ? 'OPTIMAL' :
-      extensionAboveZone < 0.7 ? 'EARLY' : 'LATE';
+      extensionAboveZone < 0.20 ? 'OPTIMAL' :
+      extensionAboveZone < 0.45 ? 'EARLY' : 'LATE';
     debugLog.push(`Zone distance: ${zoneDistancePct.toFixed(2)}%, timing: ${entryTiming}, extension: ${extensionAboveZone.toFixed(2)}x ATR`);
 
     score += 2;
@@ -378,8 +395,14 @@ export function evaluateSniperSignal(
     const triggerBuffer = modeKey === 'CONSERVATIVE' ? 0.0015 : modeKey === 'BALANCED' ? 0.0012 : 0.0010;
     const triggerPrice  = high15 * (1 + triggerBuffer);
     const chasePct      = ((triggerPrice - close15) / close15) * 100;
-    if (modeKey !== 'AGGRESSIVE' && (chasePct > 0.45 || (triggerPrice - close15) > atr! * 0.35)) {
-      debugLog.push(`REJECT: Chase check — trigger ${chasePct.toFixed(2)}% above close`);
+    // Tightened chase check: 0.45% → 0.30%
+    if (modeKey !== 'AGGRESSIVE' && (chasePct > 0.30 || (triggerPrice - close15) > atr! * 0.25)) {
+      debugLog.push(`REJECT: Chase check — trigger ${chasePct.toFixed(2)}% above close (limit 0.30%)`);
+      return null;
+    }
+    // Even in aggressive mode, block extreme chasing
+    if (chasePct > 0.55 || (triggerPrice - close15) > atr! * 0.45) {
+      debugLog.push(`REJECT: Extreme chase — trigger ${chasePct.toFixed(2)}% above close`);
       return null;
     }
 
@@ -404,11 +427,11 @@ export function evaluateSniperSignal(
     const sizeUSDT    = qty * triggerPrice;
 
     // ─── ZONE DISTANCE for quality report ────────────────────────
-    const zoneIdeal       = (e20_15! + e50_15!) / 2;
     const zoneDistPct     = ((close15 - zoneIdeal) / zoneIdeal) * 100;
     const extAbove        = (close15 - e20_15!) / atr!;
+    // Match tightened boundaries: OPTIMAL <0.20, LATE ≥0.45
     const finalTiming: 'EARLY' | 'OPTIMAL' | 'LATE' =
-      extAbove < 0.25 ? 'OPTIMAL' : extAbove < 0.65 ? 'EARLY' : 'LATE';
+      extAbove < 0.20 ? 'OPTIMAL' : extAbove < 0.45 ? 'EARLY' : 'LATE';
 
     debugLog.push(`ACCEPT: ${entryType} ${side} score=${score} trigger=${triggerPrice.toFixed(4)} SL=${stopLoss.toFixed(4)}`);
 

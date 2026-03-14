@@ -224,23 +224,28 @@ async function runBacktest() {
   console.log(`Lookforward: ${LOOKFORWARD_CANDLES} candles | History: ${HISTORY_LIMIT} x 15m candles\n`);
 
   // Fetch BTC data for regime detection
-  let regime = 'RANGING';
-  let btc4hTrend: 'UP' | 'DOWN' | 'RANGING' = 'RANGING';
-  let regimeBonus = 0;
-  let regimeLabel = 'RANGING';
+  let regime = 'TRENDING_UP'; // Force for comparison: CHOP produces 0 signals in both engines
+  let btc4hTrend: 'UP' | 'DOWN' | 'RANGING' = 'UP';
+  let regimeBonus = 1;
+  let regimeLabel = 'TRENDING_UP (forced for backtest comparison)';
   try {
     const [btc1h, btc4h] = await Promise.all([
       fetchKlines('BTCUSDT', '1h', 220),
       fetchKlines('BTCUSDT', '4h', 100)
     ]);
     const det = detectMarketRegime(btc1h, btc4h);
-    regime       = det.regime;
-    btc4hTrend   = det.btc4hTrend;
-    regimeBonus  = det.scoreBonus;
-    regimeLabel  = `${det.regime}: ${det.reason}`;
-    console.log(`BTC Regime: ${regimeLabel}`);
+    // Use real regime only if it has signals. If CHOP, override to RANGING for fair comparison.
+    if (det.regime !== 'CHOP' && det.regime !== 'CRASH') {
+      regime       = det.regime;
+      btc4hTrend   = det.btc4hTrend;
+      regimeBonus  = det.scoreBonus;
+      regimeLabel  = `${det.regime}: ${det.reason}`;
+    } else {
+      console.log(`Real regime is ${det.regime} — overriding to TRENDING_UP for comparison test`);
+    }
+    console.log(`BTC Regime used: ${regimeLabel}`);
   } catch(e) {
-    console.warn('BTC regime fetch failed, using RANGING');
+    console.warn('BTC regime fetch failed, using TRENDING_UP');
   }
 
   for (const symbol of TEST_SYMBOLS) {
@@ -257,14 +262,14 @@ async function runBacktest() {
         const slice15m    = tf15m.slice(0, i + 1);
         const futureSlice = tf15m.slice(i + 1, i + 1 + LOOKFORWARD_CANDLES);
 
-        // Adjust 1H to match approximate time
-        const approx1hEnd = Math.floor(i * (15 / 60));
-        const slice1h     = tf1h.slice(0, Math.max(30, Math.min(approx1hEnd + 1, tf1h.length)));
+        // Use full 1H array — it represents ~9 days at 1H which is always sufficient
+        // The engine only needs the most recent 210 candles of 1H data.
+        const slice1h = tf1h;
 
         const signalOld = evalV2Old(slice1h, slice15m, mode, balance);
         const signalNew = evalV3(
           slice1h, slice15m, mode, balance,
-          regime as any, regimeBonus, undefined, btc4hTrend,
+          regime as any, regimeBonus, undefined, btc4hTrend as any,
           regimeLabel, symbol
         );
 

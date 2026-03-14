@@ -107,6 +107,13 @@ export async function runBonanzaCore(
   }
 
   // ─── STEP 4: Scan symbols in batches ─────────────────────────
+  // IMPORTANT: Promise.allSettled runs all batch items in parallel.
+  // signalsThisCycle and newSignalsThisScan CANNOT be checked reliably
+  // inside the parallel callbacks — doing so creates a race condition where
+  // multiple signals pass before any counter is updated.
+  //
+  // FIX: Each batch callback collects a "candidate" result. After the batch
+  // settles, we evaluate candidates sequentially to enforce caps correctly.
   let newSignalsThisScan = 0;
   const signalsThisCycle = new Set<string>();
   const defaultPortfolio: PortfolioSnapshot = portfolio ?? {
@@ -114,8 +121,14 @@ export async function runBonanzaCore(
     currentScanCycleStart: Date.now()
   };
 
+  type BatchCandidate = {
+    symbol: string;
+    sniper?: { signal: ReturnType<typeof evaluateSniperSignal>; price: number; change24h: number };
+    breakout?: { signal: ReturnType<typeof evaluateBreakoutSignal>; price: number; change24h: number };
+  };
+
   for (let batch = 0; batch < symbols.length; batch += BATCH_SIZE) {
-    // Respect correlation limit — stop adding signals once we've hit the ceiling
+    // Check cap BEFORE starting each batch
     if (newSignalsThisScan >= corrLimit.maxNewPositions) {
       console.log(`[Scanner] Correlation cap reached (${corrLimit.maxNewPositions}) — stopping early`);
       break;
@@ -123,73 +136,60 @@ export async function runBonanzaCore(
 
     const chunk = symbols.slice(batch, batch + BATCH_SIZE);
 
-    await Promise.allSettled(
-      chunk.map(async (symbol) => {
-        try {
-          const [tf1h, tf15m] = await Promise.all([
-            fetchKlines(symbol, '1h', 220),
-            fetchKlines(symbol, '15m', 110)
-          ]);
-
-          const lastClose  = tf15m?.length ? tf15m[tf15m.length - 1].close : 0;
-          const change24h  = tickers[symbol] ?? 0;
-
-          if (lastClose > 0) {
-            marketRows.push({ symbol, lastPrice: lastClose, changePct: change24h });
-          }
-
-          const symbolFlow = orderFlowSnapshots?.[symbol];
-
-          // ─── Sniper (pullback) ──────────────────────────
-          const sniper = evaluateSniperSignal(
-            tf1h, tf15m, activeMode, balance,
-            regime, regimeScoreBonus, symbolFlow, btc4hTrend,
-            regimeLabel, symbol
-          );
-          if (sniper) {
-            // Portfolio exposure check
-            const exposureCheck = checkPortfolioExposure(
-              symbol, sniper.side, regime as any, btc4hTrend,
-              defaultPortfolio, signalsThisCycle
-            );
-            if (!exposureCheck.allowed) {
-              console.log(`[Portfolio] ${symbol} SNIPER blocked: ${exposureCheck.reason}`);
-            } else {
-              sniperSignals.push({ symbol, signal: sniper, price: lastClose, change24h, timestamp: Date.now() });
-              signalsThisCycle.add(symbol);
-              if (sniper.debugLog?.length) {
-                console.log(`[Sniper ACCEPT] ${symbol} | ${sniper.entryType} | ${sniper.entryTiming} | score=${sniper.score} | zone dist=${sniper.zoneDistancePct}%`);
-              }
-              newSignalsThisScan++;
-            }
-          }
-
-          // ─── Breakout (super sniper) ────────────────────
-          const breakout = evaluateBreakoutSignal(
-            tf1h, tf15m, activeMode, balance,
-            regime, regimeScoreBonus, symbolFlow, btc4hTrend,
-            regimeLabel, symbol
-          );
-          if (breakout) {
-            const beCheck = checkPortfolioExposure(
-              symbol, breakout.side, regime as any, btc4hTrend,
-              defaultPortfolio, signalsThisCycle
-            );
-            if (!beCheck.allowed) {
-              console.log(`[Portfolio] ${symbol} BREAKOUT blocked: ${beCheck.reason}`);
-            } else {
-              breakoutSignals.push({ symbol, signal: breakout, price: lastClose, change24h, timestamp: Date.now() });
-              signalsThisCycle.add(symbol);
-              console.log(`[Breakout ACCEPT] ${symbol} | ${breakout.entryTiming} | score=${breakout.score}`);
-              newSignalsThisScan++;
-            }
-          }
-
-        } catch (e) {
-          // Skip failing symbols silently
-        }
+    // ── Collect candidates in parallel (no counters touched here) ──
+    const candidateResults = await Promise.allSettled(
+      chunk.map(async (symbol): Promise<BatchCandidate> => {
+        const [tf1h, tf15m] = await Promise.all([
+          fetchKlines(symbol, '1h', 220),
+          fetchKlines(symbol, '15m', 110)
+        ]);
+        const lastClose = tf15m?.length ? tf15m[tf15m.length - 1].close : 0;
+        const change24h = tickers[symbol] ?? 0;
+        if (lastClose > 0) marketRows.push({ symbol, lastPrice: lastClose, changePct: change24h });
+        const symbolFlow = orderFlowSnapshots?.[symbol];
+        const sniper  = evaluateSniperSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, symbolFlow, btc4hTrend, regimeLabel, symbol);
+        const breakout = evaluateBreakoutSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, symbolFlow, btc4hTrend, regimeLabel, symbol);
+        return {
+          symbol,
+          sniper:  sniper  ? { signal: sniper,  price: lastClose, change24h } : undefined,
+          breakout: breakout ? { signal: breakout, price: lastClose, change24h } : undefined
+        };
       })
     );
+
+    // ── Evaluate candidates SEQUENTIALLY to enforce caps accurately ──
+    for (const result of candidateResults) {
+      if (result.status !== 'fulfilled') continue;
+      const { symbol, sniper, breakout } = result.value;
+
+      if (sniper?.signal && newSignalsThisScan < corrLimit.maxNewPositions) {
+        const check = checkPortfolioExposure(symbol, sniper.signal.side, regime as any, btc4hTrend, defaultPortfolio, signalsThisCycle);
+        if (check.allowed) {
+          sniperSignals.push({ symbol, signal: sniper.signal, price: sniper.price, change24h: sniper.change24h, timestamp: Date.now() });
+          signalsThisCycle.add(symbol);
+          newSignalsThisScan++;
+          if (sniper.signal.debugLog?.length) {
+            console.log(`[Sniper✅] ${symbol} | ${sniper.signal.entryType} | ${sniper.signal.entryTiming} | score=${sniper.signal.score}`);
+          }
+        } else {
+          console.log(`[Portfolio🚫] ${symbol} sniper: ${check.reason}`);
+        }
+      }
+
+      if (breakout?.signal && newSignalsThisScan < corrLimit.maxNewPositions) {
+        const check = checkPortfolioExposure(symbol, breakout.signal.side, regime as any, btc4hTrend, defaultPortfolio, signalsThisCycle);
+        if (check.allowed) {
+          breakoutSignals.push({ symbol, signal: breakout.signal, price: breakout.price, change24h: breakout.change24h, timestamp: Date.now() });
+          signalsThisCycle.add(symbol);
+          newSignalsThisScan++;
+          console.log(`[Breakout✅] ${symbol} | ${breakout.signal.entryTiming} | score=${breakout.signal.score}`);
+        } else {
+          console.log(`[Portfolio🚫] ${symbol} breakout: ${check.reason}`);
+        }
+      }
+    }
+
+
 
     processed += chunk.length;
     onProgress?.(Math.round((processed / symbols.length) * 100));

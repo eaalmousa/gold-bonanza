@@ -109,11 +109,10 @@ export function evaluateBreakoutSignal(
   const range = Math.max(1e-9, high15 - low15);
   const body  = Math.abs(close15 - open15);
 
-  // ─── EXPANSION-CANDLE BLOCKER ─────────────────────────
+  // ─── EXPANSION-CANDLE BLOCKER (tightened: 2.0x → 1.4x) ─────────
   const candleAtrRatio = range / atr!;
-  if (candleAtrRatio > 2.0) {
-    // Breakouts tolerate slightly larger candles but not blow-off tops (2.0x)
-    debugLog.push(`REJECT: Expansion candle on breakout ${candleAtrRatio.toFixed(2)}x ATR > 2.0`);
+  if (candleAtrRatio > 1.4) {
+    debugLog.push(`REJECT: Expansion candle on breakout ${candleAtrRatio.toFixed(2)}x ATR > 1.4x`);
     return null;
   }
 

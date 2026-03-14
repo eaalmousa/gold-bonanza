@@ -20,31 +20,31 @@ export const CORRELATION_GROUPS: Record<string, string[]> = {
   // ETH ecosystem: all follow ETH closely
   ETH_LAYER2:    ['ARBUSDT', 'OPUSDT', 'MATICUSDT', 'IMXUSDT', 'LRCUSDT', 'STXUSDT'],
 
-  // Solana cluster
-  SOL_CLUSTER:   ['SOLUSDT', 'RAYUSDT', 'JITOUSDT', 'BONKUSDT'],
+  // Solana cluster (BONKUSDT lives here only)
+  SOL_CLUSTER:   ['SOLUSDT', 'BONKUSDT'],
 
   // Layer 1 alts
-  LAYER1_ALTS:   ['AVAXUSDT', 'NEARUSDT', 'APTUSDT', 'SEIUSDT', 'SUIUSDT', 'INJUSDT', 'TONUSDT'],
+  LAYER1_ALTS:   ['AVAXUSDT', 'NEARUSDT', 'APTUSDT', 'SEIUSDT', 'INJUSDT', 'TONUSDT'],
 
   // DeFi bluechips
   DEFI_BLUE:     ['AAVEUSDT', 'UNIUSDT', 'CRVUSDT', 'MKRUSDT', 'SNXUSDT', 'COMPUSDT', 'BALUSDT'],
 
   // AI/Compute narrative
-  AI_COMPUTE:    ['FETUSDT', 'AGIXUSDT', 'RNDRUSDT', 'OCEAANUSDT', 'GRTUSDT'],
+  AI_COMPUTE:    ['FETUSDT', 'AGIXUSDT', 'RNDRUSDT', 'OCEANUSDT', 'GRTUSDT'],  // fixed: OCEANUSDT
 
-  // Meme tier
-  MEME_COINS:    ['DOGEUSDT', 'SHIBUSDT', 'PEPEUSDT', 'FLOKIUSDT', 'BONKUSDT'],
+  // Meme tier (no BONKUSDT — already in SOL_CLUSTER)
+  MEME_COINS:    ['DOGEUSDT', 'PEPEUSDT'],
 
-  // Oracle + infrastructure
-  INFRA:         ['LINKUSDT', 'BANDUSDT', 'APIUSDT', 'PYTH'],
+  // Oracle + data infrastructure
+  INFRA:         ['LINKUSDT', 'BANDUSDT', 'PYTHUSDT'],  // fixed: PYTHUSDT, removed APIUSDT
 
   // Gaming / metaverse
   GAMING_META:   ['AXSUSDT', 'SANDUSDT', 'MANAUSDT', 'GALAUSDT', 'ENJUSDT'],
 
   // XRP cluster (payment tokens)
-  PAYMENT:       ['XRPUSDT', 'XLMUSDT', 'ALGOUSDT', 'XMRUSDT'],
+  PAYMENT:       ['XRPUSDT', 'XLMUSDT', 'ALGOUSDT'],
 
-  // Mid-cap alts (grouped by typical volatility regime)
+  // Mid-cap alts
   MID_ALTS_A:    ['LDOUSDT', 'BLURUSDT', 'GMXUSDT', '1INCHUSDT', 'ENSUSDT'],
   MID_ALTS_B:    ['RUNEUSDT', 'KAVAUSDT', 'ATOMUSDT', 'EGLDUSDT', 'QNTUSDT'],
 };
@@ -177,22 +177,22 @@ export function checkPortfolioExposure(
     }
   }
 
-  // ─── 4. SAME-WAVE FILTER (no 2 longs in same scan cycle) ─────────
-  // Prevents opening ETHUSDT long and ARBUSDT long in the same scan
-  // since they will behave identically and double up on the same move.
-  if (side === 'LONG' && signalsThisCycle.size > 0) {
-    // Check if any signal this cycle is in the same correlation group
-    if (group) {
-      const groupSymbols = CORRELATION_GROUPS[group];
-      const alreadyInGroup = [...signalsThisCycle].some(s =>
-        groupSymbols.includes(s.toUpperCase()) && s.toUpperCase() !== symbol.toUpperCase()
-      );
-      if (alreadyInGroup) {
-        return {
-          allowed: false,
-          reason: `Same-wave filter: correlated ${group} signal already queued this cycle`
-        };
-      }
+  // ─── 4. SAME-WAVE FILTER (both LONGs and SHORTs) ─────────────
+  // Prevents two signals in the same correlated group being opened in
+  // the same scan cycle, regardless of direction.
+  // Rationale for including SHORTs: a correlated short wave is just as
+  // dangerous as a correlated long wave — it doubles exposure to the
+  // same catalyst and prevents orderly position sizing.
+  if (signalsThisCycle.size > 0 && group) {
+    const groupSymbols = CORRELATION_GROUPS[group];
+    const alreadyInGroup = [...signalsThisCycle].some(s =>
+      groupSymbols.includes(s.toUpperCase()) && s.toUpperCase() !== symbol.toUpperCase()
+    );
+    if (alreadyInGroup) {
+      return {
+        allowed: false,
+        reason: `Same-wave filter (${side}): correlated ${group} signal already queued this cycle`
+      };
     }
   }
 

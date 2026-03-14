@@ -8,33 +8,39 @@ export default function SystemStatus() {
   const { activeMode, setMode, activeTrades, symbols, isScannerActive, setScannerActive } = useTradingStore();
 
   const [config, setConfig] = useState({
-    riskPct: activeMode.riskPct,
-    maxTrades: activeMode.maxTrades,
-    leverage: activeMode.leverage,
-    slEnabled: true,
+    riskPct: 0.04,
+    maxTrades: 4,
+    leverage: 5,
+    slEnabled: false,
     tpEnabled: true,
-    tp1RR: 1.25,
-    tp2RR: 2.50,
-    minScore: 15
+    tp1RR: 0.35,
+    tp2RR: 0.50,
+    minScore: 17
   });
+  const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
     // Keep it synced with backend
     api.getAutoTradeConfig()
-      .then(res => setConfig({
-        riskPct: res.riskPerTrade,
-        maxTrades: res.maxConcurrent,
-        leverage: res.leverage,
-        slEnabled: res.slEnabled ?? true,
-        tpEnabled: res.tpEnabled ?? true,
-        tp1RR: res.tp1RR ?? 1.25,
-        tp2RR: res.tp2RR ?? 2.50,
-        minScore: res.minScore ?? 15
-      }))
+      .then(res => {
+        const newCfg = {
+          riskPct: res.riskPerTrade ?? 0.04,
+          maxTrades: res.maxConcurrent ?? 4,
+          leverage: res.leverage ?? 5,
+          slEnabled: res.slEnabled ?? false,
+          tpEnabled: res.tpEnabled ?? true,
+          tp1RR: res.tp1RR ?? 0.35,
+          tp2RR: res.tp2RR ?? 0.50,
+          minScore: res.minScore ?? 17
+        };
+        setConfig(newCfg);
+        setIsLoaded(true);
+      })
       .catch(console.error);
   }, []);
 
   const saveConfig = (newConfig: typeof config) => {
+    if (!isLoaded) return; // Don't save if we haven't loaded the real cloud config yet
     api.updateAutoTradeConfig({
       riskPerTrade: newConfig.riskPct,
       maxConcurrent: newConfig.maxTrades,

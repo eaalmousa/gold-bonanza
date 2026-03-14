@@ -40,6 +40,7 @@ tradeRouter.get('/autotrade/status', (req, res) => {
 
 tradeRouter.get('/autotrade/config', (req, res) => {
   res.json({
+    enabled: isAutoTradingEnabled,
     riskPerTrade: RISK_PER_TRADE,
     maxConcurrent: MAX_CONCURRENT_TRADES,
     leverage: LEVERAGE,

@@ -21,12 +21,28 @@ import { api } from './services/api';
 function App() {
   const {
     sniperSignals, breakoutSignals, marketRows,
-    scannerRunning, deploySignal, setBinanceStatus
+    scannerRunning, deploySignal, setBinanceStatus,
+    setScannerActive
   } = useTradingStore();
 
   const { scanProgress, lastScanAt, scanError } = useScanner();
   
-  // Check binance connectivity
+  // 1. Initial Sync with Cloud State
+  useEffect(() => {
+    const sync = async () => {
+      try {
+        const config = await api.getAutoTradeConfig();
+        if (config.enabled !== undefined) {
+          setScannerActive(config.enabled);
+        }
+      } catch (e) {
+        console.warn('[Sync] Could not fetch initial state from cloud');
+      }
+    };
+    sync();
+  }, [setScannerActive]);
+
+  // 2. Check binance connectivity
   useEffect(() => {
     const check = async () => {
       try {

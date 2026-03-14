@@ -1,20 +1,14 @@
-import { useState, useEffect } from 'react';
 import { useTradingStore } from '../store/tradingStore';
 import { Crosshair, Power, Wifi, WifiOff } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function Header() {
-  const { balance, setBalance, isDataLive, activeMode, activeTrades, binanceStatus } = useTradingStore();
-  const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
-
-  useEffect(() => {
-    api.getAutoTradeStatus().then(res => setAutoTradeEnabled(res.enabled)).catch(console.error);
-  }, []);
+  const { balance, setBalance, isDataLive, activeMode, activeTrades, binanceStatus, isScannerActive, setScannerActive } = useTradingStore();
 
   const handleToggleAutoTrade = async () => {
     try {
-      const res = await api.toggleAutoTrade(!autoTradeEnabled);
-      setAutoTradeEnabled(res.isAutoTradingEnabled);
+      const res = await api.toggleAutoTrade(!isScannerActive);
+      setScannerActive(res.isAutoTradingEnabled);
     } catch (e) {
       console.error(e);
     }
@@ -112,14 +106,14 @@ export default function Header() {
             padding: '10px 20px',
             borderRadius: 'var(--radius-full)',
             fontSize: 11, fontWeight: 900,
-            border: `1px solid ${autoTradeEnabled ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
-            background: autoTradeEnabled ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-            color: autoTradeEnabled ? 'var(--green)' : 'var(--red)',
+            border: `1px solid ${isScannerActive ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+            background: isScannerActive ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+            color: isScannerActive ? 'var(--green)' : 'var(--red)',
             letterSpacing: '0.2em', cursor: 'pointer', transition: 'all 0.2s'
           }}
         >
           <Power size={14} />
-          AUTO-TRADE: {autoTradeEnabled ? 'ON' : 'OFF'}
+          AUTO-TRADE: {isScannerActive ? 'ON' : 'OFF'}
         </button>
       </div>
 

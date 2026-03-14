@@ -136,15 +136,15 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     // 1. Filter out symbols already in active trades (Hub/Live)
     const activeSymbols = new Set(state.activeTrades.map(t => t.symbol.toUpperCase()));
     
-    // 2. Identify which symbols are currently QUEUED in the existing store
-    const existingQueued = new Set(
-      state.sniperSignals.filter(s => s.status === 'QUEUED').map(s => s.symbol.toUpperCase())
+    // 2. Identify which stable IDs are currently QUEUED in the existing store
+    const existingQueuedIds = new Set(
+      state.sniperSignals.filter(s => s.status === 'QUEUED').map(s => s.id)
     );
 
-    // 3. Filter new signals: must not be active AND must not be already queued
+    // 3. Filter new signals: must not be active AND must not be already queued by ID
     const filtered = signals.filter(s => 
       !activeSymbols.has(s.symbol.toUpperCase()) && 
-      !existingQueued.has(s.symbol.toUpperCase())
+      !existingQueuedIds.has(s.id)
     );
 
     // 4. Merge: Preserve existing QUEUED signals, add newly filtered DETECTED ones
@@ -159,13 +159,13 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   setBreakoutSignals: (signals) => {
     const state = get();
     const activeSymbols = new Set(state.activeTrades.map(t => t.symbol.toUpperCase()));
-    const existingQueued = new Set(
-      state.breakoutSignals.filter(s => s.status === 'QUEUED').map(s => s.symbol.toUpperCase())
+    const existingQueuedIds = new Set(
+      state.breakoutSignals.filter(s => s.status === 'QUEUED').map(s => s.id)
     );
 
     const filtered = signals.filter(s => 
       !activeSymbols.has(s.symbol.toUpperCase()) && 
-      !existingQueued.has(s.symbol.toUpperCase())
+      !existingQueuedIds.has(s.id)
     );
 
     const merged = [

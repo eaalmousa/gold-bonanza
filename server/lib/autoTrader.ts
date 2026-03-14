@@ -3,6 +3,11 @@ import { runBonanzaCore } from '../../src/engines/scanner';
 import { MODES } from '../../src/types/trading';
 import { DEFAULT_SYMBOLS } from '../../src/types/trading';
 
+import fs from 'fs';
+import path from 'path';
+
+const STATE_FILE = path.join(process.cwd(), 'trader_state.json');
+
 export let RISK_PER_TRADE = parseFloat(process.env.RISK_PER_TRADE || '0.10');
 export let MAX_CONCURRENT_TRADES = parseInt(process.env.MAX_CONCURRENT_TRADES || '8', 10);
 export let LEVERAGE = parseInt(process.env.LEVERAGE || '10', 10);
@@ -11,7 +16,36 @@ export let TP_ENABLED = true;
 export let TP1_RR = 1.25;
 export let TP2_RR = 2.50;
 export let MIN_SCORE = parseInt(process.env.MIN_SCORE_TO_DEPLOY || '15', 10);
-const BASE_CAPITAL = parseFloat(process.env.BASE_CAPITAL || '300'); // Default 300 USD as requested
+export let isAutoTradingEnabled = false;
+const BASE_CAPITAL = parseFloat(process.env.BASE_CAPITAL || '300');
+
+// Load persisted state on startup
+try {
+  if (fs.existsSync(STATE_FILE)) {
+    const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    RISK_PER_TRADE = saved.RISK_PER_TRADE ?? RISK_PER_TRADE;
+    MAX_CONCURRENT_TRADES = saved.MAX_CONCURRENT_TRADES ?? MAX_CONCURRENT_TRADES;
+    LEVERAGE = saved.LEVERAGE ?? LEVERAGE;
+    SL_ENABLED = saved.SL_ENABLED ?? SL_ENABLED;
+    TP_ENABLED = saved.TP_ENABLED ?? TP_ENABLED;
+    TP1_RR = saved.TP1_RR ?? TP1_RR;
+    TP2_RR = saved.TP2_RR ?? TP2_RR;
+    MIN_SCORE = saved.MIN_SCORE ?? MIN_SCORE;
+    isAutoTradingEnabled = saved.isAutoTradingEnabled ?? isAutoTradingEnabled;
+    console.log(`[Persistence] Loaded state: AUTO=${isAutoTradingEnabled} MIN_SCORE=${MIN_SCORE}`);
+  }
+} catch (e) {
+  console.warn('[Persistence] Failed to load state file');
+}
+
+function saveState() {
+  try {
+    const data = { RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED, TP1_RR, TP2_RR, MIN_SCORE, isAutoTradingEnabled };
+    fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.warn('[Persistence] Failed to save state');
+  }
+}
 
 export function updateTraderConfig(config: { 
   riskPerTrade?: number; 
@@ -32,14 +66,14 @@ export function updateTraderConfig(config: {
   if (config.tp2RR !== undefined) TP2_RR = config.tp2RR;
   if (config.minScore !== undefined) MIN_SCORE = config.minScore;
   
-  logMsg(`Config Updated: RISK=${(RISK_PER_TRADE*100).toFixed(1)}% MAX_TRADES=${MAX_CONCURRENT_TRADES} LEVERAGE=${LEVERAGE}x MIN_SCORE=${MIN_SCORE} SL=${SL_ENABLED} TP=${TP_ENABLED} TP1=${TP1_RR}R TP2=${TP2_RR}R`);
+  saveState();
+  logMsg(`Config Updated & Saved: MIN_SCORE=${MIN_SCORE} SL=${SL_ENABLED} TP=${TP_ENABLED}`);
 }
-
-export let isAutoTradingEnabled = false;
 
 export function toggleAutoTrade(enabled: boolean) {
   isAutoTradingEnabled = enabled;
-  logMsg(`State changed to: ${enabled ? 'ON' : 'OFF'}`);
+  saveState();
+  logMsg(`State changed and saved to: ${enabled ? 'ON' : 'OFF'}`);
 }
 
 export const tradeLogs: string[] = [];

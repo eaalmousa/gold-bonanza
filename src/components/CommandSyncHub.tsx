@@ -9,8 +9,11 @@ export default function CommandSyncHub() {
   const [binanceConnected, setBinanceConnected] = useState(false);
   const [closingSymbols, setClosingSymbols] = useState<Set<string>>(new Set());
 
-  // Also pull from local store (manually-deployed trades)
-  const { activeTrades, removeActiveTrade } = useTradingStore();
+  // Pull from local store (manually-deployed trades and queued signals)
+  const { 
+    activeTrades, sniperSignals, breakoutSignals, 
+    removeActiveTrade, deploySignal 
+  } = useTradingStore();
 
   useEffect(() => {
     let mounted = true;
@@ -65,9 +68,15 @@ export default function CommandSyncHub() {
   };
 
   // Merge: Binance positions take priority; local trades fill in the rest
-  const binanceSymbols = new Set(binancePositions.map(p => p.symbol));
-  const localOnly = activeTrades.filter(t => !binanceSymbols.has(t.symbol));
-  const totalCount = binancePositions.length + localOnly.length;
+  const binanceSymbols = new Set(binancePositions.map(p => p.symbol.toUpperCase()));
+  const localOnly = activeTrades.filter(t => !binanceSymbols.has(t.symbol.toUpperCase()));
+  
+  // Signals currently sitting in the hub awaiting deployment
+  const pendingSniper = sniperSignals.filter(s => s.status === 'QUEUED');
+  const pendingBreakout = breakoutSignals.filter(s => s.status === 'QUEUED');
+  const allPending = [...pendingSniper, ...pendingBreakout];
+  
+  const totalCount = binancePositions.length + localOnly.length + allPending.length;
 
   return (
     <section>
@@ -111,6 +120,53 @@ export default function CommandSyncHub() {
         </div>
       ) : (
         <div className="trades-grid">
+
+          {/* ── Pending (Queued) signals ── */}
+          {allPending.map((row, i) => {
+            const sym = row.symbol.replace('USDT', '');
+            return (
+              <div key={`pending-${row.id}`} className="opportunity-card card-entry" style={{
+                padding: '24px 22px', background: 'rgba(212,175,55,0.02)',
+                borderColor: 'var(--gold)', animationDelay: `${i * 0.08}s`,
+                boxShadow: '0 0 20px rgba(212,175,55,0.05)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <div>
+                    <div className="font-mono" style={{ fontWeight: 900, fontSize: 16, fontStyle: 'italic' }}>
+                      {sym}<span style={{ color: 'var(--text-muted)', fontSize: 11 }}>USDT</span>
+                    </div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--gold-light)', letterSpacing: '0.1em', marginTop: 2 }}>
+                       QUEUED {row.signal.side}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => deploySignal(row.signal, row.symbol)}
+                    className="premium-btn"
+                    style={{ padding: '8px 16px', fontSize: 10 }}
+                  >
+                    DEPLOY NOW
+                  </button>
+                </div>
+                <div style={{
+                  padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(212,175,55,0.05)',
+                  border: '1px solid rgba(212,175,55,0.1)', textAlign: 'center', marginBottom: 12
+                }}>
+                  <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 800 }}>MAPPING STATUS</div>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--gold)' }}>AWAITING COMMAND EXECUTION</div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  <div style={{ padding: '6px 8px', borderRadius: 'var(--radius-sm)', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ fontSize: 8, color: 'var(--text-muted)', fontWeight: 800 }}>ENTRY</div>
+                    <div className="font-mono" style={{ fontSize: 10, fontWeight: 900 }}>{fmtPrice(row.signal.entryPrice)}</div>
+                  </div>
+                  <div style={{ padding: '6px 8px', borderRadius: 'var(--radius-sm)', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ fontSize: 8, color: 'var(--text-muted)', fontWeight: 800 }}>SIZE</div>
+                    <div className="font-mono" style={{ fontSize: 10, fontWeight: 900 }}>${row.signal.sizeUSDT.toFixed(2)}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
 
           {/* ── Binance live positions ── */}
           {binancePositions.map((pos, i) => {

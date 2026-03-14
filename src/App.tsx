@@ -21,7 +21,7 @@ import { api } from './services/api';
 function App() {
   const {
     sniperSignals, breakoutSignals, marketRows,
-    scannerRunning, deploySignal, setBinanceStatus,
+    scannerRunning, queueSignal, setBinanceStatus,
     setScannerActive
   } = useTradingStore();
 
@@ -136,8 +136,8 @@ function App() {
       <div className="terminal-panel" style={{ padding: '32px' }}>
         <div className="sections-stack" style={{ gap: 36 }}>
           <SniperRadar />
-          <BreakoutSignals signals={breakoutSignals} onDeploy={(row) => deploySignal(row.signal, row.symbol)} />
-          <SniperSignals signals={sniperSignals} onDeploy={(row) => deploySignal(row.signal, row.symbol)} />
+          <BreakoutSignals signals={breakoutSignals} onDeploy={(row) => queueSignal(row.id, 'breakout')} />
+          <SniperSignals signals={sniperSignals} onDeploy={(row) => queueSignal(row.id, 'SNIPER')} />
         </div>
       </div>
 

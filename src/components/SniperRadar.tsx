@@ -4,10 +4,11 @@ import { useTradingStore } from '../store/tradingStore';
 
 export default function SniperRadar() {
   const { sniperSignals } = useTradingStore();
+  const detectedSignals = sniperSignals.filter(s => s.status === 'DETECTED');
 
   // Stable blip positions — memoized so they don't jump on every render
   const blips = useMemo(() =>
-    sniperSignals.slice(0, 6).map((row, i) => {
+    detectedSignals.slice(0, 6).map((row, i) => {
       const sector  = (i * 67 + 30) % 360;
       const radians = (sector * Math.PI) / 180;
       const radius  = 28 + (i % 3) * 18;
@@ -150,7 +151,7 @@ export default function SniperRadar() {
           flex: '2 1 400px', display: 'flex', flexDirection: 'column',
           gap: 12, maxHeight: 320, overflowY: 'auto',
         }} className="custom-scrollbar">
-          {sniperSignals.slice(0, 10).map((row, i) => {
+          {detectedSignals.slice(0, 10).map((row, i) => {
             const sig     = row.signal;
             const isSuper = sig.kind === 'SUPER_SNIPER';
             const isLong  = sig.side === 'LONG';
@@ -199,7 +200,7 @@ export default function SniperRadar() {
               </div>
             );
           })}
-          {sniperSignals.length === 0 && (
+          {detectedSignals.length === 0 && (
             <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12, letterSpacing: '0.1em' }}>
               NO SIGNAL HISTORY AVAILABLE
             </div>

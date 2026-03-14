@@ -165,11 +165,19 @@ export async function runBonanzaCore(
       if (sniper?.signal && newSignalsThisScan < corrLimit.maxNewPositions) {
         const check = checkPortfolioExposure(symbol, sniper.signal.side, regime as any, btc4hTrend, defaultPortfolio, signalsThisCycle);
         if (check.allowed) {
-          sniperSignals.push({ symbol, signal: sniper.signal, price: sniper.price, change24h: sniper.change24h, timestamp: Date.now() });
+          const now = Date.now();
+          // Window ID to 10 minutes to maintain stability during a trend move
+          const windowId = Math.floor(now / 600000); 
+          const id = `${symbol}-SNIPER-${windowId}`;
+          sniperSignals.push({ 
+            symbol, signal: sniper.signal, price: sniper.price, 
+            change24h: sniper.change24h, timestamp: now,
+            id, status: 'DETECTED'
+          });
           signalsThisCycle.add(symbol);
           newSignalsThisScan++;
           if (sniper.signal.debugLog?.length) {
-            console.log(`[Sniper✅] ${symbol} | ${sniper.signal.entryType} | ${sniper.signal.entryTiming} | score=${sniper.signal.score}`);
+            console.log(`[Sniper✅] ${symbol} | ${sniper.signal.entryType} | ${sniper.signal.entryTiming} | score=${sniper.signal.score} | id=${id}`);
           }
         } else {
           console.log(`[Portfolio🚫] ${symbol} sniper: ${check.reason}`);
@@ -180,10 +188,17 @@ export async function runBonanzaCore(
         if (breakout.signal.entryType === 'RETEST_CONFIRMED') {
           const check = checkPortfolioExposure(symbol, breakout.signal.side, regime as any, btc4hTrend, defaultPortfolio, signalsThisCycle);
           if (check.allowed) {
-            breakoutSignals.push({ symbol, signal: breakout.signal, price: breakout.price, change24h: breakout.change24h, timestamp: Date.now() });
+            const now = Date.now();
+            const windowId = Math.floor(now / 600000);
+            const id = `${symbol}-BREAKOUT-${windowId}`;
+            breakoutSignals.push({ 
+              symbol, signal: breakout.signal, price: breakout.price, 
+              change24h: breakout.change24h, timestamp: now,
+              id, status: 'DETECTED'
+            });
             signalsThisCycle.add(symbol);
             newSignalsThisScan++;
-            console.log(`[Breakout✅] ${symbol} | RETEST CONFIRMED | score=${breakout.signal.score}`);
+            console.log(`[Breakout✅] ${symbol} | RETEST CONFIRMED | score=${breakout.signal.score} | id=${id}`);
           } else {
             console.log(`[Portfolio🚫] ${symbol} breakout: ${check.reason}`);
           }

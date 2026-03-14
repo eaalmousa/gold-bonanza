@@ -10,7 +10,8 @@ interface Props {
 }
 
 export default function SniperSignals({ signals, onDeploy }: Props) {
-  if (!signals.length) {
+  const detectedSignals = signals.filter(s => s.status === 'DETECTED');
+  if (!detectedSignals.length) {
     return (
       <section>
         <SectionHeader
@@ -30,11 +31,11 @@ export default function SniperSignals({ signals, onDeploy }: Props) {
         title="INSTITUTIONAL SNIPER SIGNALS"
         subtitle="Pullback into EMA value zone during confirmed uptrend"
         icon={<Crosshair size={20} color="var(--gold)" />}
-        count={signals.length}
+        count={detectedSignals.length}
       />
       <div className="signal-grid">
-        {signals.map((s, i) => (
-          <SniperCard key={`${s.symbol}-${i}`} row={s} onDeploy={onDeploy} index={i} />
+        {detectedSignals.map((s, i) => (
+          <SniperCard key={s.id || `${s.symbol}-${i}`} row={s} onDeploy={onDeploy} index={i} />
         ))}
       </div>
     </section>
@@ -175,7 +176,7 @@ function SniperCard({ row, onDeploy, index }: { row: SignalRow; onDeploy?: (r: S
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Zap size={14} />
-              DEPLOY
+              SYNC TO HUB
             </span>
           </button>
         </div>

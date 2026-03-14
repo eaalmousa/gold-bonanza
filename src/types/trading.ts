@@ -59,6 +59,8 @@ export interface Signal {
   entryHint?: string;
   debugLog?: string[];         // Why this signal was accepted
   breakLevel?: number;         // Internal tracking for retest engine
+  status?: 'DETECTED' | 'QUEUED' | 'DEPLOYED' | 'EXPIRED' | 'CANCELLED';
+  id?: string;                 // Unique identifier for signal instance
 }
 
 export interface SignalRow {
@@ -67,6 +69,8 @@ export interface SignalRow {
   price?: number;
   change24h?: number;
   timestamp?: number;
+  id: string; // Required for state tracking
+  status: 'DETECTED' | 'QUEUED' | 'DEPLOYED' | 'EXPIRED' | 'CANCELLED';
 }
 
 export interface MarketRow {

@@ -75,6 +75,7 @@ interface TradingState {
   // Market context actions
   setMarketRegime: (regime: MarketRegime) => void;
   setOrderFlowSnapshot: (symbol: string, snapshot: OrderFlowSnapshot) => void;
+  queueSignal: (id: string, kind: 'SNIPER' | 'breakout') => void;
   deploySignal: (signal: any, symbol: string) => void;
 }
 
@@ -121,16 +122,59 @@ export const useTradingStore = create<TradingState>((set, get) => ({
 
   setSymbols: (symbols) => set({ symbols }),
   setDataLive: (isDataLive) => set({ isDataLive }),
-  setScannerRunning: (scannerRunning) => set({ scannerRunning }),
   setScannerActive: (active) => set({ isScannerActive: active }),
+  setScannerRunning: (scannerRunning) => set({ scannerRunning }),
   setBinanceStatus: (status) => set({ binanceStatus: status }),
   updatePrices: (newPrices) => set(state => ({
     currentPrices: { ...state.currentPrices, ...newPrices }
   })),
 
   setMarketRows: (marketRows) => set({ marketRows }),
-  setSniperSignals: (sniperSignals) => set({ sniperSignals }),
-  setBreakoutSignals: (breakoutSignals) => set({ breakoutSignals }),
+  
+  setSniperSignals: (signals) => {
+    const state = get();
+    // 1. Filter out symbols already in active trades (Hub/Live)
+    const activeSymbols = new Set(state.activeTrades.map(t => t.symbol.toUpperCase()));
+    
+    // 2. Identify which symbols are currently QUEUED in the existing store
+    const existingQueued = new Set(
+      state.sniperSignals.filter(s => s.status === 'QUEUED').map(s => s.symbol.toUpperCase())
+    );
+
+    // 3. Filter new signals: must not be active AND must not be already queued
+    const filtered = signals.filter(s => 
+      !activeSymbols.has(s.symbol.toUpperCase()) && 
+      !existingQueued.has(s.symbol.toUpperCase())
+    );
+
+    // 4. Merge: Preserve existing QUEUED signals, add newly filtered DETECTED ones
+    const merged = [
+      ...state.sniperSignals.filter(s => s.status === 'QUEUED'),
+      ...filtered
+    ];
+
+    set({ sniperSignals: merged });
+  },
+
+  setBreakoutSignals: (signals) => {
+    const state = get();
+    const activeSymbols = new Set(state.activeTrades.map(t => t.symbol.toUpperCase()));
+    const existingQueued = new Set(
+      state.breakoutSignals.filter(s => s.status === 'QUEUED').map(s => s.symbol.toUpperCase())
+    );
+
+    const filtered = signals.filter(s => 
+      !activeSymbols.has(s.symbol.toUpperCase()) && 
+      !existingQueued.has(s.symbol.toUpperCase())
+    );
+
+    const merged = [
+      ...state.breakoutSignals.filter(s => s.status === 'QUEUED'),
+      ...filtered
+    ];
+
+    set({ breakoutSignals: merged });
+  },
 
   addSignalToHistory: (entry) => set(state => ({
     signalHistory: [
@@ -177,15 +221,30 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     orderFlowSnapshots: { ...state.orderFlowSnapshots, [symbol]: snapshot }
   })),
 
+  queueSignal: (id, kind) => set(state => {
+    if (kind === 'SNIPER') {
+      return {
+        sniperSignals: state.sniperSignals.map(s => 
+          s.id === id ? { ...s, status: 'QUEUED' } : s
+        )
+      };
+    } else {
+      return {
+        breakoutSignals: state.breakoutSignals.map(s => 
+          s.id === id ? { ...s, status: 'QUEUED' } : s
+        )
+      };
+    }
+  }),
+
   deploySignal: (sig, symbol) => {
     const state = get();
     
-    // Remove from scanner signal lists if it exists there
-    if (sig.kind === 'SUPER_SNIPER') {
-      state.setBreakoutSignals(state.breakoutSignals.filter(s => s.symbol !== symbol));
-    } else if (sig.kind === 'SNIPER') {
-      state.setSniperSignals(state.sniperSignals.filter(s => s.symbol !== symbol));
-    }
+    // Remove from scanner signal lists entirely
+    set(s => ({
+      breakoutSignals: s.breakoutSignals.filter(b => b.symbol !== symbol),
+      sniperSignals: s.sniperSignals.filter(n => n.symbol !== symbol)
+    }));
 
     state.addActiveTrade({
       symbol: symbol,

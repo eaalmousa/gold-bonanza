@@ -10,7 +10,8 @@ interface Props {
 }
 
 export default function BreakoutSignals({ signals, onDeploy }: Props) {
-  if (!signals.length) {
+  const detectedSignals = signals.filter(s => s.status === 'DETECTED');
+  if (!detectedSignals.length) {
     return (
       <section>
         <SectionHeader count={0} />
@@ -21,10 +22,10 @@ export default function BreakoutSignals({ signals, onDeploy }: Props) {
 
   return (
     <section>
-      <SectionHeader count={signals.length} />
+      <SectionHeader count={detectedSignals.length} />
       <div className="signal-grid">
-        {signals.map((s, i) => (
-          <BreakoutCard key={`${s.symbol}-${i}`} row={s} onDeploy={onDeploy} index={i} />
+        {detectedSignals.map((s, i) => (
+          <BreakoutCard key={s.id || `${s.symbol}-${i}`} row={s} onDeploy={onDeploy} index={i} />
         ))}
       </div>
     </section>
@@ -161,7 +162,7 @@ function BreakoutCard({ row, onDeploy, index }: { row: SignalRow; onDeploy?: (r:
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Rocket size={14} />
-              DEPLOY
+              SYNC TO HUB
             </span>
           </button>
         </div>

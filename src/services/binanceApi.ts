@@ -7,8 +7,8 @@ import { SPOT_API, FUTURES_API, METAL_SYMBOLS, DEFAULT_SYMBOLS } from '../types/
 
 export async function fetchKlines(symbol: string, interval: string, limit: number = 200): Promise<Kline[]> {
   const isMetal = METAL_SYMBOLS.includes(symbol);
-  const base = isMetal ? FUTURES_API : SPOT_API;
-  const path = isMetal ? '/fapi/v1/klines' : '/api/v3/klines';
+  const base = FUTURES_API; // Use Futures API for all for better cloud consistency
+  const path = isMetal ? '/fapi/v1/klines' : '/fapi/v1/klines';
   const url = `${base}${path}?symbol=${symbol}&interval=${interval}&limit=${limit}`;
 
   const controller = new AbortController();

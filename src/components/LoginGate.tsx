@@ -70,6 +70,8 @@ export default function LoginGate({ children }: { children: React.ReactNode }) {
                 outline: 'none', fontFamily: "'JetBrains Mono', monospace"
               }}
               autoFocus
+              autoCapitalize="none"
+              autoCorrect="off"
             />
           </div>
           

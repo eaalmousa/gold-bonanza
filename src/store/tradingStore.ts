@@ -33,6 +33,7 @@ interface TradingState {
 
   // Active trades
   activeTrades: ActiveTrade[];
+  binancePositions: any[];
 
   // Deal status
   dealStatus: Record<string, string>;
@@ -61,6 +62,7 @@ interface TradingState {
   setMarketRows: (rows: MarketRow[]) => void;
   setSniperSignals: (signals: SignalRow[]) => void;
   setBreakoutSignals: (signals: SignalRow[]) => void;
+  setBinancePositions: (positions: any[]) => void;
   addSignalToHistory: (entry: SignalHistoryEntry) => void;
   addActiveTrade: (trade: ActiveTrade) => void;
   removeActiveTrade: (idx: number) => void;
@@ -87,7 +89,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   symbols: [],
   isDataLive: false,
   scannerRunning: false,
-  isScannerActive: false,
+  isScannerActive: localStorage.getItem('gb_scanner_active') === 'true',
   isAutoTradeActive: false,
   binanceStatus: 'INIT' as const,
   currentPrices: {},
@@ -96,6 +98,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   breakoutSignals: [],
   signalHistory: [],
   activeTrades: [],
+  binancePositions: [],
   dealStatus: {},
   microstructureRows: [],
   liquidityLayers: [],
@@ -125,7 +128,10 @@ export const useTradingStore = create<TradingState>((set, get) => ({
 
   setSymbols: (symbols) => set({ symbols }),
   setDataLive: (isDataLive) => set({ isDataLive }),
-  setScannerActive: (active) => set({ isScannerActive: active }),
+  setScannerActive: (active) => {
+    localStorage.setItem('gb_scanner_active', String(active));
+    set({ isScannerActive: active });
+  },
   setAutoTradeActive: (active) => set({ isAutoTradeActive: active }),
   setScannerRunning: (scannerRunning) => set({ scannerRunning }),
   setBinanceStatus: (status) => set({ binanceStatus: status }),
@@ -186,6 +192,8 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       ...state.signalHistory
     ].slice(0, 60)
   })),
+
+  setBinancePositions: (positions) => set({ binancePositions: positions }),
 
   addActiveTrade: (trade) => set(state => {
     const existingIdx = state.activeTrades.findIndex(

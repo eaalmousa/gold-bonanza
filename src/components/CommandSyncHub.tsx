@@ -4,7 +4,6 @@ import { api } from '../services/api';
 import { useTradingStore } from '../store/tradingStore';
 
 export default function CommandSyncHub() {
-  const [binancePositions, setBinancePositions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [binanceConnected, setBinanceConnected] = useState(false);
   const [closingSymbols, setClosingSymbols] = useState<Set<string>>(new Set());
@@ -12,7 +11,8 @@ export default function CommandSyncHub() {
   // Pull from local store (manually-deployed trades and queued signals)
   const { 
     activeTrades, sniperSignals, breakoutSignals, 
-    removeActiveTrade, deploySignal 
+    removeActiveTrade, deploySignal,
+    binancePositions, setBinancePositions
   } = useTradingStore();
 
   useEffect(() => {

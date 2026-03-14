@@ -3,7 +3,7 @@ import { Crosshair, Power, Wifi, WifiOff } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function Header() {
-  const { balance, setBalance, isDataLive, activeMode, activeTrades, binanceStatus, isAutoTradeActive, setAutoTradeActive } = useTradingStore();
+  const { balance, setBalance, isDataLive, activeMode, activeTrades, sniperSignals, breakoutSignals, binanceStatus, isAutoTradeActive, setAutoTradeActive } = useTradingStore();
 
   const handleToggleAutoTrade = async () => {
     try {
@@ -13,6 +13,10 @@ export default function Header() {
       console.error(e);
     }
   };
+
+  const pendingCount = sniperSignals.filter(s => s.status === 'QUEUED').length + 
+                       breakoutSignals.filter(s => s.status === 'QUEUED').length;
+  const totalActiveCount = activeTrades.length + pendingCount;
 
   return (
     <header style={{
@@ -84,7 +88,7 @@ export default function Header() {
           {activeMode.key}
         </div>
 
-        {activeTrades.length > 0 && (
+        {totalActiveCount > 0 && (
           <div style={{
             padding: '10px 20px',
             borderRadius: 'var(--radius-full)',
@@ -94,7 +98,7 @@ export default function Header() {
             color: 'var(--blue)',
             letterSpacing: '0.2em'
           }}>
-            {activeTrades.length} ACTIVE
+            {totalActiveCount} ACTIVE
           </div>
         )}
 

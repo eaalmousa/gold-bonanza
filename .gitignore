@@ -23,12 +23,14 @@ dist-ssr
 *.sln
 *.sw?
 
-# Environment variables
+# Environment variables — keep secrets out of git
 .env
-.env.*
 server/.env
 server/trade_logs.txt
 server/logs/
+# Allow example files
+!.env.example
+!server/.env.example
 
 # Build artifacts
 server/dist/

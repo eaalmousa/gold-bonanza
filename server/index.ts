@@ -12,7 +12,7 @@ app.use(express.json());
 app.use('/api/auth', authRouter);
 app.use('/api/trade', tradeRouter);
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+const PORT = process.env.PORT || 8080; // Changed default to 8080 for better cloud standard
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Server] Secured Auto-Trading Backend running on port ${PORT}`);
 });

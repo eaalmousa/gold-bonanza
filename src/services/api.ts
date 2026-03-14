@@ -12,8 +12,14 @@ export function getToken() {
 }
 
 export async function apiRequest(endpoint: string, options: RequestInit = {}) {
-  // Clean up potential double slashes if the user added one to the env var
-  const baseUrl = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
+  // Clean up potential double slashes and ensure /api prefix
+  let baseUrl = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
+  
+  // If the user forgot to add /api to the environment variable, add it automatically
+  if (!baseUrl.endsWith('/api') && !endpoint.startsWith('/api')) {
+    baseUrl += '/api';
+  }
+
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   const fullUrl = `${baseUrl}${cleanEndpoint}`;
 

@@ -51,13 +51,14 @@ export interface Signal {
   atr15: number;
   volRatio: number;
   // Quality Report
-  entryType?: 'REVERSAL' | 'CONTINUATION' | 'BREAKOUT';
+  entryType?: 'REVERSAL' | 'CONTINUATION' | 'BREAKOUT' | 'PENDING_BREAKOUT' | 'RETEST_CONFIRMED' | 'RETEST_FAILED' | 'EXPIRED_NO_RETEST' | 'INVALIDATED';
   zoneDistancePct?: number;   // How far price is from ideal entry zone (%)
   btcRegimeAtEntry?: string;  // BTC regime label at signal time
   entryTiming?: 'EARLY' | 'OPTIMAL' | 'LATE'; // Self-assessed timing
   entryModel?: string;
   entryHint?: string;
   debugLog?: string[];         // Why this signal was accepted
+  breakLevel?: number;         // Internal tracking for retest engine
 }
 
 export interface SignalRow {

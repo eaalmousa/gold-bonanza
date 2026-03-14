@@ -20,6 +20,131 @@ export function evaluateBreakoutSignal(
   btcRegimeLabel?: string,
   symbol?: string
 ): Signal | null {
+  if (!tf15m || tf15m.length < 90) return null;
+
+  const MAX_RETEST_WAIT = 4;
+  
+  // First, check if the current closed candle is a brand new breakout
+  const currentBreakout = evaluateCoreBreakout(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, orderFlow, btc4hTrend, btcRegimeLabel, symbol);
+  if (currentBreakout) {
+    currentBreakout.entryType = 'PENDING_BREAKOUT' as any;
+    return currentBreakout;
+  }
+
+  // If not a brand new breakout, look backwards in time to see if there is a pending breakout waiting for a retest
+  for (let lookback = 1; lookback <= MAX_RETEST_WAIT; lookback++) {
+    const testIdx = tf15m.length - 1 - lookback; 
+    if (testIdx < 60) break;
+    
+    // Evaluate the slice of candles that existed `lookback` candles ago
+    const pastSliceLength = tf15m.length - lookback;
+    const pastSliceArr = tf15m.slice(0, pastSliceLength);
+    const pastBreakout = evaluateCoreBreakout(tf1h, pastSliceArr, activeMode, balance, regime, regimeScoreBonus, orderFlow, btc4hTrend, btcRegimeLabel, symbol);
+
+    if (pastBreakout) {
+      const bLevel = (pastBreakout as any).breakLevel;
+      if (!bLevel) {
+        pastBreakout.entryType = 'RETEST_CONFIRMED' as any;
+        return pastBreakout; 
+      }
+      
+      const side = pastBreakout.side;
+      let minL = Infinity;
+      let maxH = -Infinity;
+      let closedAgainst = false;
+
+      // Check all candles that have formed SINCE the breakout candle up to the current closed candle
+      for (let j = pastSliceLength - 1; j < tf15m.length - 1; j++) {
+        const c = tf15m[j];
+        if (c.low < minL) minL = c.low;
+        if (c.high > maxH) maxH = c.high;
+        
+        if (side === 'LONG' && c.close < bLevel) closedAgainst = true;
+        if (side === 'SHORT' && c.close > bLevel) closedAgainst = true;
+      }
+
+      const currentClosed = tf15m[tf15m.length - 2];
+      const atr = pastBreakout.atr15;
+
+      // INVALIDATION 1: Price closed cleanly back through the break level
+      if (closedAgainst) {
+        pastBreakout.entryType = 'INVALIDATED' as any;
+        pastBreakout.debugLog?.push('REJECT: Retest invalidated — closed back into compression');
+        return pastBreakout;
+      }
+
+      let hasRetested = false;
+      if (side === 'LONG') {
+        if (minL <= bLevel * 1.002 || minL <= bLevel + (atr * 0.25)) hasRetested = true;
+      } else {
+        if (maxH >= bLevel * 0.998 || maxH >= bLevel - (atr * 0.25)) hasRetested = true;
+      }
+
+      if (hasRetested) {
+        // Evaluate the confirmation of the rejection on the current candle
+        const isBullish = currentClosed.close > currentClosed.open;
+        const isBearish = currentClosed.close < currentClosed.open;
+        const closedAboveBreak = currentClosed.close > bLevel;
+        const closedBelowBreak = currentClosed.close < bLevel;
+        
+        if (side === 'LONG' && isBullish && closedAboveBreak) {
+          pastBreakout.entryType = 'RETEST_CONFIRMED' as any;
+          pastBreakout.debugLog?.push('ACCEPT: Retest confirmed for LONG breakout');
+          pastBreakout.entryPrice = currentClosed.close * 1.0010;
+          return pastBreakout;
+        } else if (side === 'SHORT' && isBearish && closedBelowBreak) {
+          pastBreakout.entryType = 'RETEST_CONFIRMED' as any;
+          pastBreakout.debugLog?.push('ACCEPT: Retest confirmed for SHORT breakout');
+          pastBreakout.entryPrice = currentClosed.close * (1 - 0.0010);
+          return pastBreakout;
+        } else {
+          // It touched the retest zone but hasn't closed decisively away from it yet. 
+          if (lookback === MAX_RETEST_WAIT) {
+            pastBreakout.entryType = 'EXPIRED_NO_RETEST' as any;
+            return pastBreakout;
+          }
+          pastBreakout.entryType = 'PENDING_BREAKOUT' as any;
+          return pastBreakout;
+        }
+      }
+
+      // INVALIDATION 2: Price ran away without a retest, setup is exhausted
+      if (side === 'LONG' && maxH > bLevel + atr * 2) {
+        pastBreakout.entryType = 'INVALIDATED' as any;
+        pastBreakout.debugLog?.push('REJECT: Breakout ran away without a retest');
+        return pastBreakout;
+      } else if (side === 'SHORT' && minL < bLevel - atr * 2) {
+        pastBreakout.entryType = 'INVALIDATED' as any;
+        pastBreakout.debugLog?.push('REJECT: Breakdown ran away without a retest');
+        return pastBreakout;
+      }
+
+      // If we wait too long, it expires
+      if (lookback === MAX_RETEST_WAIT) {
+        pastBreakout.entryType = 'EXPIRED_NO_RETEST' as any;
+        return pastBreakout;
+      }
+      
+      pastBreakout.entryType = 'PENDING_BREAKOUT' as any;
+      return pastBreakout;
+    }
+  }
+
+  return null;
+}
+
+function evaluateCoreBreakout(
+  tf1h: Kline[],
+  tf15m: Kline[],
+  activeMode: ModeConfig,
+  balance: number,
+  regime?: MarketRegime,
+  regimeScoreBonus?: number,
+  orderFlow?: OrderFlowSnapshot,
+  btc4hTrend?: 'UP' | 'DOWN' | 'RANGING',
+  btcRegimeLabel?: string,
+  symbol?: string
+): Signal | null {
   const modeKey: string = activeMode.key;
   const debugLog: string[] = [`[BreakoutV3] ${symbol ?? ''}`];
 
@@ -109,10 +234,11 @@ export function evaluateBreakoutSignal(
   const range = Math.max(1e-9, high15 - low15);
   const body  = Math.abs(close15 - open15);
 
-  // ─── EXPANSION-CANDLE BLOCKER (tightened: 2.0x → 1.4x) ─────────
+  // ─── EXPANSION-CANDLE BLOCKER (tightened again for entry quality)
+  // Breakouts on candles > 1.1x ATR fail 70%+ of the time because the 15m move is exhausted.
   const candleAtrRatio = range / atr!;
-  if (candleAtrRatio > 1.4) {
-    debugLog.push(`REJECT: Expansion candle on breakout ${candleAtrRatio.toFixed(2)}x ATR > 1.4x`);
+  if (candleAtrRatio > 1.1) {
+    debugLog.push(`REJECT: Expansion candle on breakout ${candleAtrRatio.toFixed(2)}x ATR > 1.1x`);
     return null;
   }
 
@@ -140,7 +266,8 @@ export function evaluateBreakoutSignal(
 
     // ─── BREAKOUT ABOVE COIL ────────────────────────────
     const breakLevel = hiCoil * (1 + cfg.breakPct);
-    if (modeKey !== 'AGGRESSIVE' && close15 < breakLevel) return null;
+    // MUST break out in all modes. Aggressive mode cannot front-run the breakout.
+    if (close15 < breakLevel) return null;
     score += 3;
     reasons.push('Breakout above compression range');
 
@@ -156,12 +283,20 @@ export function evaluateBreakoutSignal(
 
     // ─── FALSE BREAKOUT SHIELD ───────────────────────────
     const breakoutQuality = (close15 - breakLevel) / Math.max(1e-9, high15 - breakLevel);
-    if (modeKey !== 'AGGRESSIVE' && breakoutQuality < 0.60) return null;
+    // Requires a strong structural close above the break line.
+    const minBreakQuality = modeKey === 'AGGRESSIVE' ? 0.50 : 0.70;
+    if (breakoutQuality < minBreakQuality) {
+      debugLog.push(`REJECT: Weak breakout quality ${breakoutQuality.toFixed(2)} (requires ${minBreakQuality})`);
+      return null; 
+    }
     score += 1;
     reasons.push('Strong breakout close');
 
-    // Previous candle must not already be broken
-    if (modeKey !== 'AGGRESSIVE' && prev.close > breakLevel) return null;
+    // Previous candle must not already be broken -> prevents entering on 2nd/3rd candle
+    if (prev.close > breakLevel) {
+      debugLog.push(`REJECT: Late entry, previous candle already broke out`);
+      return null;
+    }
 
     // ─── VOLUME ─────────────────────────────────────────
     const volRatio = volNow / volAvg!;
@@ -181,9 +316,12 @@ export function evaluateBreakoutSignal(
     const bodyPct    = (body / range) * 100;
     const closePos   = (close15 - low15) / range;
     const isBullCandle = close15 > open15;
-    const minBody    = modeKey === 'AGGRESSIVE' ? 10 : 65;
-    const minClosePos = modeKey === 'AGGRESSIVE' ? 0.20 : 0.78;
-    if (modeKey !== 'AGGRESSIVE' && !(isBullCandle && bodyPct >= minBody && closePos >= minClosePos)) return null;
+    const minBody    = modeKey === 'AGGRESSIVE' ? 45 : 65; 
+    const minClosePos = modeKey === 'AGGRESSIVE' ? 0.65 : 0.78; 
+    if (!(isBullCandle && bodyPct >= minBody && closePos >= minClosePos)) {
+      debugLog.push(`REJECT: Weak anatomy — body:${bodyPct.toFixed(0)}% pos:${closePos.toFixed(2)}`);
+      return null;
+    }
     score += 1;
     reasons.push('Strong breakout candle');
 
@@ -237,7 +375,9 @@ export function evaluateBreakoutSignal(
       zoneDistancePct: parseFloat(zoneDistancePct.toFixed(3)),
       btcRegimeAtEntry: btcRegimeLabel ?? 'UNKNOWN',
       entryTiming,
-      debugLog
+      debugLog,
+      // Internal tracking for retest engine
+      breakLevel
     };
 
   } else {
@@ -261,7 +401,7 @@ export function evaluateBreakoutSignal(
     reasons.push(`Compression (${coilRange.toFixed(2)}%)`);
 
     const breakLevel = loCoil * (1 - cfg.breakPct);
-    if (modeKey !== 'AGGRESSIVE' && close15 > breakLevel) return null;
+    if (close15 > breakLevel) return null;
     score += 3;
     reasons.push('Breakdown below compression range');
 
@@ -271,11 +411,18 @@ export function evaluateBreakoutSignal(
       lateExtension < 0.5 ? 'OPTIMAL' : lateExtension < 1.0 ? 'EARLY' : 'LATE';
 
     const breakoutQuality = (breakLevel - close15) / Math.max(1e-9, breakLevel - low15);
-    if (modeKey !== 'AGGRESSIVE' && breakoutQuality < 0.60) return null;
+    const minBreakQuality = modeKey === 'AGGRESSIVE' ? 0.50 : 0.70;
+    if (breakoutQuality < minBreakQuality) {
+      debugLog.push(`REJECT: Weak breakdown quality ${breakoutQuality.toFixed(2)}`);
+      return null;
+    }
     score += 1;
     reasons.push('Strong breakdown close');
 
-    if (modeKey !== 'AGGRESSIVE' && prev.close < breakLevel) return null;
+    if (prev.close < breakLevel) {
+       debugLog.push(`REJECT: Late entry, previous candle already broke down`);
+       return null;
+    }
 
     const volRatio = volNow / volAvg!;
     const volSpike = volLongAvg ? (volNow / volLongAvg!) : 0;
@@ -292,9 +439,12 @@ export function evaluateBreakoutSignal(
     const bodyPct    = (body / range) * 100;
     const closePos   = (close15 - low15) / range;
     const isBearCandle = close15 < open15;
-    const minBody    = modeKey === 'AGGRESSIVE' ? 10 : 65;
-    const maxClosePos = modeKey === 'AGGRESSIVE' ? 0.80 : 0.22;
-    if (modeKey !== 'AGGRESSIVE' && !(isBearCandle && bodyPct >= minBody && closePos <= maxClosePos)) return null;
+    const minBody    = modeKey === 'AGGRESSIVE' ? 45 : 65;
+    const maxClosePos = modeKey === 'AGGRESSIVE' ? 0.35 : 0.22;
+    if (!(isBearCandle && bodyPct >= minBody && closePos <= maxClosePos)) {
+      debugLog.push(`REJECT: Weak bearer anatomy — body:${bodyPct.toFixed(0)}% pos:${closePos.toFixed(2)}`);
+      return null;
+    }
     score += 1;
     reasons.push('Strong bearish breakdown candle');
 
@@ -345,7 +495,9 @@ export function evaluateBreakoutSignal(
       zoneDistancePct: parseFloat(zoneDistancePct.toFixed(3)),
       btcRegimeAtEntry: btcRegimeLabel ?? 'UNKNOWN',
       entryTiming,
-      debugLog
+      debugLog,
+      // Internal tracking for retest engine
+      breakLevel
     };
   }
 }

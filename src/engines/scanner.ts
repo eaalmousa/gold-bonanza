@@ -177,14 +177,21 @@ export async function runBonanzaCore(
       }
 
       if (breakout?.signal && newSignalsThisScan < corrLimit.maxNewPositions) {
-        const check = checkPortfolioExposure(symbol, breakout.signal.side, regime as any, btc4hTrend, defaultPortfolio, signalsThisCycle);
-        if (check.allowed) {
-          breakoutSignals.push({ symbol, signal: breakout.signal, price: breakout.price, change24h: breakout.change24h, timestamp: Date.now() });
-          signalsThisCycle.add(symbol);
-          newSignalsThisScan++;
-          console.log(`[Breakout✅] ${symbol} | ${breakout.signal.entryTiming} | score=${breakout.signal.score}`);
+        if (breakout.signal.entryType === 'RETEST_CONFIRMED') {
+          const check = checkPortfolioExposure(symbol, breakout.signal.side, regime as any, btc4hTrend, defaultPortfolio, signalsThisCycle);
+          if (check.allowed) {
+            breakoutSignals.push({ symbol, signal: breakout.signal, price: breakout.price, change24h: breakout.change24h, timestamp: Date.now() });
+            signalsThisCycle.add(symbol);
+            newSignalsThisScan++;
+            console.log(`[Breakout✅] ${symbol} | RETEST CONFIRMED | score=${breakout.signal.score}`);
+          } else {
+            console.log(`[Portfolio🚫] ${symbol} breakout: ${check.reason}`);
+          }
         } else {
-          console.log(`[Portfolio🚫] ${symbol} breakout: ${check.reason}`);
+          // It's just a PENDING or INVALIDATED state from the retest engine, log it dynamically
+          if (breakout.signal.entryType === 'PENDING_BREAKOUT') {
+            console.log(`[Breakout⏳] ${symbol} Pending Breakout detected. Waiting for retest.`);
+          }
         }
       }
     }

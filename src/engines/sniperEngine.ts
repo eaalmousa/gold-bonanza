@@ -300,6 +300,38 @@ export function evaluateSniperSignal(
       return null;
     }
 
+    // ─── LOCAL CEILING / RESISTANCE PROXIMITY CHECK (LONG ENTRY REPAIR) ───
+    // Mirror of the SHORT-side floor check. Do NOT buy immediately under a recent swing high / resistance cap.
+    // 1. Find the highest point in the recent consolidation window
+    const recentHighs  = highs15.slice(Math.max(0, lastIdx - 15), lastIdx);
+    const localCeiling = Math.max(...recentHighs);
+
+    // 2. Metrics
+    const isBreakingCeiling   = close15 >= localCeiling - (atr! * 0.15);
+    const isHoveringBelowCeil = close15 < localCeiling - (atr! * 0.15) && close15 > localCeiling - (atr! * 0.6);
+    const distanceToCeilPct   = ((localCeiling - close15) / close15) * 100;
+    const ceilDistStr         = `[Ceiling Dist: ${distanceToCeilPct.toFixed(2)}%]`;
+
+    // 3. Chop-under-ceiling detection
+    if (isHoveringBelowCeil) {
+      debugLog.push(`REJECT: Compressing immediately below local resistance ceiling ${ceilDistStr}`);
+      return null;
+    }
+
+    // 4. Breakout acceptance: if buying AT the ceiling, require a clean close above it
+    if (isBreakingCeiling) {
+      const cleanCloseAbove = close15 > localCeiling;
+      const followThrough   = close15 > prev.close && isBullCandle;
+      if (!cleanCloseAbove || !followThrough) {
+        debugLog.push(`REJECT: Poking local resistance—no clean breakout acceptance ${ceilDistStr}`);
+        return null;
+      }
+      score += 2;
+      reasons.push('Clean ceiling breakout accepted');
+    } else {
+      reasons.push(`Clear headroom above (Dist: ${distanceToCeilPct.toFixed(2)}%)`);
+    }
+
     // Acceleration
     if (prev2) {
       const accel    = (close15 - prev.close) - (prev.close - prev2.close);
@@ -512,7 +544,8 @@ export function evaluateSniperSignal(
       debugLog.push(`REJECT: Short late entry — close is ${extensionBelowZone.toFixed(2)}x ATR below EMA20`);
       return null;
     }
-    if (extensionBelowZone > 1.5) return null;
+    // Tightened hard cap to 1.0x (was 1.5x) — symmetric with LONG hard cap of 0.75x
+    if (extensionBelowZone > 1.0) return null;
 
     const zoneIdealShort  = (e20_15! + e50_15!) / 2;
     const zoneDistPct     = ((zoneIdealShort - close15) / zoneIdealShort) * 100;
@@ -548,12 +581,16 @@ export function evaluateSniperSignal(
     score += volScore; reasons.push(`Bear volume (${volRatio.toFixed(2)}x)`);
 
     // Candle anatomy — bearish
+    // Tightened for Aggressive mode to match LONG quality (was 10%/0.20 — too loose)
     const bodyPct  = (body / range) * 100;
     const closePos = (high15 - close15) / range; // distance from high
     const isBearCandle = close15 < open15;
-    const minBody    = modeKey === 'AGGRESSIVE' ? 10 : 55;
-    const minClosePos = modeKey === 'AGGRESSIVE' ? 0.20 : 0.70;
-    if (modeKey !== 'AGGRESSIVE' && !(isBearCandle && bodyPct >= minBody && closePos >= minClosePos)) return null;
+    const minBody    = modeKey === 'AGGRESSIVE' ? 25 : 55;    // was 10 in Aggressive — now 25
+    const minClosePos = modeKey === 'AGGRESSIVE' ? 0.45 : 0.70; // was 0.20 in Aggressive — now 0.45
+    if (!(isBearCandle && bodyPct >= minBody && closePos >= minClosePos)) {
+      debugLog.push(`REJECT: Weak bearish confirmation — body:${bodyPct.toFixed(0)}% pos:${closePos.toFixed(2)}`);
+      return null;
+    }
 
     // Acceleration (downward)
     if (prev2) {

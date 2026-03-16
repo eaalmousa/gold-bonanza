@@ -74,12 +74,9 @@ const TOP_MOVERS_UNIVERSE = [
   'ENAUSDT','JUPUSDT','STXUSDT','ARUSDT','AAVEUSDT',
 ];
 
-async function runLightweightAnalysis(symbol: string): Promise<TopMover | null> {
+async function runLightweightAnalysis(symbol: string, btc4h: any[]): Promise<TopMover | null> {
   try {
-    const [klines4h, btc4h] = await Promise.all([
-      fetchKlines(symbol, '4h', 120),
-      fetchKlines('BTCUSDT', '4h', 60),
-    ]);
+    const klines4h = await fetchKlines(symbol, '4h', 120);
     if (klines4h.length < 50) return null;
     const closes4h = klines4h.map(k => k.close);
     const highs4h  = klines4h.map(k => k.high);
@@ -402,13 +399,16 @@ export default function CurrencyAnalyzer() {
     scanRef.current = true;
     setIsScanning(true);
     try {
+      // Fetch BTC once to save 39 API calls and avoid instant rate limits
+      const btc4h = await fetchKlines('BTCUSDT', '4h', 60);
+
       // Stagger requests in mini-batches of 5 to avoid rate limits
       const results: TopMover[] = [];
       for (let i = 0; i < TOP_MOVERS_UNIVERSE.length; i += 5) {
         const batch = TOP_MOVERS_UNIVERSE.slice(i, i + 5);
-        const settled = await Promise.allSettled(batch.map(runLightweightAnalysis));
+        const settled = await Promise.allSettled(batch.map(sym => runLightweightAnalysis(sym, btc4h)));
         settled.forEach(r => { if (r.status === 'fulfilled' && r.value) results.push(r.value); });
-        await new Promise(res => setTimeout(res, 300));
+        await new Promise(res => setTimeout(res, 400));
       }
       results.sort((a, b) => b.confidence - a.confidence);
       setTopMovers(results.slice(0, 15));

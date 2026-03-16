@@ -136,20 +136,122 @@ export async function runTraderLoop() {
       logMsg(`Scan done. No signals >= ${MIN_SCORE} found.`);
       return;
     }
-    logMsg(`Found ${combined.length} valid signals (Score >= ${MIN_SCORE}). Attempting execution.`);
+    logMsg(`Found ${combined.length} valid signals (Score >= ${MIN_SCORE}). Portfolio Wave Analysis running...`);
+
+    // ─── PORTFOLIO WAVE & CIRCUIT BREAKER LOGIC ───
+    const currentActivePos = await getPositions();
+    const activeLongs = currentActivePos.filter(p => parseFloat(p.positionAmt) > 0);
+    const activeShorts = currentActivePos.filter(p => parseFloat(p.positionAmt) < 0);
+
+    let longsInDeepRed = 0;
+    activeLongs.forEach(p => {
+      const pnl = parseFloat(p.unRealizedProfit);
+      const margin = (parseFloat(p.positionAmt) * parseFloat(p.entryPrice)) / parseFloat(p.leverage);
+      if (margin > 0 && (pnl / margin) < -0.10) longsInDeepRed++; // ROI down > 10%
+    });
+    
+    let shortsInDeepRed = 0;
+    activeShorts.forEach(p => {
+      const pnl = parseFloat(p.unRealizedProfit);
+      const margin = Math.abs((parseFloat(p.positionAmt) * parseFloat(p.entryPrice)) / parseFloat(p.leverage));
+      if (margin > 0 && (pnl / margin) < -0.10) shortsInDeepRed++;
+    });
+
+    // Fetch BTC 15m context for confirmation gating
+    const btcRes = await fetch('https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=15m&limit=20');
+    const btcKlines = await btcRes.json();
+
+    function checkBtcConfirmation(side: 'LONG' | 'SHORT') {
+        const closes = btcKlines.map((k: any) => parseFloat(k[4]));
+        const highs = btcKlines.map((k: any) => parseFloat(k[2]));
+        const lows = btcKlines.map((k: any) => parseFloat(k[3]));
+        
+        const c1 = closes[closes.length - 2]; 
+        const o1 = parseFloat(btcKlines[btcKlines.length - 2][1]);
+        const c2 = closes[closes.length - 3];
+        const o2 = parseFloat(btcKlines[btcKlines.length - 3][1]);
+
+        const recentLows = lows.slice(-16, -2);
+        const recentHighs = highs.slice(-16, -2);
+        const localFloor = Math.min(...recentLows);
+        const localCeiling = Math.max(...recentHighs);
+
+        if (side === 'LONG') {
+            const distToCeilingPct = ((localCeiling - c1) / c1) * 100;
+            const consecutiveRed = (c1 < o1) && (c2 < o2);
+            if (c1 < localCeiling && distToCeilingPct < 0.15) {
+                 return { ok: false, reason: `BTC compressing at local resistance (dist: ${distToCeilingPct.toFixed(2)}%)` };
+            }
+            if (consecutiveRed) return { ok: false, reason: 'BTC printing consecutive red 15m candles (no continuation)' };
+            return { ok: true, reason: '' };
+        } else {
+            const distToFloorPct = ((c1 - localFloor) / c1) * 100;
+            const consecutiveGreen = (c1 > o1) && (c2 > o2);
+            if (c1 > localFloor && distToFloorPct < 0.15) {
+                 return { ok: false, reason: `BTC compressing at local support (dist: ${distToFloorPct.toFixed(2)}%)` };
+            }
+            if (consecutiveGreen) return { ok: false, reason: 'BTC printing consecutive green 15m candles (no continuation)' };
+            return { ok: true, reason: '' };
+        }
+    }
+
+    const MAX_SAME_SIDE_POSITIONS = 2; // Hard cap for auto-trade
+    const MAX_DEPLOY_PER_SCAN = 1;     // Cluster ranking: only pick the absolute best
+
+    let deployedLongsThisScan = 0;
+    let deployedShortsThisScan = 0;
 
     for (const row of combined) {
       const activePos = await getPositions();
       if (activePos.length >= MAX_CONCURRENT_TRADES) break;
 
+      const currentSideLongs = activePos.filter(p => parseFloat(p.positionAmt) > 0);
+      const currentSideShorts = activePos.filter(p => parseFloat(p.positionAmt) < 0);
+
       const sym = row.symbol;
-      
-      // if already in this symbol, skip it
-      if (activePos.some(p => p.symbol === sym)) {
-        continue;
-      }
+      if (activePos.some(p => p.symbol === sym)) continue;
 
       const sig = row.signal;
+
+      // ─── WAVE DEPLOYMENT GATES ───
+      if (sig.side === 'LONG') {
+         if (currentSideLongs.length >= MAX_SAME_SIDE_POSITIONS) {
+            logMsg(`[${sym}] Wave Cap: Already hold ${currentSideLongs.length}/${MAX_SAME_SIDE_POSITIONS} LONGs. Skipping.`);
+            continue;
+         }
+         if (longsInDeepRed >= 1) {
+            logMsg(`[${sym}] Circuit Breaker: ${longsInDeepRed} active LONGs are in deep red (>10% loss). Halting LONG deployments.`);
+            continue;
+         }
+         if (deployedLongsThisScan >= MAX_DEPLOY_PER_SCAN) {
+            logMsg(`[${sym}] Cluster Limit: Already deployed best LONG this cycle. Skipping.`);
+            continue;
+         }
+         const btcCheck = checkBtcConfirmation('LONG');
+         if (!btcCheck.ok) {
+            logMsg(`[${sym}] BTC Gating: Blocked LONG because ${btcCheck.reason}`);
+            continue;
+         }
+      } else {
+         if (currentSideShorts.length >= MAX_SAME_SIDE_POSITIONS) {
+            logMsg(`[${sym}] Wave Cap: Already hold ${currentSideShorts.length}/${MAX_SAME_SIDE_POSITIONS} SHORTs. Skipping.`);
+            continue;
+         }
+         if (shortsInDeepRed >= 1) {
+            logMsg(`[${sym}] Circuit Breaker: ${shortsInDeepRed} active SHORTs are in deep red (>10% loss). Halting SHORT deployments.`);
+            continue;
+         }
+         if (deployedShortsThisScan >= MAX_DEPLOY_PER_SCAN) {
+            logMsg(`[${sym}] Cluster Limit: Already deployed best SHORT this cycle. Skipping.`);
+            continue;
+         }
+         const btcCheck = checkBtcConfirmation('SHORT');
+         if (!btcCheck.ok) {
+            logMsg(`[${sym}] BTC Gating: Blocked SHORT because ${btcCheck.reason}`);
+            continue;
+         }
+      }
+
       const tradeSizeUSDT = balance * RISK_PER_TRADE; // e.g. 10% of base capital
       const leverageQty = tradeSizeUSDT * LEVERAGE;
       const qty = Math.max(0.001, leverageQty / sig.entryPrice); // Note: proper step-size rounding needed per coin ideally
@@ -238,6 +340,10 @@ export async function runTraderLoop() {
         }
 
         logMsg(`✅ DEPLOYED: ${sym} ${sig.side} | SL: ${SL_ENABLED ? sig.stopLoss.toFixed(4) : 'OFF'} | TP: ${TP_ENABLED ? (TP1_ONLY ? 'TP1-ONLY' : 'TP1+TP2') : 'OFF'}`);
+        
+        if (sig.side === 'LONG') deployedLongsThisScan++;
+        if (sig.side === 'SHORT') deployedShortsThisScan++;
+
       } catch(e: any) {
         logMsg(`❌ ERR executing ${sym}: ${e.message}`);
         console.error(`Full error for ${sym}:`, e);

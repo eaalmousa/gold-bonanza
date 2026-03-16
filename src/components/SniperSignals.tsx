@@ -49,11 +49,9 @@ function SniperCard({ row, onDeploy, index }: { row: SignalRow; onDeploy?: (r: S
   const [chartOpen, setChartOpen] = useState(false);
 
   useEffect(() => {
-    // Only play on the very first mount of this specific card
-    // AND only if the signal was actually discovered in the last 10 seconds (not a historical initial load)
+    // Play on first mount — only if the card was freshly discovered (not a page-load restore)
     const isNew = !row.timestamp || (Date.now() - row.timestamp < 10000);
-    
-    if (isNew && sig.score >= 17) {
+    if (isNew) {
       if (sig.kind === 'SUPER_SNIPER') {
         new Audio('/super_sniper_alert.mp3').play().catch((e) => console.warn('Audio play failed', e));
       } else {

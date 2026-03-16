@@ -13,6 +13,7 @@ export let MAX_CONCURRENT_TRADES = parseInt(process.env.MAX_CONCURRENT_TRADES ||
 export let LEVERAGE = parseInt(process.env.LEVERAGE || '10', 10);
 export let SL_ENABLED = true;
 export let TP_ENABLED = true;
+export let TP1_ONLY = false;   // When true: 100% exit at TP1 only, no TP2
 export let TP1_RR = 1.25;
 export let TP2_RR = 2.50;
 export let MIN_SCORE = parseInt(process.env.MIN_SCORE_TO_DEPLOY || '15', 10);
@@ -28,11 +29,12 @@ try {
     LEVERAGE = saved.LEVERAGE ?? LEVERAGE;
     SL_ENABLED = saved.SL_ENABLED ?? SL_ENABLED;
     TP_ENABLED = saved.TP_ENABLED ?? TP_ENABLED;
+    TP1_ONLY = saved.TP1_ONLY ?? TP1_ONLY;
     TP1_RR = saved.TP1_RR ?? TP1_RR;
     TP2_RR = saved.TP2_RR ?? TP2_RR;
     MIN_SCORE = saved.MIN_SCORE ?? MIN_SCORE;
     isAutoTradingEnabled = saved.isAutoTradingEnabled ?? isAutoTradingEnabled;
-    console.log(`[Persistence] Loaded state: AUTO=${isAutoTradingEnabled} MIN_SCORE=${MIN_SCORE}`);
+    console.log(`[Persistence] Loaded state: AUTO=${isAutoTradingEnabled} MIN_SCORE=${MIN_SCORE} TP1_ONLY=${TP1_ONLY}`);
   }
 } catch (e) {
   console.warn('[Persistence] Failed to load state file');
@@ -40,7 +42,7 @@ try {
 
 function saveState() {
   try {
-    const data = { RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED, TP1_RR, TP2_RR, MIN_SCORE, isAutoTradingEnabled };
+    const data = { RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED, TP1_ONLY, TP1_RR, TP2_RR, MIN_SCORE, isAutoTradingEnabled };
     fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
   } catch (e) {
     console.warn('[Persistence] Failed to save state');
@@ -53,6 +55,7 @@ export function updateTraderConfig(config: {
   leverage?: number;
   slEnabled?: boolean;
   tpEnabled?: boolean;
+  tp1Only?: boolean;
   tp1RR?: number;
   tp2RR?: number;
   minScore?: number;
@@ -62,6 +65,7 @@ export function updateTraderConfig(config: {
   if (config.leverage !== undefined) LEVERAGE = config.leverage;
   if (config.slEnabled !== undefined) SL_ENABLED = config.slEnabled;
   if (config.tpEnabled !== undefined) TP_ENABLED = config.tpEnabled;
+  if (config.tp1Only !== undefined) TP1_ONLY = config.tp1Only;
   if (config.tp1RR !== undefined) TP1_RR = config.tp1RR;
   if (config.tp2RR !== undefined) TP2_RR = config.tp2RR;
   if (config.minScore !== undefined) MIN_SCORE = config.minScore;
@@ -173,26 +177,67 @@ export async function runTraderLoop() {
           logMsg(`[${sym}] SL disabled in config. Skipping.`);
         }
         
-        // 💰 Place TAKE PROFIT orders
+        // 💰 Place TAKE PROFIT orders — ENFORCED. If TP fails, we abort and log loudly.
         if (TP_ENABLED) {
           const stopPrice = sig.entryPrice;
           const stopDist = Math.abs(stopPrice - sig.stopLoss);
           
-          const tp1Price = sig.side === 'LONG' ? stopPrice + (stopDist * TP1_RR) : stopPrice - (stopDist * TP1_RR);
-          const tp2Price = sig.side === 'LONG' ? stopPrice + (stopDist * TP2_RR) : stopPrice - (stopDist * TP2_RR);
+          const tp1Price = sig.side === 'LONG'
+            ? stopPrice + (stopDist * TP1_RR)
+            : stopPrice - (stopDist * TP1_RR);
 
-          const tp1Qty = qty * 0.5;
-          logMsg(`[${sym}] Setting TP1 (50%) at ${tp1Price.toFixed(4)} (${TP1_RR}R)...`);
-          await placeTakeProfitMarket(sym, closeSide, tp1Price, tp1Qty);
+          if (TP1_ONLY) {
+            // TP1 ONLY mode: close 100% of position at TP1
+            logMsg(`[${sym}] TP1-ONLY mode: Setting TP1 (100%) at ${tp1Price.toFixed(4)} (${TP1_RR}R)...`);
+            try {
+              await placeTakeProfitMarket(sym, closeSide, tp1Price); // closePosition=true → full close
+              logMsg(`[${sym}] ✅ TP1 placed successfully (full position).`);
+            } catch (tpErr: any) {
+              logMsg(`[${sym}] ❌ CRITICAL: TP1 placement FAILED: ${tpErr.message}. Trade entry will be closed to prevent unprotected position!`);
+              // Attempt to close the entry immediately to avoid naked exposure
+              try {
+                await placeMarketOrder(sym, closeSide, qty);
+                logMsg(`[${sym}] 🔴 Emergency close executed — unprotected position avoided.`);
+              } catch (closeErr: any) {
+                logMsg(`[${sym}] ⚠️ Emergency close ALSO failed: ${closeErr.message}. MANUAL INTERVENTION REQUIRED!`);
+              }
+            }
+          } else {
+            // TP1 + TP2 mode: 50/50 split
+            const tp2Price = sig.side === 'LONG'
+              ? stopPrice + (stopDist * TP2_RR)
+              : stopPrice - (stopDist * TP2_RR);
+            const tp1Qty = qty * 0.5;
+            const tp2Qty = qty * 0.5;
 
-          const tp2Qty = qty * 0.5;
-          logMsg(`[${sym}] Setting TP2 (50%) at ${tp2Price.toFixed(4)} (${TP2_RR}R)...`);
-          await placeTakeProfitMarket(sym, closeSide, tp2Price, tp2Qty);
+            logMsg(`[${sym}] Setting TP1 (50%) at ${tp1Price.toFixed(4)} (${TP1_RR}R)...`);
+            try {
+              await placeTakeProfitMarket(sym, closeSide, tp1Price, tp1Qty);
+              logMsg(`[${sym}] ✅ TP1 placed successfully.`);
+            } catch (tp1Err: any) {
+              logMsg(`[${sym}] ❌ CRITICAL: TP1 placement FAILED: ${tp1Err.message}. Aborting TP2 & closing position!`);
+              try {
+                await placeMarketOrder(sym, closeSide, qty);
+                logMsg(`[${sym}] 🔴 Emergency close executed — unprotected position avoided.`);
+              } catch (closeErr: any) {
+                logMsg(`[${sym}] ⚠️ Emergency close ALSO failed: ${closeErr.message}. MANUAL INTERVENTION REQUIRED!`);
+              }
+              continue; // Skip TP2
+            }
+
+            logMsg(`[${sym}] Setting TP2 (50%) at ${tp2Price.toFixed(4)} (${TP2_RR}R)...`);
+            try {
+              await placeTakeProfitMarket(sym, closeSide, tp2Price, tp2Qty);
+              logMsg(`[${sym}] ✅ TP2 placed successfully.`);
+            } catch (tp2Err: any) {
+              logMsg(`[${sym}] ⚠️ TP2 placement failed (TP1 is live): ${tp2Err.message}. Position is partially protected.`);
+            }
+          }
         } else {
           logMsg(`[${sym}] TP disabled in config. Skipping.`);
         }
 
-        logMsg(`✅ DEPLOYED: ${sym} ${sig.side} | SL: ${SL_ENABLED ? sig.stopLoss.toFixed(4) : 'OFF'} | TP1: ${TP_ENABLED ? 'ON' : 'OFF'}`);
+        logMsg(`✅ DEPLOYED: ${sym} ${sig.side} | SL: ${SL_ENABLED ? sig.stopLoss.toFixed(4) : 'OFF'} | TP: ${TP_ENABLED ? (TP1_ONLY ? 'TP1-ONLY' : 'TP1+TP2') : 'OFF'}`);
       } catch(e: any) {
         logMsg(`❌ ERR executing ${sym}: ${e.message}`);
         console.error(`Full error for ${sym}:`, e);

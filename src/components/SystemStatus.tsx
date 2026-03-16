@@ -16,6 +16,7 @@ export default function SystemStatus() {
     leverage: 5,
     slEnabled: false,
     tpEnabled: true,
+    tp1Only: false,
     tp1RR: 0.35,
     tp2RR: 0.50,
     minScore: 17
@@ -32,6 +33,7 @@ export default function SystemStatus() {
           leverage: res.leverage ?? 5,
           slEnabled: res.slEnabled ?? false,
           tpEnabled: res.tpEnabled ?? true,
+          tp1Only: res.tp1Only ?? false,
           tp1RR: res.tp1RR ?? 0.35,
           tp2RR: res.tp2RR ?? 0.50,
           minScore: res.minScore ?? 17
@@ -43,13 +45,14 @@ export default function SystemStatus() {
   }, []);
 
   const saveConfig = (newConfig: typeof config) => {
-    if (!isLoaded) return; // Don't save if we haven't loaded the real cloud config yet
+    if (!isLoaded) return;
     api.updateAutoTradeConfig({
       riskPerTrade: newConfig.riskPct,
       maxConcurrent: newConfig.maxTrades,
       leverage: newConfig.leverage,
       slEnabled: newConfig.slEnabled,
       tpEnabled: newConfig.tpEnabled,
+      tp1Only: newConfig.tp1Only,
       tp1RR: newConfig.tp1RR,
       tp2RR: newConfig.tp2RR,
       minScore: newConfig.minScore
@@ -224,7 +227,7 @@ export default function SystemStatus() {
             </div>
           </div>
 
-          {/* TP TOGGLE & MULTIPLIERS */}
+          {/* TP TOGGLE, TP1-ONLY & MULTIPLIERS */}
           <div style={{ ...inputContainerStyle, flexDirection: 'row', gap: 12 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <div style={labelStyle}>TP</div>
@@ -235,11 +238,22 @@ export default function SystemStatus() {
                 style={{ cursor: 'pointer', marginTop: 4 }}
               />
             </div>
-            
+
             {config.tpEnabled && (
               <>
                 <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
+                {/* TP1-ONLY toggle */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <div style={{ ...labelStyle, color: config.tp1Only ? 'var(--gold)' : 'var(--text-muted)' }}>TP1 ONLY</div>
+                  <input
+                    type="checkbox"
+                    checked={config.tp1Only}
+                    onChange={e => handleConfigChange('tp1Only', e.target.checked)}
+                    style={{ cursor: 'pointer', marginTop: 4, accentColor: 'var(--gold)' }}
+                  />
+                </div>
+                <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: config.tp1Only ? 0.35 : 1 }}>
                   <div style={labelStyle}>TP1 (R)</div>
                   <input 
                     type="number" step="0.1"
@@ -249,16 +263,18 @@ export default function SystemStatus() {
                     onBlur={() => saveConfig(config)}
                   />
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <div style={labelStyle}>TP2 (R)</div>
-                  <input 
-                    type="number" step="0.1"
-                    style={{ ...inputStyle, width: '45px', fontSize: 13 }}
-                    value={config.tp2RR}
-                    onChange={e => handleConfigChange('tp2RR', e.target.value)}
-                    onBlur={() => saveConfig(config)}
-                  />
-                </div>
+                {!config.tp1Only && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <div style={labelStyle}>TP2 (R)</div>
+                    <input 
+                      type="number" step="0.1"
+                      style={{ ...inputStyle, width: '45px', fontSize: 13 }}
+                      value={config.tp2RR}
+                      onChange={e => handleConfigChange('tp2RR', e.target.value)}
+                      onBlur={() => saveConfig(config)}
+                    />
+                  </div>
+                )}
               </>
             )}
           </div>

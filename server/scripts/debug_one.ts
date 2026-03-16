@@ -40,7 +40,9 @@ async function run() {
       console.log(`✅ candle ${i}: score=${sig.score} side=${sig.side} type=${sig.entryType}`);
     } else {
       rejected++;
-      // To see why, we'd need debugLog — but signals return null silently on most gates
+      const debugLogs = evaluateSniperSignal(tf1h, slice, SWEEP_MODE, 300, 'TRENDING_UP' as any, 0, undefined, 'UP', 'Mock', 'ETHUSDT');
+      // wait, evaluateSniperSignal returns null without exposing debugLog.
+      // So I can't easily see the debugLog unless I modify sniperEngine.ts
     }
   }
   

@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useTradingStore } from '../store/tradingStore';
-import { Search, Activity, TrendingUp, Crosshair, AlertTriangle, ChevronRight, CheckCircle, XCircle, Minus, Rocket, ListFilter, RefreshCw } from 'lucide-react';
+import { Search, Activity, TrendingUp, Crosshair, AlertTriangle, ChevronRight, CheckCircle, XCircle, Minus, Rocket, ListFilter, RefreshCw, Power } from 'lucide-react';
 import { calcEMA, calcRSI, calcATR, calcSMA, calcMACD, calcBollingerBands, detectDoublePattern } from '../engines/indicators';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -386,11 +386,34 @@ export default function CurrencyAnalyzer() {
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const scanRef = useRef(false);
+  
+  const [topMoversEnabled, setTopMoversEnabled] = useState(() => {
+    return localStorage.getItem('gb_top_movers_enabled') !== 'false';
+  });
+
+  const toggleTopMovers = () => {
+    setTopMoversEnabled(prev => {
+      const next = !prev;
+      localStorage.setItem('gb_top_movers_enabled', String(next));
+      if (next && topMovers.length === 0) {
+        // Run immediately if turning on and empty
+        setTimeout(runTopScan, 10);
+      }
+      return next;
+    });
+  };
 
   // Auto-scan top movers on mount, refresh every 5 minutes
   useEffect(() => {
-    runTopScan();
-    const id = setInterval(runTopScan, 5 * 60 * 1000);
+    if (topMoversEnabled) {
+      runTopScan();
+    }
+    const id = setInterval(() => {
+      // Always get fresh state to check if still enabled
+      if (localStorage.getItem('gb_top_movers_enabled') !== 'false') {
+        runTopScan();
+      }
+    }, 5 * 60 * 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -674,8 +697,8 @@ export default function CurrencyAnalyzer() {
       <div style={{ marginTop: 32 }}>
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          marginBottom: 16, paddingBottom: 12,
-          borderBottom: '1px solid rgba(212,175,55,0.12)'
+          marginBottom: topMoversEnabled ? 16 : 0, paddingBottom: 12,
+          borderBottom: topMoversEnabled ? '1px solid rgba(212,175,55,0.12)' : 'none'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <ListFilter size={16} color="var(--gold)" />
@@ -684,26 +707,51 @@ export default function CurrencyAnalyzer() {
                 TOP 15 PREDICTED MOVERS
               </div>
               <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>
-                Live 4H indicator scan · {lastScanned ? `Last: ${lastScanned}` : 'Scanning universe…'}
+                Live 4H indicator scan
+                {topMoversEnabled 
+                  ? (lastScanned ? ` · Last: ${lastScanned}` : ' · Scanning universe…')
+                  : ' · Panel is currently disabled'
+                }
               </div>
             </div>
           </div>
-          <button
-            onClick={runTopScan}
-            disabled={isScanning}
-            style={{
-              background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.2)',
-              borderRadius: 8, padding: '6px 12px', cursor: isScanning ? 'not-allowed' : 'pointer',
-              display: 'flex', alignItems: 'center', gap: 6,
-              color: 'var(--gold)', fontSize: 10, fontWeight: 800, opacity: isScanning ? 0.5 : 1
-            }}
-          >
-            <RefreshCw size={12} style={{ animation: isScanning ? 'spin 1s linear infinite' : 'none' }} />
-            {isScanning ? 'SCANNING…' : 'REFRESH'}
-          </button>
+          
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {topMoversEnabled && (
+              <button
+                onClick={runTopScan}
+                disabled={isScanning}
+                className="premium-btn"
+                style={{
+                  background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.2)',
+                  borderRadius: 8, padding: '6px 12px', cursor: isScanning ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  color: 'var(--gold)', fontSize: 10, fontWeight: 800, opacity: isScanning ? 0.5 : 1
+                }}
+              >
+                <RefreshCw size={12} style={{ animation: isScanning ? 'spin 1s linear infinite' : 'none' }} />
+                {isScanning ? 'SCANNING…' : 'REFRESH'}
+              </button>
+            )}
+            
+            <button
+              onClick={toggleTopMovers}
+              style={{
+                background: topMoversEnabled ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                border: `1px solid ${topMoversEnabled ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                color: topMoversEnabled ? 'var(--green)' : 'var(--red)',
+                borderRadius: 8, padding: '6px 12px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 6,
+                fontSize: 10, fontWeight: 800, transition: 'all 0.2s'
+              }}
+            >
+              <Power size={12} />
+              {topMoversEnabled ? 'ON' : 'OFF'}
+            </button>
+          </div>
         </div>
 
-        {topMovers.length === 0 && (
+        {topMoversEnabled && topMovers.length === 0 && (
           <div style={{
             padding: '24px', textAlign: 'center',
             background: 'rgba(0,0,0,0.25)', borderRadius: 'var(--radius-lg)',
@@ -713,7 +761,7 @@ export default function CurrencyAnalyzer() {
           </div>
         )}
 
-        {topMovers.length > 0 && (
+        {topMoversEnabled && topMovers.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topMovers.map((m, idx) => {
               const isLong  = m.direction === 'LONG';

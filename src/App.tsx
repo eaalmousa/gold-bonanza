@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import LoginGate from './components/LoginGate';
 import Header from './components/Header';
 import SystemStatus from './components/SystemStatus';
+import AutoTraderConsole from './components/AutoTraderConsole';
 import SniperSignals from './components/SniperSignals';
 import BreakoutSignals from './components/BreakoutSignals';
 import MarketIntelligence from './components/MarketIntelligence';
@@ -67,6 +68,10 @@ function App() {
     <div className="sections-stack" style={{ maxWidth: 1600, margin: '0 auto' }}>
       <Header />
       <SystemStatus />
+
+      <div className="terminal-panel" style={{ padding: '32px' }}>
+        <AutoTraderConsole />
+      </div>
 
       <div className="terminal-panel" style={{ padding: '32px' }}>
         <LockdownDiagnostics />

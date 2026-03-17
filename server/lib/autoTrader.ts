@@ -131,9 +131,18 @@ export async function runTraderLoop() {
     const snipers = results.sniperSignals || [];
     const breakouts = results.breakoutSignals || [];
     
-    // Sort combined by score desc
+    // Sort combined by score desc, but EXCLUDE pending/invalidated breakouts
     const combined = [...snipers, ...breakouts]
-      .filter(s => s.signal.score >= MIN_SCORE)
+      .filter(s => {
+        if (s.signal.score < MIN_SCORE) return false;
+        const et = s.signal.entryType;
+        // Breakout engine returns PENDING_BREAKOUT for the initial pump.
+        // We only want to auto-trade RETEST_CONFIRMED or normal Sniper signals.
+        if (et === 'PENDING_BREAKOUT' || et === 'INVALIDATED' || et === 'EXPIRED_NO_RETEST') {
+          return false;
+        }
+        return true;
+      })
       .sort((a, b) => b.signal.score - a.signal.score);
 
     if (combined.length === 0) {

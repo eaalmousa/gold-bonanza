@@ -168,7 +168,8 @@ export function useLiveFeeds() {
         { 
           symbol: 'BTCUSDT', 
           cvd: formattedCVD, 
-          icebergs: qty > 0.5 ? Math.floor(Math.random() * 5) + 1 : 2, 
+          icebergBids: lastLargeBlocksBid.current,
+          icebergAsks: lastLargeBlocksAsk.current,
           agFlow: qty > 1 ? 'EXTREME' : 'NORMAL', 
           liqCascade: qty > 5 ? 'IMMINENT' : 'NONE', 
           liqVolume: `${(qty * 10).toFixed(1)} BTC`, 

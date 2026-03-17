@@ -131,7 +131,8 @@ export interface SignalHistoryEntry {
 export interface MicrostructureRow {
   symbol: string;
   cvd: string;
-  icebergs: number;
+  icebergBids: number;
+  icebergAsks: number;
   agFlow: string;
   liqCascade: string;
   liqVolume: string;

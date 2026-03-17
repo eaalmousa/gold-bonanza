@@ -44,7 +44,13 @@ export default function MicrostructureTable() {
                 <tr key={i}>
                   <td style={{ textAlign: 'left', color: 'var(--text-primary)', fontSize: 14 }}>{row.symbol}</td>
                   <td style={{ color: cvdPos ? 'var(--green)' : 'var(--red)' }}>{row.cvd}</td>
-                  <td style={{ color: row.icebergs > 5 ? 'var(--gold)' : 'var(--text-muted)' }}>{row.icebergs} BLOCKS</td>
+                   <td>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                      {row.icebergBids > 0 && <span style={{ color: 'var(--green)', fontSize: 10 }}>B[{row.icebergBids}]</span>}
+                      {row.icebergAsks > 0 && <span style={{ color: 'var(--red)', fontSize: 10 }}>S[{row.icebergAsks}]</span>}
+                      {row.icebergBids === 0 && row.icebergAsks === 0 && <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>EMPTY</span>}
+                    </div>
+                  </td>
                   <td>
                     <span style={{ 
                       padding: '4px 8px', borderRadius: 4, fontSize: 10,

@@ -44,26 +44,26 @@ export default function SystemStatus() {
       .catch(console.error);
   }, []);
 
-  const saveConfig = (newConfig: typeof config) => {
-    if (!isLoaded) return;
-    api.updateAutoTradeConfig({
-      riskPerTrade: newConfig.riskPct,
-      maxConcurrent: newConfig.maxTrades,
-      leverage: newConfig.leverage,
-      slEnabled: newConfig.slEnabled,
-      tpEnabled: newConfig.tpEnabled,
-      tp1Only: newConfig.tp1Only,
-      tp1RR: newConfig.tp1RR,
-      tp2RR: newConfig.tp2RR,
-      minScore: newConfig.minScore
-    }).catch(console.error);
-  };
+  // saveConfig was historically used here but is now rolled into handleConfigChange
 
   const handleConfigChange = (key: keyof typeof config, value: any) => {
     const val = typeof value === 'boolean' ? value : Number(value);
     const newConf = { ...config, [key]: val };
     setConfig(newConf);
-    if (typeof value === 'boolean') saveConfig(newConf); // Save immediately for toggles
+    
+    // Save to the backend immediately 
+    // This prevents the "onBlur" bug where hitting Enter or not clicking away fails to save changes.
+    api.updateAutoTradeConfig({
+      riskPerTrade: newConf.riskPct,
+      maxConcurrent: newConf.maxTrades,
+      leverage: newConf.leverage,
+      slEnabled: newConf.slEnabled,
+      tpEnabled: newConf.tpEnabled,
+      tp1Only: newConf.tp1Only,
+      tp1RR: newConf.tp1RR,
+      tp2RR: newConf.tp2RR,
+      minScore: newConf.minScore
+    }).catch(console.error);
   };
 
   const capacity = activeTrades.length / config.maxTrades;
@@ -174,7 +174,6 @@ export default function SystemStatus() {
               style={inputStyle}
               value={(config.riskPct * 100).toFixed(2)}
               onChange={e => handleConfigChange('riskPct', String(Number(e.target.value) / 100))}
-              onBlur={() => saveConfig(config)}
             />
           </div>
 
@@ -185,7 +184,6 @@ export default function SystemStatus() {
               style={inputStyle}
               value={config.maxTrades}
               onChange={e => handleConfigChange('maxTrades', e.target.value)}
-              onBlur={() => saveConfig(config)}
             />
           </div>
 
@@ -196,7 +194,6 @@ export default function SystemStatus() {
               style={inputStyle}
               value={config.leverage}
               onChange={e => handleConfigChange('leverage', e.target.value)}
-              onBlur={() => saveConfig(config)}
             />
           </div>
 
@@ -207,7 +204,6 @@ export default function SystemStatus() {
               style={{ ...inputStyle, color: 'var(--green)' }}
               value={config.minScore}
               onChange={e => handleConfigChange('minScore', e.target.value)}
-              onBlur={() => saveConfig(config)}
             />
           </div>
 
@@ -260,7 +256,6 @@ export default function SystemStatus() {
                     style={{ ...inputStyle, width: '45px', fontSize: 13 }}
                     value={config.tp1RR}
                     onChange={e => handleConfigChange('tp1RR', e.target.value)}
-                    onBlur={() => saveConfig(config)}
                   />
                 </div>
                 {!config.tp1Only && (
@@ -271,7 +266,6 @@ export default function SystemStatus() {
                       style={{ ...inputStyle, width: '45px', fontSize: 13 }}
                       value={config.tp2RR}
                       onChange={e => handleConfigChange('tp2RR', e.target.value)}
-                      onBlur={() => saveConfig(config)}
                     />
                   </div>
                 )}

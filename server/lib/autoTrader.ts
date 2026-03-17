@@ -147,14 +147,14 @@ export async function runTraderLoop() {
     activeLongs.forEach(p => {
       const pnl = parseFloat(p.unRealizedProfit);
       const margin = (parseFloat(p.positionAmt) * parseFloat(p.entryPrice)) / parseFloat(p.leverage);
-      if (margin > 0 && (pnl / margin) < -0.10) longsInDeepRed++; // ROI down > 10%
+      if (margin > 0 && (pnl / margin) < -0.25) longsInDeepRed++; // ROI down > 25% (was 10% — too sensitive at 25x lever)
     });
     
     let shortsInDeepRed = 0;
     activeShorts.forEach(p => {
       const pnl = parseFloat(p.unRealizedProfit);
       const margin = Math.abs((parseFloat(p.positionAmt) * parseFloat(p.entryPrice)) / parseFloat(p.leverage));
-      if (margin > 0 && (pnl / margin) < -0.10) shortsInDeepRed++;
+      if (margin > 0 && (pnl / margin) < -0.25) shortsInDeepRed++; // ROI down > 25% (was 10% — too sensitive at 25x lever)
     });
 
     // Fetch BTC 15m context for confirmation gating

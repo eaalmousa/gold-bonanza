@@ -40,7 +40,8 @@ function BreakoutCard({ row, onDeploy, index }: { row: SignalRow; onDeploy?: (r:
 
   useEffect(() => {
     // Play on first mount — only if the card was freshly discovered (not a page-load restore)
-    const isNew = !row.timestamp || (Date.now() - row.timestamp < 10000);
+    // Scan batches can take up to 45 seconds now, so increase window to 60,000ms
+    const isNew = !row.timestamp || (Date.now() - row.timestamp < 60000);
     if (isNew) {
       new Audio('/sniper_alert.mp3').play().catch((e) => console.warn('Audio play failed', e));
     }

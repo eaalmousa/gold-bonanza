@@ -199,7 +199,7 @@ export async function runTraderLoop() {
         }
     }
 
-    const MAX_SAME_SIDE_POSITIONS = 2; // Hard cap for auto-trade
+    const MAX_SAME_SIDE_POSITIONS = MAX_CONCURRENT_TRADES; // Match user's MAX TRADES — no arbitrary side cap
     const MAX_DEPLOY_PER_SCAN = 2;     // Allow 2 best signals per scan cycle (was 1)
 
     let deployedLongsThisScan = 0;

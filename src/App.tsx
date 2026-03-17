@@ -13,6 +13,8 @@ import LockdownDiagnostics from './components/LockdownDiagnostics';
 import TriggerLayers from './components/TriggerLayers';
 import MicrostructureTable from './components/MicrostructureTable';
 import CurrencyAnalyzer from './components/CurrencyAnalyzer';
+import BtcCyclePanel from './components/BtcCyclePanel';
+import BtcExhaustionPanel from './components/BtcExhaustionPanel';
 import { useScanner } from './hooks/useScanner';
 import { useLiveFeeds } from './hooks/useLiveFeeds';
 import { useTradingStore } from './store/tradingStore';
@@ -71,6 +73,14 @@ function App() {
 
       <div className="terminal-panel" style={{ padding: '32px' }}>
         <AutoTraderConsole />
+      </div>
+
+      {/* BTC Macro Intelligence */}
+      <div className="terminal-panel" style={{ padding: '32px' }}>
+        <div className="sections-stack" style={{ gap: 24 }}>
+          <BtcCyclePanel />
+          <BtcExhaustionPanel />
+        </div>
       </div>
 
       <div className="terminal-panel" style={{ padding: '32px' }}>

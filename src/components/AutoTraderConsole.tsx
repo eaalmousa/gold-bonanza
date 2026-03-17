@@ -11,7 +11,7 @@ interface AutoTraderStatus {
 export default function AutoTraderConsole() {
   const [status, setStatus] = useState<AutoTraderStatus>({ enabled: false, logs: [] });
   const { setAutoTradeActive, isAutoTradeActive } = useTradingStore();
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -32,9 +32,9 @@ export default function AutoTraderConsole() {
   }, [isAutoTradeActive, setAutoTradeActive]);
 
   useEffect(() => {
-    // Auto-scroll to bottom of logs
-    if (logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    // Auto-scroll to bottom of logs within the container only
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
   }, [status.logs]);
 
@@ -128,7 +128,7 @@ export default function AutoTraderConsole() {
         flexDirection: 'column',
         gap: 6,
         fontFamily: "'JetBrains Mono', 'Fira Code', monospace", // Using inline mono font
-      }}>
+      }} ref={containerRef}>
         {status.logs.length === 0 ? (
           <div style={{ color: 'var(--text-muted)', fontSize: 11, textAlign: 'center', marginTop: 100 }}>
             {status.enabled ? 'Monitoring signals... waiting for deployment events.' : 'Auto-Trader is OFF. No logs.'}
@@ -159,7 +159,6 @@ export default function AutoTraderConsole() {
             );
           })
         )}
-        <div ref={logsEndRef} />
       </div>
     </section>
   );

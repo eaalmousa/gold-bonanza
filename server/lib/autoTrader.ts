@@ -17,6 +17,7 @@ export let TP1_ONLY = false;   // When true: 100% exit at TP1 only, no TP2
 export let TP1_RR = 1.25;
 export let TP2_RR = 2.50;
 export let MIN_SCORE = parseInt(process.env.MIN_SCORE_TO_DEPLOY || '15', 10);
+export let BTC_GATE_ENABLED = true; // When true: block LONGs if BTC printing consecutive red candles
 export let isAutoTradingEnabled = false;
 const BASE_CAPITAL = parseFloat(process.env.BASE_CAPITAL || '300');
 
@@ -33,8 +34,9 @@ try {
     TP1_RR = saved.TP1_RR ?? TP1_RR;
     TP2_RR = saved.TP2_RR ?? TP2_RR;
     MIN_SCORE = saved.MIN_SCORE ?? MIN_SCORE;
+    BTC_GATE_ENABLED = saved.BTC_GATE_ENABLED ?? BTC_GATE_ENABLED;
     isAutoTradingEnabled = saved.isAutoTradingEnabled ?? isAutoTradingEnabled;
-    console.log(`[Persistence] Loaded state: AUTO=${isAutoTradingEnabled} MIN_SCORE=${MIN_SCORE} TP1_ONLY=${TP1_ONLY}`);
+    console.log(`[Persistence] Loaded state: AUTO=${isAutoTradingEnabled} MIN_SCORE=${MIN_SCORE} BTC_GATE=${BTC_GATE_ENABLED} TP1_ONLY=${TP1_ONLY}`);
   }
 } catch (e) {
   console.warn('[Persistence] Failed to load state file');
@@ -42,7 +44,7 @@ try {
 
 function saveState() {
   try {
-    const data = { RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED, TP1_ONLY, TP1_RR, TP2_RR, MIN_SCORE, isAutoTradingEnabled };
+    const data = { RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED, TP1_ONLY, TP1_RR, TP2_RR, MIN_SCORE, BTC_GATE_ENABLED, isAutoTradingEnabled };
     fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
   } catch (e) {
     console.warn('[Persistence] Failed to save state');
@@ -59,6 +61,7 @@ export function updateTraderConfig(config: {
   tp1RR?: number;
   tp2RR?: number;
   minScore?: number;
+  btcGateEnabled?: boolean;
 }) {
   if (config.riskPerTrade !== undefined) RISK_PER_TRADE = config.riskPerTrade;
   if (config.maxConcurrent !== undefined) MAX_CONCURRENT_TRADES = config.maxConcurrent;
@@ -69,9 +72,10 @@ export function updateTraderConfig(config: {
   if (config.tp1RR !== undefined) TP1_RR = config.tp1RR;
   if (config.tp2RR !== undefined) TP2_RR = config.tp2RR;
   if (config.minScore !== undefined) MIN_SCORE = config.minScore;
+  if (config.btcGateEnabled !== undefined) BTC_GATE_ENABLED = config.btcGateEnabled;
   
   saveState();
-  logMsg(`Config Updated & Saved: MIN_SCORE=${MIN_SCORE} SL=${SL_ENABLED} TP=${TP_ENABLED}`);
+  logMsg(`Config Updated & Saved: MIN_SCORE=${MIN_SCORE} BTC_GATE=${BTC_GATE_ENABLED} SL=${SL_ENABLED} TP=${TP_ENABLED}`);
 }
 
 export function toggleAutoTrade(enabled: boolean) {
@@ -196,7 +200,7 @@ export async function runTraderLoop() {
     }
 
     const MAX_SAME_SIDE_POSITIONS = 2; // Hard cap for auto-trade
-    const MAX_DEPLOY_PER_SCAN = 1;     // Cluster ranking: only pick the absolute best
+    const MAX_DEPLOY_PER_SCAN = 2;     // Allow 2 best signals per scan cycle (was 1)
 
     let deployedLongsThisScan = 0;
     let deployedShortsThisScan = 0;
@@ -213,42 +217,50 @@ export async function runTraderLoop() {
 
       const sig = row.signal;
 
-      // ─── WAVE DEPLOYMENT GATES ───
+      // ─── WAVE DEPLOYMENT GATES — each logs the EXACT reason for blocking ───
       if (sig.side === 'LONG') {
          if (currentSideLongs.length >= MAX_SAME_SIDE_POSITIONS) {
-            logMsg(`[${sym}] Wave Cap: Already hold ${currentSideLongs.length}/${MAX_SAME_SIDE_POSITIONS} LONGs. Skipping.`);
+            logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — Wave Cap: holding ${currentSideLongs.length}/${MAX_SAME_SIDE_POSITIONS} LONGs already.`);
             continue;
          }
          if (longsInDeepRed >= 1) {
-            logMsg(`[${sym}] Circuit Breaker: ${longsInDeepRed} active LONGs are in deep red (>10% loss). Halting LONG deployments.`);
+            logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — Circuit Breaker: ${longsInDeepRed} LONG(s) in deep red (>25% loss). Not adding more risk.`);
             continue;
          }
          if (deployedLongsThisScan >= MAX_DEPLOY_PER_SCAN) {
-            logMsg(`[${sym}] Cluster Limit: Already deployed best LONG this cycle. Skipping.`);
+            logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — Cluster Limit: already deployed ${MAX_DEPLOY_PER_SCAN} LONGs this scan cycle.`);
             continue;
          }
-         const btcCheck = checkBtcConfirmation('LONG');
-         if (!btcCheck.ok) {
-            logMsg(`[${sym}] BTC Gating: Blocked LONG because ${btcCheck.reason}`);
-            continue;
+         if (BTC_GATE_ENABLED) {
+            const btcCheck = checkBtcConfirmation('LONG');
+            if (!btcCheck.ok) {
+               logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — BTC Gate: ${btcCheck.reason}`);
+               continue;
+            }
+         } else {
+            logMsg(`⚠️ NOTE [${sym}] BTC Gate is OFF — skipping BTC candle confirmation.`);
          }
       } else {
          if (currentSideShorts.length >= MAX_SAME_SIDE_POSITIONS) {
-            logMsg(`[${sym}] Wave Cap: Already hold ${currentSideShorts.length}/${MAX_SAME_SIDE_POSITIONS} SHORTs. Skipping.`);
+            logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — Wave Cap: holding ${currentSideShorts.length}/${MAX_SAME_SIDE_POSITIONS} SHORTs already.`);
             continue;
          }
          if (shortsInDeepRed >= 1) {
-            logMsg(`[${sym}] Circuit Breaker: ${shortsInDeepRed} active SHORTs are in deep red (>10% loss). Halting SHORT deployments.`);
+            logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — Circuit Breaker: ${shortsInDeepRed} SHORT(s) in deep red (>25% loss). Not adding more risk.`);
             continue;
          }
          if (deployedShortsThisScan >= MAX_DEPLOY_PER_SCAN) {
-            logMsg(`[${sym}] Cluster Limit: Already deployed best SHORT this cycle. Skipping.`);
+            logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — Cluster Limit: already deployed ${MAX_DEPLOY_PER_SCAN} SHORTs this scan cycle.`);
             continue;
          }
-         const btcCheck = checkBtcConfirmation('SHORT');
-         if (!btcCheck.ok) {
-            logMsg(`[${sym}] BTC Gating: Blocked SHORT because ${btcCheck.reason}`);
-            continue;
+         if (BTC_GATE_ENABLED) {
+            const btcCheck = checkBtcConfirmation('SHORT');
+            if (!btcCheck.ok) {
+               logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — BTC Gate: ${btcCheck.reason}`);
+               continue;
+            }
+         } else {
+            logMsg(`⚠️ NOTE [${sym}] BTC Gate is OFF — skipping BTC candle confirmation.`);
          }
       }
 

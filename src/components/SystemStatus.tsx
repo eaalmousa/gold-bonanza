@@ -19,7 +19,8 @@ export default function SystemStatus() {
     tp1Only: false,
     tp1RR: 0.35,
     tp2RR: 0.50,
-    minScore: 17
+    minScore: 13,
+    btcGate: true,
   });
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -36,7 +37,8 @@ export default function SystemStatus() {
           tp1Only: res.tp1Only ?? false,
           tp1RR: res.tp1RR ?? 0.35,
           tp2RR: res.tp2RR ?? 0.50,
-          minScore: res.minScore ?? 17
+          minScore: res.minScore ?? 13,
+          btcGate: res.btcGateEnabled ?? true,
         };
         setConfig(newCfg);
         setIsLoaded(true);
@@ -62,7 +64,8 @@ export default function SystemStatus() {
       tp1Only: newConf.tp1Only,
       tp1RR: newConf.tp1RR,
       tp2RR: newConf.tp2RR,
-      minScore: newConf.minScore
+      minScore: newConf.minScore,
+      btcGateEnabled: newConf.btcGate,
     }).catch(console.error);
   };
 
@@ -219,6 +222,22 @@ export default function SystemStatus() {
               />
               <span style={{ fontSize: 10, fontWeight: 900, color: config.slEnabled ? 'var(--green)' : 'var(--red)' }}>
                 {config.slEnabled ? 'ON' : 'OFF'}
+              </span>
+            </div>
+          </div>
+
+          {/* BTC GATE TOGGLE */}
+          <div style={inputContainerStyle}>
+            <div style={{ ...labelStyle, color: config.btcGate ? 'var(--text-muted)' : 'var(--gold)' }}>BTC GATE</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+              <input
+                type="checkbox"
+                checked={config.btcGate}
+                onChange={e => handleConfigChange('btcGate', e.target.checked)}
+                style={{ cursor: 'pointer', accentColor: 'var(--gold)' }}
+              />
+              <span style={{ fontSize: 10, fontWeight: 900, color: config.btcGate ? 'var(--green)' : 'var(--gold)' }}>
+                {config.btcGate ? 'ON' : 'OFF'}
               </span>
             </div>
           </div>

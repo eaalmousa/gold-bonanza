@@ -62,6 +62,6 @@ export const api = {
   toggleAutoTrade: (enabled: boolean) => apiRequest('/trade/autotrade/toggle', { method: 'POST', body: JSON.stringify({ enabled }) }),
   getAutoTradeStatus: () => apiRequest('/trade/autotrade/status'),
   getAutoTradeConfig: () => apiRequest('/trade/autotrade/config'),
-  updateAutoTradeConfig: (config: { riskPerTrade?: number; maxConcurrent?: number; leverage?: number; slEnabled?: boolean; tpEnabled?: boolean; tp1Only?: boolean; tp1RR?: number; tp2RR?: number; minScore?: number }) => 
+  updateAutoTradeConfig: (config: { riskPerTrade?: number; maxConcurrent?: number; leverage?: number; slEnabled?: boolean; tpEnabled?: boolean; tp1Only?: boolean; tp1RR?: number; tp2RR?: number; minScore?: number; btcGateEnabled?: boolean }) => 
     apiRequest('/trade/autotrade/config', { method: 'POST', body: JSON.stringify(config) }),
 };

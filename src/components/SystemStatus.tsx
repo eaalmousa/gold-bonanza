@@ -21,6 +21,7 @@ export default function SystemStatus() {
     tp2RR: 0.50,
     minScore: 13,
     btcGate: true,
+    trailTp: false,
   });
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -39,6 +40,7 @@ export default function SystemStatus() {
           tp2RR: res.tp2RR ?? 0.50,
           minScore: res.minScore ?? 13,
           btcGate: res.btcGateEnabled ?? true,
+          trailTp: res.trailTpEnabled ?? false,
         };
         setConfig(newCfg);
         setIsLoaded(true);
@@ -66,6 +68,7 @@ export default function SystemStatus() {
       tp2RR: newConf.tp2RR,
       minScore: newConf.minScore,
       btcGateEnabled: newConf.btcGate,
+      trailTpEnabled: newConf.trailTp,
     }).catch(console.error);
   };
 
@@ -238,6 +241,22 @@ export default function SystemStatus() {
               />
               <span style={{ fontSize: 10, fontWeight: 900, color: config.btcGate ? 'var(--green)' : 'var(--gold)' }}>
                 {config.btcGate ? 'ON' : 'OFF'}
+              </span>
+            </div>
+          </div>
+
+          {/* TRAIL TP TOGGLE */}
+          <div style={inputContainerStyle}>
+            <div style={{ ...labelStyle, color: config.trailTp ? '#3b82f6' : 'var(--text-muted)' }}>TRAIL TP</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+              <input
+                type="checkbox"
+                checked={config.trailTp}
+                onChange={e => handleConfigChange('trailTp', e.target.checked)}
+                style={{ cursor: 'pointer', accentColor: '#3b82f6' }}
+              />
+              <span style={{ fontSize: 10, fontWeight: 900, color: config.trailTp ? '#3b82f6' : 'var(--text-muted)' }}>
+                {config.trailTp ? 'ON' : 'OFF'}
               </span>
             </div>
           </div>

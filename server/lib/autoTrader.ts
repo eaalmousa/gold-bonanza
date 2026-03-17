@@ -1,4 +1,4 @@
-import { getPositions, getBalance, setLeverage, placeMarketOrder, placeStopMarket, placeTakeProfitMarket } from './binance';
+import { getPositions, getBalance, setLeverage, placeMarketOrder, placeStopMarket, placeTakeProfitMarket, placeTrailingStopMarket } from './binance';
 import { runBonanzaCore } from '../../src/engines/scanner';
 import { MODES } from '../../src/types/trading';
 import { DEFAULT_SYMBOLS } from '../../src/types/trading';
@@ -18,6 +18,7 @@ export let TP1_RR = 1.25;
 export let TP2_RR = 2.50;
 export let MIN_SCORE = parseInt(process.env.MIN_SCORE_TO_DEPLOY || '15', 10);
 export let BTC_GATE_ENABLED = true; // When true: block LONGs if BTC printing consecutive red candles
+export let TRAIL_TP_ENABLED = false; // When true: uses a tight trailing stop instead of fixed TP
 export let isAutoTradingEnabled = false;
 const BASE_CAPITAL = parseFloat(process.env.BASE_CAPITAL || '300');
 
@@ -35,8 +36,9 @@ try {
     TP2_RR = saved.TP2_RR ?? TP2_RR;
     MIN_SCORE = saved.MIN_SCORE ?? MIN_SCORE;
     BTC_GATE_ENABLED = saved.BTC_GATE_ENABLED ?? BTC_GATE_ENABLED;
+    TRAIL_TP_ENABLED = saved.TRAIL_TP_ENABLED ?? TRAIL_TP_ENABLED;
     isAutoTradingEnabled = saved.isAutoTradingEnabled ?? isAutoTradingEnabled;
-    console.log(`[Persistence] Loaded state: AUTO=${isAutoTradingEnabled} MIN_SCORE=${MIN_SCORE} BTC_GATE=${BTC_GATE_ENABLED} TP1_ONLY=${TP1_ONLY}`);
+    console.log(`[Persistence] Loaded state: AUTO=${isAutoTradingEnabled} MIN_SCORE=${MIN_SCORE} BTC_GATE=${BTC_GATE_ENABLED} TRAIL=${TRAIL_TP_ENABLED}`);
   }
 } catch (e) {
   console.warn('[Persistence] Failed to load state file');
@@ -44,7 +46,7 @@ try {
 
 function saveState() {
   try {
-    const data = { RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED, TP1_ONLY, TP1_RR, TP2_RR, MIN_SCORE, BTC_GATE_ENABLED, isAutoTradingEnabled };
+    const data = { RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED, TP1_ONLY, TP1_RR, TP2_RR, MIN_SCORE, BTC_GATE_ENABLED, TRAIL_TP_ENABLED, isAutoTradingEnabled };
     fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
   } catch (e) {
     console.warn('[Persistence] Failed to save state');
@@ -62,6 +64,7 @@ export function updateTraderConfig(config: {
   tp2RR?: number;
   minScore?: number;
   btcGateEnabled?: boolean;
+  trailTpEnabled?: boolean;
 }) {
   if (config.riskPerTrade !== undefined) RISK_PER_TRADE = config.riskPerTrade;
   if (config.maxConcurrent !== undefined) MAX_CONCURRENT_TRADES = config.maxConcurrent;
@@ -73,9 +76,10 @@ export function updateTraderConfig(config: {
   if (config.tp2RR !== undefined) TP2_RR = config.tp2RR;
   if (config.minScore !== undefined) MIN_SCORE = config.minScore;
   if (config.btcGateEnabled !== undefined) BTC_GATE_ENABLED = config.btcGateEnabled;
+  if (config.trailTpEnabled !== undefined) TRAIL_TP_ENABLED = config.trailTpEnabled;
   
   saveState();
-  logMsg(`Config Updated & Saved: MIN_SCORE=${MIN_SCORE} BTC_GATE=${BTC_GATE_ENABLED} SL=${SL_ENABLED} TP=${TP_ENABLED}`);
+  logMsg(`Config Updated & Saved: MIN_SCORE=${MIN_SCORE} TRAIL=${TRAIL_TP_ENABLED} SL=${SL_ENABLED} TP=${TP_ENABLED}`);
 }
 
 export function toggleAutoTrade(enabled: boolean) {
@@ -309,7 +313,18 @@ export async function runTraderLoop() {
             ? stopPrice + (stopDist * TP1_RR)
             : stopPrice - (stopDist * TP1_RR);
 
-          if (TP1_ONLY) {
+          if (TRAIL_TP_ENABLED) {
+            logMsg(`[${sym}] TRAIL TP ON: Setting tight trailing stop (0.5% callback)...`);
+            try {
+              await placeTrailingStopMarket(sym, closeSide, 0.5); // very tight 0.5% pullback
+              logMsg(`[${sym}] ✅ Trailing Stop placed successfully.`);
+            } catch (tsErr: any) {
+              logMsg(`[${sym}] ❌ CRITICAL: Trailing Stop placement FAILED: ${tsErr.message}. Emergency closing...`);
+              try {
+                await placeMarketOrder(sym, closeSide, qty);
+              } catch (e) { /* silent fail on emergency */ }
+            }
+          } else if (TP1_ONLY) {
             // TP1 ONLY mode: close 100% of position at TP1
             logMsg(`[${sym}] TP1-ONLY mode: Setting TP1 (100%) at ${tp1Price.toFixed(4)} (${TP1_RR}R)...`);
             try {

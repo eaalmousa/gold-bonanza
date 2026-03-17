@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from './auth';
 import { getPositions, getBalance, placeMarketOrder, placeStopMarket, placeTakeProfitMarket, setLeverage } from '../lib/binance';
-import { isAutoTradingEnabled, toggleAutoTrade, tradeLogs, RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED, TP1_ONLY, TP1_RR, TP2_RR, MIN_SCORE, BTC_GATE_ENABLED, updateTraderConfig } from '../lib/autoTrader';
+import { isAutoTradingEnabled, toggleAutoTrade, tradeLogs, RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED, TP1_ONLY, TP1_RR, TP2_RR, MIN_SCORE, BTC_GATE_ENABLED, TRAIL_TP_ENABLED, updateTraderConfig } from '../lib/autoTrader';
 
 
 export const tradeRouter = Router();
@@ -51,13 +51,14 @@ tradeRouter.get('/autotrade/config', (req, res) => {
     tp1RR: TP1_RR,
     tp2RR: TP2_RR,
     minScore: MIN_SCORE,
-    btcGateEnabled: BTC_GATE_ENABLED
+    btcGateEnabled: BTC_GATE_ENABLED,
+    trailTpEnabled: TRAIL_TP_ENABLED
   });
 });
 
 tradeRouter.post('/autotrade/config', (req, res) => {
-  const { riskPerTrade, maxConcurrent, leverage, slEnabled, tpEnabled, tp1Only, tp1RR, tp2RR, minScore, btcGateEnabled } = req.body;
-  updateTraderConfig({ riskPerTrade, maxConcurrent, leverage, slEnabled, tpEnabled, tp1Only, tp1RR, tp2RR, minScore, btcGateEnabled });
+  const { riskPerTrade, maxConcurrent, leverage, slEnabled, tpEnabled, tp1Only, tp1RR, tp2RR, minScore, btcGateEnabled, trailTpEnabled } = req.body;
+  updateTraderConfig({ riskPerTrade, maxConcurrent, leverage, slEnabled, tpEnabled, tp1Only, tp1RR, tp2RR, minScore, btcGateEnabled, trailTpEnabled });
   res.json({ success: true });
 });
 

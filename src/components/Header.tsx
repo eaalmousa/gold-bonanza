@@ -3,7 +3,7 @@ import { Crosshair, Power, Wifi, WifiOff } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function Header() {
-  const { balance, setBalance, isDataLive, activeMode, activeTrades, binancePositions, sniperSignals, breakoutSignals, binanceStatus, isAutoTradeActive, setAutoTradeActive } = useTradingStore();
+  const { isDataLive, activeMode, activeTrades, binancePositions, sniperSignals, breakoutSignals, binanceStatus, isAutoTradeActive, setAutoTradeActive } = useTradingStore();
 
   const handleToggleAutoTrade = async () => {
     try {
@@ -123,34 +123,6 @@ export default function Header() {
         </button>
       </div>
 
-      {/* Right: Balance */}
-      <div style={{
-        textAlign: 'right',
-        padding: '14px 24px',
-        borderRadius: 'var(--radius-lg)',
-        border: '1px solid rgba(255,255,255,0.07)',
-        background: 'rgba(0,0,0,0.3)'
-      }}>
-        <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.35em', fontWeight: 700, marginBottom: 4 }}>
-          RISK CAPITAL
-        </div>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: 6 }}>
-          <span style={{ fontSize: 15, color: 'var(--gold-light)', fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
-            $
-          </span>
-          <input
-            type="number"
-            className="balance-input"
-            value={balance}
-            min={10}
-            max={500000}
-            onChange={e => {
-              const val = Number(e.target.value);
-              if (val >= 10 && val <= 500000) setBalance(val);
-            }}
-          />
-        </div>
-      </div>
     </header>
   );
 }

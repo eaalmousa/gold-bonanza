@@ -67,32 +67,49 @@ export function evaluateSniperSignal(
   const e20Slope1h  = e20_1h! - (ema20_1h[idx1h - 3] ?? e20_1h!);
   const e50Slope1h  = e50_1h! - (ema50_1h[idx1h - 3] ?? e50_1h!);
 
+  // BREAKING_DOWN: price is collapsing even if EMA50 > EMA200 (early trend fracture)
+  // Catches flash crashes and sharp reversals where EMAs haven't crossed yet
+  const isBreakingDown = close1h < e20_1h! && close1h < e50_1h! && e20Slope1h < 0 && e50Slope1h < 0;
+  // RECOVERING: price is reclaiming EMA20 from below even if EMAs haven't aligned up yet
+  const isRecovering = close1h > e20_1h! && close1h > e50_1h! && e20Slope1h > 0;
+
   let side: 'LONG' | 'SHORT';
 
   if (modeKey === 'AGGRESSIVE') {
     side = close1h > e50_1h! ? 'LONG' : 'SHORT';
+  } else if (isBreakingDown) {
+    // Structure fracture: use SHORT even mid-bull-cycle
+    side = 'SHORT';
+    debugLog.push('Direction: BREAKING_DOWN — price below both EMAs with negative slope');
   } else if (isUptrend && e20Slope1h > 0 && e50Slope1h >= 0) {
     side = 'LONG';
     if (regime === 'TRENDING_DOWN') return null;
   } else if (isDowntrend && e20Slope1h < 0 && e50Slope1h <= 0) {
     side = 'SHORT';
     if (regime === 'TRENDING_UP') return null;
+  } else if (isRecovering) {
+    // Recovering from deep pullback — allow LONGs
+    side = 'LONG';
+    debugLog.push('Direction: RECOVERING — reclaiming EMAs');
   } else {
     debugLog.push('REJECT: No clean 1H trend structure');
     return null;
   }
 
   // ─── GATE 3: BTC MACRO TREND ──────────────────────────
-  if (modeKey !== 'AGGRESSIVE' && btc4hTrend) {
+  // Exception: BREAKING_DOWN signals bypass the SHORT block — altcoin crashes
+  // can happen independently of BTC trend (news, whale dump, etc.)
+  if (modeKey !== 'AGGRESSIVE' && btc4hTrend && !isBreakingDown) {
     if (side === 'LONG' && btc4hTrend === 'DOWN') {
       debugLog.push('REJECT: BTC 4H downtrend — no longs');
       return null;
     }
     if (side === 'SHORT' && btc4hTrend === 'UP') {
-      debugLog.push('REJECT: BTC 4H uptrend — no shorts');
+      debugLog.push('REJECT: BTC 4H uptrend — no shorts (use BREAKING_DOWN to bypass)');
       return null;
     }
-    // CHOP on BTC in aggressive mode is allowed but blocks short bonus
+  } else if (isBreakingDown && btc4hTrend === 'UP') {
+    debugLog.push('NOTE: BREAKING_DOWN — BTC uptrend gate bypassed for altcoin crash short');
   }
 
   // ─── 15m INDICATORS ───────────────────────────────────
@@ -141,28 +158,37 @@ export function evaluateSniperSignal(
 
   const candleAtrRatio = range / atr!;
 
-  // ─── EXPANSION CAP (tightened for entry quality)
-  // Reversals/pullbacks on huge candles have exhausted short-term momentum.
-  // We cap sniper signals at 1.15x ATR.
-  if (candleAtrRatio > 1.15) {
-    debugLog.push(`REJECT: Huge expansion candle ${candleAtrRatio.toFixed(2)}x ATR > 1.15x`);
-    return null;
-  }
-  debugLog.push(`PASS: Candle size ${candleAtrRatio.toFixed(2)}x ATR (limit 1.15x)`);
-
-  // ─── MANDATORY RETEST CHECK FOR MODERATE EXPANSION ───────────────
-  // If candle range > 0.9x ATR (moderate expansion), require the
-  // previous candle to show acceptance: it must have closed ABOVE EMA20
-  // confirming price held the zone rather than just spiking through it.
-  if (candleAtrRatio > 0.9) {
-    const prevClose15 = prev.close;
-    const prevE20_15  = ema20_15[lastIdx - 1];
-    const prevAcceptance = prevE20_15 != null && prevClose15 >= prevE20_15 * 0.999;
-    if (!prevAcceptance) {
-      debugLog.push(`REJECT: Expanded candle (${candleAtrRatio.toFixed(2)}x ATR) without prior acceptance candle`);
+  // ─── EXPANSION CAP — ASYMMETRIC by side ───────────────────────
+  // LONG: cap at 1.15x ATR. Buying a pumped/expanded candle = chasing. This gate stays strict.
+  // SHORT: allow up to 2.0x ATR. A violent crash candle IS the signal — killing it here
+  //   was the #1 reason crash shorts were never triggered.
+  if (side === 'LONG') {
+    if (candleAtrRatio > 1.15) {
+      debugLog.push(`REJECT: Huge expansion candle ${candleAtrRatio.toFixed(2)}x ATR > 1.15x (LONG cap)`);
       return null;
     }
-    debugLog.push(`PASS: Expanded candle has prior acceptance (prev closed above EMA20)`);
+    debugLog.push(`PASS: Candle size ${candleAtrRatio.toFixed(2)}x ATR (LONG limit 1.15x)`);
+
+    // ─── MANDATORY RETEST CHECK — LONG ONLY ─────────────────────
+    // Makes sense for LONGs: prev must hold above EMA20 confirming buyer acceptance.
+    // Does NOT apply to SHORTs: prev closing above EMA20 is expected BEFORE a breakdown candle.
+    if (candleAtrRatio > 0.9) {
+      const prevClose15 = prev.close;
+      const prevE20_15  = ema20_15[lastIdx - 1];
+      const prevAcceptance = prevE20_15 != null && prevClose15 >= prevE20_15 * 0.999;
+      if (!prevAcceptance) {
+        debugLog.push(`REJECT: Expanded candle (${candleAtrRatio.toFixed(2)}x ATR) without prior acceptance candle`);
+        return null;
+      }
+      debugLog.push(`PASS: Expanded candle has prior acceptance (prev closed above EMA20)`);
+    }
+  } else {
+    // SHORT: allow large crash candles, hard-cap at 2.0x ATR (truly exhausted collapses)
+    if (candleAtrRatio > 2.0) {
+      debugLog.push(`REJECT: Exhausted crash candle ${candleAtrRatio.toFixed(2)}x ATR > 2.0x (SHORT cap)`);
+      return null;
+    }
+    debugLog.push(`PASS: SHORT candle size ${candleAtrRatio.toFixed(2)}x ATR (cap 2.0x)`);
   }
 
   // ─── SETUP TYPE CLASSIFIER ─────────────────────────────
@@ -385,12 +411,12 @@ export function evaluateSniperSignal(
       const lowerWick     = Math.min(open15, close15) - low15;
       const lowerWickRatio = lowerWick / Math.max(1e-9, body);
       const nearE50       = low15 <= e50_15! * (1 + slack * 1.2);
-      const reversalCandle = isBullCandle && nearE50 && (lowerWickRatio >= 1.35) && (closePos >= 0.62);
       const higherLow     = (low15 > prev.low) && (low15 >= e50_15! * (1 - slack)) && (close15 > e20_15!);
       const prevCandleBull = prev.close > prev.open;
       const twoBarReversal = prevCandleBull && isBullCandle && (prev.low < e20_15!) && (close15 > e20_15!);
       // REMOVED `modeKey === 'AGGRESSIVE'` bypass. Longs MUST show real structural confirmation.
-      const confirmed = reclaimHold || (higherLow && rsiNow! > 50) || twoBarReversal;
+      const confirmed = reclaimHold || (higherLow && rsiNow! > 50) || twoBarReversal
+        || (isBullCandle && nearE50 && (lowerWickRatio >= 1.35) && (closePos >= 0.62)); // reversalCandle inlined
       
       const closedAbovePrevHigh  = close15 > prev.high;
       const heldAboveE20ByClose  = close15 >= e20_15! * 1.001;
@@ -558,14 +584,24 @@ export function evaluateSniperSignal(
     const distFrom1hE50 = (e50_1h! - close15) / e50_1h!;
     if (modeKey !== 'AGGRESSIVE' && (distFrom1hE20 < -guard || distFrom1hE50 < -guard * 1.4)) return null;
 
-    // GATE: RSI
-    const rsiMinShort = 100 - cfg.rsiMax;
-    const rsiMaxShort = 100 - cfg.rsiMin;
-    if (!(rsiNow! >= rsiMinShort && rsiNow! <= rsiMaxShort)) return null;
+    // GATE: RSI for SHORT
+    // Use direct RSI range (not naive 100-x inversion) to avoid rejecting panic-sell conditions.
+    // Conservative SHORT: RSI 15-58 (was 48-72 via inversion — too high for crash shorts)
+    // Balanced SHORT: RSI 15-65
+    // Aggressive SHORT: RSI 10-75
+    const rsiMaxShort = 100 - cfg.rsiMin; // top end stays inverted (e.g. 72, 78, 85)
+    const rsiMinShort = Math.min(15, cfg.rsiMin); // bottom: always allow down to 15 for panic momentum
+    if (!(rsiNow! >= rsiMinShort && rsiNow! <= rsiMaxShort)) {
+      debugLog.push(`REJECT: SHORT RSI ${rsiNow!.toFixed(1)} out of range [${rsiMinShort}-${rsiMaxShort}]`);
+      return null;
+    }
     const rsiTurningDown = modeKey !== 'AGGRESSIVE'
       ? (rsiNow! < rsiPrev! && (rsiPrev! - rsiNow!) >= 0.7)
       : (rsiNow! < rsiPrev!);
-    if (!rsiTurningDown) return null;
+    if (!rsiTurningDown) {
+      debugLog.push(`REJECT: SHORT RSI not turning down (${rsiPrev!.toFixed(1)} → ${rsiNow!.toFixed(1)})`);
+      return null;
+    }
     score += 2; reasons.push(`RSI turning down (${rsiNow!.toFixed(1)})`);
 
     // Volume

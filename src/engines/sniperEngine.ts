@@ -196,7 +196,7 @@ export function evaluateSniperSignal(
     const zoneBottom = e50_15! * (1 - slack);
     const inZone = low15 <= zoneTop && high15 >= zoneBottom;
 
-    if (modeKey !== 'AGGRESSIVE' && !inZone) {
+    if (!inZone) {
       debugLog.push(`REJECT: Price not in value zone [${zoneBottom.toFixed(4)} - ${zoneTop.toFixed(4)}]`);
       return null;
     }
@@ -533,7 +533,7 @@ export function evaluateSniperSignal(
     const zoneBottom = e20_15! * (1 - slack);
     const inZone     = high15 >= zoneBottom && low15 <= zoneTop;
 
-    if (modeKey !== 'AGGRESSIVE' && !inZone) {
+    if (!inZone) {
       debugLog.push('REJECT: Price not in short value zone');
       return null;
     }

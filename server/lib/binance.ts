@@ -141,8 +141,8 @@ export async function placeTakeProfitMarket(symbol: string, side: 'BUY' | 'SELL'
   return request('POST', '/fapi/v1/algoOrder', params);
 }
 
-export async function placeTrailingStopMarket(symbol: string, side: 'BUY' | 'SELL', callbackRatePct: number, qty?: number) {
-  const { qty: qPrec } = await getSymbolPrecision(symbol);
+export async function placeTrailingStopMarket(symbol: string, side: 'BUY' | 'SELL', callbackRatePct: number, activationPrice?: number, qty?: number) {
+  const { price: pPrec, qty: qPrec } = await getSymbolPrecision(symbol);
   
   const params: any = {
     symbol,
@@ -150,6 +150,10 @@ export async function placeTrailingStopMarket(symbol: string, side: 'BUY' | 'SEL
     type: 'TRAILING_STOP_MARKET',
     callbackRate: callbackRatePct.toString()
   };
+
+  if (activationPrice) {
+    params.activationPrice = roundTo(activationPrice, pPrec);
+  }
 
   if (qty) {
     params.quantity = roundTo(qty, qPrec);

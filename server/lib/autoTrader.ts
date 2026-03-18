@@ -314,10 +314,10 @@ export async function runTraderLoop() {
             : stopPrice - (stopDist * TP1_RR);
 
           if (TRAIL_TP_ENABLED) {
-            logMsg(`[${sym}] TRAIL TP ON: Setting tight trailing stop (0.5% callback)...`);
+            logMsg(`[${sym}] TRAIL TP ON: Setting trailing stop (0.5% callback) activating at TP1 (${tp1Price.toFixed(4)})...`);
             try {
-              await placeTrailingStopMarket(sym, closeSide, 0.5); // very tight 0.5% pullback
-              logMsg(`[${sym}] ✅ Trailing Stop placed successfully.`);
+              await placeTrailingStopMarket(sym, closeSide, 0.5, tp1Price);
+              logMsg(`[${sym}] ✅ Trailing Stop placed successfully (activates at TP1).`);
             } catch (tsErr: any) {
               logMsg(`[${sym}] ❌ CRITICAL: Trailing Stop placement FAILED: ${tsErr.message}. Emergency closing...`);
               try {

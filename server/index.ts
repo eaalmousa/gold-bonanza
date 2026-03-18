@@ -12,7 +12,7 @@ app.use(express.json());
 app.use('/api/auth', authRouter);
 app.use('/api/trade', tradeRouter);
 
-const PORT = Number(process.env.PORT) || 8081; 
+const PORT = Number(process.env.PORT) || 8085; 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[Server] Secured Auto-Trading Backend running on port ${PORT}`);
+  console.log(`[Server:GBv12] Secured Auto-Trading Backend running on port ${PORT}`);
 });

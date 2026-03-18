@@ -1,7 +1,7 @@
 let token = localStorage.getItem('gb_token') || '';
 
 export const API_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL)
-  || 'http://localhost:8081/api';
+  || 'http://localhost:8085/api';
 
 export function setToken(t: string) {
   token = t;
@@ -60,9 +60,9 @@ export const api = {
   getPositions: () => apiRequest('/trade/positions'),
   getBalance: () => apiRequest('/trade/balance'),
   closeTrade: (symbol: string, side: string, qty: number) => apiRequest('/trade/close', { method: 'POST', body: JSON.stringify({ symbol, side, qty }) }),
-  toggleAutoTrade: (enabled: boolean) => apiRequest('/trade/autotrade/toggle', { method: 'POST', body: JSON.stringify({ enabled }) }),
-  getAutoTradeStatus: () => apiRequest('/trade/autotrade/status'),
-  getAutoTradeConfig: () => apiRequest('/trade/autotrade/config'),
+  toggleAutoTrade: (enabled: boolean) => apiRequest('/trade/toggle', { method: 'POST', body: JSON.stringify({ enabled }) }),
+  getAutoTradeStatus: () => apiRequest('/trade/status'),
+  getAutoTradeConfig: () => apiRequest('/trade/config'),
   updateAutoTradeConfig: (config: { riskPerTrade?: number; maxConcurrent?: number; leverage?: number; slEnabled?: boolean; tpEnabled?: boolean; tp1Only?: boolean; tp1RR?: number; tp2RR?: number; minScore?: number; btcGateEnabled?: boolean; trailTpEnabled?: boolean }) => 
-    apiRequest('/trade/autotrade/config', { method: 'POST', body: JSON.stringify(config) }),
+    apiRequest('/trade/config', { method: 'POST', body: JSON.stringify(config) }),
 };

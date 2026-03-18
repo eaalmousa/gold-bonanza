@@ -25,7 +25,7 @@ function resolveBaseUrl(mode?: string): string {
 
 tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
   res.json({
-    autoTrading: isAutoTradingEnabled(),
+    autoTrading: isAutoTradingEnabled,
     config: {
       riskPerTrade: RISK_PER_TRADE,
       maxConcurrent: MAX_CONCURRENT_TRADES,
@@ -47,8 +47,8 @@ tradeRouter.get('/logs', requireAuth, (req: any, res: any) => {
 });
 
 tradeRouter.post('/toggle', requireAuth, (req: any, res: any) => {
-  toggleAutoTrade();
-  res.json({ enabled: isAutoTradingEnabled() });
+  toggleAutoTrade(!isAutoTradingEnabled);
+  res.json({ enabled: isAutoTradingEnabled });
 });
 
 tradeRouter.post('/config', requireAuth, (req: any, res: any) => {
@@ -60,6 +60,15 @@ tradeRouter.get('/positions', requireAuth, async (req: any, res: any) => {
   try {
     const positions = await getPositions();
     res.json(positions);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+tradeRouter.get('/balance', requireAuth, async (req: any, res: any) => {
+  try {
+    const bal = await getBalance();
+    res.json({ balance: bal });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }

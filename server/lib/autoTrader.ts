@@ -319,10 +319,18 @@ export async function runTraderLoop() {
               await placeTrailingStopMarket(sym, closeSide, 0.5, tp1Price, qty);
               logMsg(`[${sym}] ✅ Trailing Stop placed successfully (activates at TP1).`);
             } catch (tsErr: any) {
-              logMsg(`[${sym}] ❌ CRITICAL: Trailing Stop placement FAILED: ${tsErr.message}. Emergency closing...`);
+              logMsg(`[${sym}] ⚠️ Trailing Stop rejected dynamically (likely price blasted past TP1 instantly): ${tsErr.message}`);
+              logMsg(`[${sym}] 🔄 FALLBACK: Placing instant-activation Trailing Stop (market is already in profit!)...`);
               try {
-                await placeMarketOrder(sym, closeSide, qty);
-              } catch (e) { /* silent fail on emergency */ }
+                // Retry without activationPrice, which forces Binance to activate it exactly at the CURRENT real-time matching engine price
+                await placeTrailingStopMarket(sym, closeSide, 0.5, undefined, qty);
+                logMsg(`[${sym}] ✅ Dynamic Trailing Stop successfully forced active.`);
+              } catch (retryErr: any) {
+                logMsg(`[${sym}] ❌ CRITICAL: Fallback Trailing Stop ALSO FAILED: ${retryErr.message}. Emergency closing to secure capital...`);
+                try {
+                  await placeMarketOrder(sym, closeSide, qty);
+                } catch (e) { /* silent fail on emergency */ }
+              }
             }
           } else if (TP1_ONLY) {
             // TP1 ONLY mode: close 100% of position at TP1

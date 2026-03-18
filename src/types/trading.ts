@@ -38,7 +38,7 @@ export interface BreakoutConfig {
 }
 
 export interface Signal {
-  kind: 'SNIPER' | 'SUPER_SNIPER';
+  kind: 'SNIPER' | 'SUPER_SNIPER' | 'BREAKOUT' | 'PREDICTIVE';
   side: 'LONG' | 'SHORT';
   score: number;
   reasons: string[];
@@ -70,13 +70,43 @@ export interface SignalRow {
   change24h?: number;
   timestamp?: number;
   id: string; // Required for state tracking
-  status: 'DETECTED' | 'QUEUED' | 'DEPLOYED' | 'EXPIRED' | 'CANCELLED';
+  status: 'ACCEPTED' | 'REJECTED' | 'PENDING' | 'INVALIDATED' | 'EXPIRED' | 'DEPLOYED' | 'QUEUED' | 'CANCELLED';
+}
+
+export interface UnifiedTrace {
+  id: string;
+  symbol: string;
+  engine: 'SNIPER' | 'SUPER_SNIPER' | 'BREAKOUT' | 'PREDICTIVE';
+  status: 'ACCEPTED' | 'REJECTED' | 'PENDING' | 'INVALIDATED' | 'EXPIRED';
+  score?: number;
+  entryType?: string;
+  entryTiming?: string;
+  lastRejectReason?: string;
+  usedBreakingDownBypass?: boolean;
+  usedBtcBypass?: boolean;
+  usedLateException?: boolean;
+  timestamp: number;
 }
 
 export interface MarketRow {
   symbol: string;
   lastPrice: number;
   changePct: number;
+}
+
+export type TradeStatus =
+  | 'ACTIVE'
+  | 'TP1_HIT'
+  | 'TP2_HIT'
+  | 'SL_HIT'
+  | 'CANCELLED'
+  | 'CLOSED';
+
+export interface TradeStatusEvent {
+  status: TradeStatus;
+  ts: number;
+  price?: number;
+  note?: string;
 }
 
 export interface ActiveTrade {
@@ -94,8 +124,84 @@ export interface ActiveTrade {
   stopPrice: number;
   leverage: number;
   deployedAt: number;
-  status: string;
+  status: TradeStatus | string;  // string kept for AWAITING_BINANCE compatibility
   dynamicSL?: number;
+
+  // Live tracking
+  livePrice?: number;
+  unrealizedPnl?: number;    // in USDT
+  realizedPnl?: number;      // in USDT (set on close)
+  rMultiple?: number;        // (exitPrice - entry) / (entry - sl) normalised to direction
+  distToTp1?: number;        // % distance from livePrice to TP1
+  distToTp2?: number;        // % distance from livePrice to TP2
+  distToSl?: number;         // % distance from livePrice to SL
+  priceUpdatedAt?: number;
+
+  // Status history
+  statusHistory?: TradeStatusEvent[];
+
+  // Preserved pipeline traits
+  score?: number;
+  entryType?: string;
+  entryTiming?: string;
+  reasons?: string[];
+
+  // Paper trading flag
+  isPaperTrade?: boolean;
+}
+
+export interface ClosedTrade extends ActiveTrade {
+  closePrice: number;          // price at which trade was closed
+  closedAt: number;            // timestamp
+  outcome: 'WIN' | 'LOSS' | 'BREAKEVEN';
+}
+
+export interface PaperSession {
+  startBalance: number;
+  currentBalance: number;
+  totalPnl: number;
+  openExposure: number;        // sum of sizeUSDT for open paper trades
+  winCount: number;
+  lossCount: number;
+  breakevenCount: number;
+  avgRMultiple: number;        // mean rMultiple across closed trades
+  closedTrades: ClosedTrade[];
+}
+
+// ─── Execution Adapter ────────────────────────────────────────────────────────
+
+export type ExecutionMode = 'PAPER' | 'BINANCE_TEST' | 'BINANCE_LIVE';
+
+/** Canonical order payload passed to every execution path */
+export interface ExecutionPayload {
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  entryPrice: number;
+  stopLoss: number;
+  takeProfit: number;
+  takeProfit2?: number;
+  qty: number;
+  sizeUSDT: number;
+  leverage: number;
+  // Analytical provenance — preserved through all paths
+  score?: number;
+  entryType?: string;
+  entryTiming?: string;
+  reasons?: string[];
+  kind?: string;
+}
+
+export type ExecutionResultStatus = 'SUBMITTING' | 'SUBMITTED' | 'FAILED' | 'PAPER';
+
+export interface ExecutionResult {
+  symbol: string;
+  mode: ExecutionMode;
+  status: ExecutionResultStatus;
+  ts: number;
+  exchangeOrderId?: string | number;
+  exchangeResponse?: unknown;   // raw API response for audit log
+  error?: string;
+  payload: ExecutionPayload;    // logged before any send
 }
 
 export interface ExitSignal {

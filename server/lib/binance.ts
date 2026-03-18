@@ -9,7 +9,7 @@ function sign(queryString: string): string {
   return crypto.createHmac('sha256', API_SECRET).update(queryString).digest('hex');
 }
 
-async function request(method: string, endpoint: string, data: Record<string, any> = {}) {
+export async function binanceRequest(method: string, endpoint: string, data: Record<string, any> = {}, overrideBaseUrl?: string) {
   if (!API_KEY) throw new Error('BINANCE_API_KEY is not set');
 
   const payload = { ...data, timestamp: Date.now() };
@@ -22,8 +22,11 @@ async function request(method: string, endpoint: string, data: Record<string, an
   const queryString = params.toString();
   const signature = sign(queryString);
   
-  const url = `${BASE_URL}${endpoint}?${queryString}&signature=${signature}`;
+  const targetBaseUrl = overrideBaseUrl || BASE_URL;
+  const url = `${targetBaseUrl}${endpoint}?${queryString}&signature=${signature}`;
   
+  console.log(`[Binance:${method}] ${endpoint} via ${targetBaseUrl}`);
+
   const res = await fetch(url, {
     method,
     headers: {
@@ -32,12 +35,17 @@ async function request(method: string, endpoint: string, data: Record<string, an
     }
   });
 
-  const json = await res.json();
+  const json = await res.json() as any;
   if (!res.ok) {
-    throw new Error(`Binance API Error ${res.status}: ${json.msg || JSON.stringify(json)}`);
+    throw new Error(`Binance API ${res.status}: ${json.msg || JSON.stringify(json)}`);
   }
   
   return json;
+}
+
+// Deprecated local request() - mapping to exported binanceRequest
+async function request(m: string, e: string, d: Record<string, any> = {}) {
+  return binanceRequest(m, e, d);
 }
 
 export async function getBalance(): Promise<number> {

@@ -554,24 +554,52 @@ export function evaluateSniperSignal(
     //  SHORT SNIPER
     // ═══════════════════════════════════════════════
 
-    // GATE: Value zone check (inverted — price rallies UP into zone)
+    // GATE: Value zone check (inverted — price rallies UP into zone for normal shorts)
     const zoneTop    = e50_15! * (1 + slack);
     const zoneBottom = e20_15! * (1 - slack);
     const inZone     = high15 >= zoneBottom && low15 <= zoneTop;
 
-    if (!inZone) {
-      debugLog.push('REJECT: Price not in short value zone');
+    // BREAKING_DOWN EXCEPTION for value zone:
+    // A genuine breakdown doesn't rally back into the EMA zone — it falls THROUGH it.
+    // If BREAKING_DOWN is active we allow a bypass, but ONLY when all of:
+    //   1. close is below BOTH e20 and e50 (price is structurally underwater)
+    //   2. candle is bearish (isBearCandle confirmed before this point via anatomy gate)
+    //   3. RSI is already below 50 (momentum is clearly bearish, not a dip)
+    // If any of these fail, the bypass is denied and the normal zone gate kills it.
+    const isBearCandleEarly = candle.close < candle.open; // pre-check before anatomy gate runs
+    const breakdownZoneBypass = isBreakingDown
+      && close15 < e20_15!
+      && close15 < e50_15!
+      && isBearCandleEarly
+      && rsiNow! < 50;
+
+    if (!inZone && !breakdownZoneBypass) {
+      debugLog.push(!inZone && isBreakingDown
+        ? `REJECT: BREAKING_DOWN exception denied — did not meet multi-factor crash criteria (RSI:${rsiNow!.toFixed(1)} bearCandle:${isBearCandleEarly} belowBothEMAs:${close15 < e20_15! && close15 < e50_15!})`
+        : 'REJECT: Price not in short value zone'
+      );
       return null;
+    }
+
+    if (breakdownZoneBypass && !inZone) {
+      debugLog.push(`PASS [BREAKING_DOWN crash path]: bypassed normal EMA zone — price below both EMAs, RSI:${rsiNow!.toFixed(1)}, bearish candle confirmed`);
+    } else {
+      debugLog.push(`PASS [normal short zone]: price in EMA retest zone`);
     }
 
     // ─── LATE-ENTRY BLOCKER (SHORT) ─────────────────────────────
     const extensionBelowZone = (e20_15! - close15) / atr!;
-    if (extensionBelowZone > 1.0 && modeKey !== 'AGGRESSIVE') {
-      debugLog.push(`REJECT: Short late entry — close is ${extensionBelowZone.toFixed(2)}x ATR below EMA20`);
+    // Normal cap: 1.0x ATR — prevents shorting far below EMA zone (stale entries)
+    // BREAKING_DOWN cap: raised to 1.8x ATR — crash entries are by definition extended,
+    //   but 1.8x still blocks pure capitulation chasing (2.0x+ candles already screened upstream)
+    const lateCap = isBreakingDown ? 1.8 : 1.0;
+    if (extensionBelowZone > lateCap) {
+      debugLog.push(`REJECT: Short late entry — ${extensionBelowZone.toFixed(2)}x ATR below EMA20 exceeds ${lateCap}x cap${isBreakingDown ? ' (BREAKING_DOWN cap)' : ''}`);
       return null;
     }
-    // Tightened hard cap to 1.0x (was 1.5x) — symmetric with LONG hard cap of 0.75x
-    if (extensionBelowZone > 1.0) return null;
+    if (isBreakingDown && extensionBelowZone > 1.0) {
+      debugLog.push(`PASS [BREAKING_DOWN late-entry exception]: ${extensionBelowZone.toFixed(2)}x ATR below EMA20 (normal cap 1.0x, BD cap 1.8x)`);
+    }
 
     const zoneIdealShort  = (e20_15! + e50_15!) / 2;
     const zoneDistPct     = ((zoneIdealShort - close15) / zoneIdealShort) * 100;

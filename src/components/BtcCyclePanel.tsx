@@ -43,7 +43,18 @@ export default function BtcCyclePanel() {
       const res = await fetch(
         'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=400'
       );
-      const raw: any[][] = await res.json();
+      // Harden apiRequest to handle non-JSON error responses
+      const text = await res.text();
+      let raw: any;
+      try {
+        raw = JSON.parse(text);
+      } catch (jsonError) {
+        throw new Error(`API response was not valid JSON: ${text}`);
+      }
+
+      if (!Array.isArray(raw)) {
+        throw new Error(raw.msg || 'Invalid API response');
+      }
       const closes = raw.map(k => parseFloat(k[4]));
       const price = closes[closes.length - 1];
       
@@ -65,7 +76,7 @@ export default function BtcCyclePanel() {
       setLastUpdated(new Date().toLocaleTimeString());
       setError('');
     } catch (e: any) {
-      setError('Failed to fetch BTC cycle data');
+      setError('Failed to fetch BTC cycle data: ' + e.message);
     } finally {
       setLoading(false);
     }

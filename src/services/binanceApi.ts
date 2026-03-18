@@ -85,8 +85,9 @@ async function fetchCoinGeckoTop200Tickers(): Promise<string[]> {
   return (data || []).map((x: any) => String(x.symbol || '').toUpperCase()).filter(Boolean);
 }
 
-function buildSymbolListFromTickers(tickers: string[], binanceSet: Set<string>): string[] {
+function buildSymbolListFromTickers(tickers: string[] | null | undefined, binanceSet: Set<string>): string[] {
   const out: string[] = [];
+  if (!tickers || !Array.isArray(tickers)) return [];
   const seen = new Set<string>();
   const banned = new Set(['USDT', 'USDC', 'DAI', 'TUSD', 'USDP', 'FDUSD', 'EUR', 'EURC']);
 

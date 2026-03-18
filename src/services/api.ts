@@ -36,7 +36,17 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}) {
       headers,
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch (jsonErr) {
+      if (!res.ok) {
+        throw new Error(`Backend Error (${res.status}): ${text.slice(0, 150)}`);
+      }
+      throw new Error(`Malformed JSON response from ${fullUrl}. Ensure VITE_API_URL is correct.`);
+    }
+
     if (!res.ok) {
       if (res.status === 401) {
         token = '';
@@ -46,8 +56,8 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}) {
     }
     return data;
   } catch (err: any) {
-    if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
-      throw new Error(`Connection Error: Cannot reach ${baseUrl}. Check your Vercel Environment Variables.`);
+    if (err.name === 'TypeError' && (err.message === 'Failed to fetch' || err.message === 'Load failed')) {
+      throw new Error(`Network Connection Failure: Cannot reach ${baseUrl}. Please verify your Vercel Environment Variables (VITE_API_URL).`);
     }
     throw err;
   }

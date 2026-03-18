@@ -21,9 +21,12 @@ export default function CommandSyncHub() {
     const fetchPositions = async () => {
       try {
         const data = await api.getPositions();
-        if (mounted) {
+        if (mounted && Array.isArray(data)) {
           setBinancePositions(data);
           setBinanceConnected(true);
+          setLoading(false);
+        } else if (mounted) {
+          setBinanceConnected(false);
           setLoading(false);
         }
       } catch (e) {
@@ -70,13 +73,14 @@ export default function CommandSyncHub() {
   };
 
   // Merge: Binance positions take priority; local trades fill in the rest
-  const binanceSymbols = new Set(binancePositions.map(p => p.symbol.toUpperCase()));
+  const validBinancePositions = Array.isArray(binancePositions) ? binancePositions : [];
+  const binanceSymbols = new Set(validBinancePositions.map(p => p.symbol.toUpperCase()));
   const localOnly = activeTrades.filter(t => !binanceSymbols.has(t.symbol.toUpperCase()));
   
   // Signals currently sitting in the hub awaiting deployment
-  const allPending = pipelineSignals.filter(s => s.status === 'QUEUED');
+  const allPending = Array.isArray(pipelineSignals) ? pipelineSignals.filter(s => s.status === 'QUEUED') : [];
   
-  const totalCount = binancePositions.length + localOnly.length + allPending.length;
+  const totalCount = validBinancePositions.length + localOnly.length + allPending.length;
 
   return (
     <section>

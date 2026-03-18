@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import LoginGate from './components/LoginGate';
 import Header from './components/Header';
 import SystemStatus from './components/SystemStatus';
@@ -67,10 +68,11 @@ function App() {
   useLiveFeeds();
 
   return (
-    <LoginGate>
-    <div className="sections-stack" style={{ maxWidth: 1600, margin: '0 auto' }}>
-      <Header />
-      <SystemStatus />
+    <ErrorBoundary>
+      <LoginGate>
+      <div className="sections-stack" style={{ maxWidth: 1600, margin: '0 auto' }}>
+        <Header />
+        <SystemStatus />
 
       <div className="terminal-panel" style={{ padding: '32px' }}>
         <AutoTraderConsole />
@@ -200,6 +202,7 @@ function App() {
       `}</style>
     </div>
     </LoginGate>
+    </ErrorBoundary>
   );
 }
 

@@ -47,10 +47,11 @@ function hasCredentials(): boolean {
 function executePaper(payload: ExecutionPayload): ExecutionResult {
   console.log('[Execution:PAPER] Simulated fill — no exchange call', payload);
   return {
-    symbol:  payload.symbol,
-    mode:    'PAPER',
-    status:  'PAPER',
-    ts:      Date.now(),
+    signalId: payload.signalId,
+    symbol:   payload.symbol,
+    mode:     'PAPER',
+    status:   'PAPER',
+    ts:       Date.now(),
     payload
   };
 }
@@ -62,10 +63,11 @@ async function executeExchange(
   payload: ExecutionPayload
 ): Promise<ExecutionResult> {
   const base: ExecutionResult = {
-    symbol:  payload.symbol,
+    signalId: payload.signalId,
+    symbol:   payload.symbol,
     mode,
-    status:  'SUBMITTING',
-    ts:      Date.now(),
+    status:   'SUBMITTING',
+    ts:       Date.now(),
     payload
   };
 
@@ -145,7 +147,8 @@ export async function executeOrder(
   if (validationError) {
     console.error(`[Execution] BLOCKED by payload validation: ${validationError}`, payload);
     return {
-      symbol:  payload.symbol,
+      signalId: payload.signalId,
+      symbol:   payload.symbol,
       mode,
       status:  'FAILED',
       ts:      Date.now(),
@@ -164,6 +167,7 @@ export async function executeOrder(
 /** Normalise any signal-shaped object into a canonical ExecutionPayload. */
 export function toExecutionPayload(sig: any, symbol: string): ExecutionPayload {
   return {
+    signalId:    sig.id || `sig_${Date.now()}`, // Ensure a signalId is present
     symbol:      (symbol || sig.symbol || '').toUpperCase(),
     side:        sig.side as 'LONG' | 'SHORT',
     entryPrice:  sig.entryPrice,

@@ -110,6 +110,8 @@ export interface TradeStatusEvent {
 }
 
 export interface ActiveTrade {
+  id: string;                // Unique trade instance ID
+  signalId?: string;         // ID of the source signal
   symbol: string;
   kind: string;
   type: string;
@@ -174,6 +176,7 @@ export type ExecutionMode = 'PAPER' | 'BINANCE_TEST' | 'BINANCE_LIVE';
 
 /** Canonical order payload passed to every execution path */
 export interface ExecutionPayload {
+  signalId: string; // Mandatory link to the source signal
   symbol: string;
   side: 'LONG' | 'SHORT';
   entryPrice: number;
@@ -194,6 +197,7 @@ export interface ExecutionPayload {
 export type ExecutionResultStatus = 'SUBMITTING' | 'SUBMITTED' | 'FAILED' | 'PAPER';
 
 export interface ExecutionResult {
+  signalId: string;
   symbol: string;
   mode: ExecutionMode;
   status: ExecutionResultStatus;

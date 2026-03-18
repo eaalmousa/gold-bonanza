@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Target, X, TrendingUp, RefreshCw, Wifi, WifiOff, Activity, Clock } from 'lucide-react';
 import { api } from '../services/api';
 import { useTradingStore } from '../store/tradingStore';
-import type { ActiveTrade } from '../types/trading';
+import type { ActiveTrade, SignalRow } from '../types/trading';
 
 export default function CommandSyncHub() {
   const [loading, setLoading] = useState(true);
@@ -64,8 +64,9 @@ export default function CommandSyncHub() {
     }
   };
 
-  const handleCloseLocal = (idx: number) => {
-    removeActiveTrade(idx);
+  const handleCloseLocal = (id: string) => {
+    const idx = activeTrades.findIndex(t => t.id === id);
+    if (idx >= 0) removeActiveTrade(idx);
   };
 
   // Merge: Binance positions take priority; local trades fill in the rest
@@ -139,7 +140,7 @@ export default function CommandSyncHub() {
                     </div>
                   </div>
                   <button
-                    onClick={() => deploySignal(row.signal, row.symbol)}
+                    onClick={() => deploySignal(row.id)}
                     className="premium-btn"
                     style={{ padding: '8px 16px', fontSize: 10 }}
                   >
@@ -242,14 +243,19 @@ export default function CommandSyncHub() {
 
           {/* ── Local (manually deployed) trades — full lifecycle ── */}
           {localOnly.map((trade, i) => {
-            const sym = trade.symbol.replace('USDT', '');
-            const idxInFull = activeTrades.indexOf(trade);
+            // Find prior signals for this same symbol for history display
+            const history = pipelineSignals.filter(s => 
+              s.symbol.toUpperCase() === trade.symbol.toUpperCase() && 
+              s.id !== trade.signalId
+            ).slice(0, 6);
+
             return (
               <LocalTradeCard
-                key={`local-${trade.symbol}-${i}`}
+                key={trade.id}
                 trade={trade}
                 index={binancePositions.length + i}
-                onClose={() => handleCloseLocal(idxInFull)}
+                history={history}
+                onClose={() => handleCloseLocal(trade.id)}
               />
             );
           })}
@@ -269,7 +275,11 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string; bo
   CLOSED:     { label: 'CLOSED',     color: 'var(--text-muted)',bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.08)' },
 };
 
-function LocalTradeCard({ trade, index, onClose }: { trade: ActiveTrade; index: number; onClose: () => void }) {
+function LocalTradeCard({ 
+  trade, index, onClose, history 
+}: { 
+  trade: ActiveTrade; index: number; onClose: () => void; history: SignalRow[] 
+}) {
   const sym = trade.symbol.replace('USDT', '');
   const meta = STATUS_META[trade.status] ?? STATUS_META['ACTIVE'];
   const TERMINAL = ['TP1_HIT', 'TP2_HIT', 'SL_HIT', 'CLOSED', 'CANCELLED'];
@@ -290,6 +300,13 @@ function LocalTradeCard({ trade, index, onClose }: { trade: ActiveTrade; index: 
         opacity: isTerminal ? 0.8 : 1
       }}
     >
+      {/* ── Versioning Badge ── */}
+      {trade.signalId && (
+        <div style={{ fontSize: 8, fontWeight: 900, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.1em' }}>
+          INSTANCE ID: {trade.id.split('_').pop()?.toUpperCase()}
+        </div>
+      )}
+
       {/* ── Header ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
         <div>
@@ -408,6 +425,30 @@ function LocalTradeCard({ trade, index, onClose }: { trade: ActiveTrade; index: 
                 {ev.price && <span className="font-mono" style={{ color: 'var(--text-muted)' }}>@ {fmtPrice(ev.price)}</span>}
                 <span style={{ color: 'var(--text-muted)', opacity: 0.5, marginLeft: 'auto', whiteSpace: 'nowrap' }}>
                   {new Date(ev.ts).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Signal History (Versioning) ── */}
+      {history.length > 0 && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.15em', marginBottom: 8 }}>
+            PRIOR SIGNALS FOR {sym}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {history.map(prev => (
+              <div key={prev.id} style={{ 
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                fontSize: 10, padding: '4px 8px', background: 'rgba(255,255,255,0.02)', borderRadius: 4 
+              }}>
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  {prev.signal.kind} {prev.signal.side} @ {fmtPrice(prev.signal.entryPrice)}
+                </span>
+                <span style={{ fontSize: 8, color: 'var(--gold)', fontWeight: 800 }}>
+                  {prev.status}
                 </span>
               </div>
             ))}

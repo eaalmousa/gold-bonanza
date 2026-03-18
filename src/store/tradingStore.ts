@@ -90,15 +90,15 @@ interface TradingState {
   setMarketRegime: (regime: MarketRegime) => void;
   setOrderFlowSnapshot: (symbol: string, snapshot: OrderFlowSnapshot) => void;
   queueSignal: (id: string) => void;
-  deploySignal: (signal: any, symbol: string) => void;
+  deploySignal: (signalId: string) => void; // Switched to ID-based deployment
   setExecutionMode: (mode: ExecutionMode) => void;
   addExecutionResult: (result: ExecutionResult) => void;
   updateTradeLivePrice: (symbol: string, livePrice: number) => void;
-  updateTradeStatus: (symbol: string, status: string, price?: number, note?: string) => void;
+  updateTradeStatus: (idOrSymbol: string, status: string, price?: number, note?: string) => void;
   // Paper trading actions
   setPaperMode: (enabled: boolean) => void;
   resetPaperSession: (startBalance?: number) => void;
-  closePaperTrade: (symbol: string, closePrice: number) => void;
+  closePaperTrade: (idOrSymbol: string, closePrice: number) => void;
 }
 
 export const useTradingStore = create<TradingState>((set, get) => ({
@@ -177,34 +177,33 @@ export const useTradingStore = create<TradingState>((set, get) => ({
 
   setMarketRows: (marketRows) => set({ marketRows }),
   
-  setPipelineSignals: (signals) => {
-    const state = get();
-    // 1. Symbols already occupying active trades (Binance / local hub)
-    const activeSymbols = new Set(state.activeTrades.map(t => t.symbol.toUpperCase()));
-
-    // 2. Symbols that are currently QUEUED or DEPLOYED — protected from any rescan overwrite
-    //    We guard by symbol here (not just ID) so a new-ID duplicate from a fresh scan
-    //    cannot slip in alongside an already-queued entry for the same asset.
-    const protectedSymbols = new Set(
+  setPipelineSignals: (newSignals) => set(state => {
+    // 1. Identify signals already in a PROTECTED state (Queued/Deployed)
+    //    We guard by ID here to allow new signals for the same symbol to enter
+    //    as 'PENDING' or 'ACCEPTED' without overwriting the queued ones.
+    const protectedIds = new Set(
       state.pipelineSignals
         .filter(s => s.status === 'QUEUED' || s.status === 'DEPLOYED')
-        .map(s => s.symbol.toUpperCase())
+        .map(s => s.id)
     );
 
-    // 3. Let new scan signals through only if the symbol is neither active nor protected
-    const filtered = signals.filter(s =>
-      !activeSymbols.has(s.symbol.toUpperCase()) &&
-      !protectedSymbols.has(s.symbol.toUpperCase())
-    );
+    // 3. Keep protected signals exactly as they are
+    const protectedSignals = state.pipelineSignals.filter(s => protectedIds.has(s.id));
 
-    // 4. Merge: keep all protected rows, append freshly scanned candidates
+    // 4. For new signals:
+    //    - If an active trade exists for that symbol, we still allow the signal (for history),
+    //      but we'll flag it in the UI as 'COLLISION' or similar if needed.
+    //      For now, just merge.
     const merged = [
-      ...state.pipelineSignals.filter(s => s.status === 'QUEUED' || s.status === 'DEPLOYED'),
-      ...filtered
+      ...protectedSignals,
+      ...newSignals.filter(ns => !protectedIds.has(ns.id))
     ];
 
-    set({ pipelineSignals: merged });
-  },
+    // 5. Deduplicate by ID only (never by symbol)
+    const uniqueById = Array.from(new Map(merged.map(s => [s.id, s])).values());
+    
+    return { pipelineSignals: uniqueById };
+  }),
 
 
   addPipelineTraces: (traces) => set(state => ({
@@ -221,17 +220,14 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   setBinancePositions: (positions) => set({ binancePositions: positions }),
 
   addActiveTrade: (trade) => set(state => {
-    const existingIdx = state.activeTrades.findIndex(
-      tr => tr.symbol.toUpperCase() === trade.symbol.toUpperCase() &&
-        (tr.kind || 'SNIPER').toUpperCase() === (trade.kind || 'SNIPER').toUpperCase()
-    );
-    const trades = [...state.activeTrades];
-    if (existingIdx >= 0) {
-      trades[existingIdx] = { ...trades[existingIdx], ...trade };
-    } else {
-      trades.unshift(trade);
-    }
-    return { activeTrades: trades };
+    // We NO LONGER overwrite by symbol. Every trade is a unique instance.
+    // If trade has no ID, generate one based on its signalId or timestamp.
+    const tradeId = trade.id || `trade_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const newTrade = { ...trade, id: tradeId };
+    
+    return {
+      activeTrades: [newTrade, ...state.activeTrades]
+    };
   }),
 
   removeActiveTrade: (idx) => set(state => ({
@@ -273,42 +269,48 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }));
   },
 
-  deploySignal: (sig, symbol) => {
+  deploySignal: (signalId) => {
     const state = get();
 
-    // ── Guard 1: signal must be QUEUED ───────────────────────────────────────
-    const target = state.pipelineSignals.find(s => s.symbol === symbol);
-    if (!target || target.status !== 'QUEUED') {
-      console.warn(`[Store Guard] Cannot deploy — signal not QUEUED (status: ${target?.status ?? 'not found'})`);
+    // ── Find exact signal instance by ID ─────────────────────────────────────
+    const target = state.pipelineSignals.find(s => s.id === signalId);
+    if (!target) {
+      console.warn(`[Store Guard] Cannot deploy — signal ID ${signalId} not found`);
       return;
     }
 
-    // ── Guard 2: block duplicate active position for same symbol ─────────────
-    const alreadyActive = state.activeTrades.find(
-      t => t.symbol.toUpperCase() === symbol.toUpperCase()
-    );
-    if (alreadyActive) {
-      console.warn(`[Store Guard] Cannot deploy — active trade for ${symbol} already exists (status: ${alreadyActive.status})`);
+    if (target.status !== 'QUEUED') {
+      console.warn(`[Store Guard] Cannot deploy — signal ${target.symbol} (ID: ${signalId}) not QUEUED (status: ${target.status})`);
       return;
     }
 
-    // ── Normalise to canonical payload ──────────────────────────────────────
-    const payload = toExecutionPayload(sig, symbol);
+    // ── Guard 2: cross-check if this exact signal instance is already deployed ──
+    const alreadyDeployedAsTrade = state.activeTrades.some(t => t.signalId === signalId);
+    if (alreadyDeployedAsTrade) {
+      console.warn(`[Store Guard] Signal ${signalId} is already active as a trade.`);
+      return;
+    }
+
+    const symbol = target.symbol;
+    const payload = toExecutionPayload(target.signal, symbol);
+    payload.signalId = signalId; // Link payload back to original signal
+
     const mode    = state.executionMode;
-
-    // ── Paper mode sync with executionMode ───────────────────────────────────
-    // paperMode flag is kept in sync so lifecycle (TP/SL auto-close) works correctly
     const isPaper = mode === 'PAPER';
 
-    // ── Mark pipeline as DEPLOYED before async work ──────────────────────────
+    // ── Mark exact signal instance as DEPLOYED ───────────────────────────────
     set(s => ({
       pipelineSignals: s.pipelineSignals.map(n =>
-        n.symbol === symbol ? { ...n, status: 'DEPLOYED' } : n
+        n.id === signalId ? { ...n, status: 'DEPLOYED' } : n
       )
     }));
 
-    // ── Optimistically create ActiveTrade ────────────────────────────────────
+    // ── Create ActiveTrade with mandatory ID and signalId ────────────────────
+    const uniqueTradeId = `tr_${signalId}`; // Stable ID for consistent tracking
+    
     state.addActiveTrade({
+      id:         uniqueTradeId,
+      signalId:   signalId,
       symbol,
       kind:       payload.kind || 'SNIPER',
       type:       'MANUAL',
@@ -332,18 +334,18 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       statusHistory: [{ status: 'ACTIVE' as const, ts: Date.now() }]
     });
 
-    // ── Route through adapter asynchronously ─────────────────────────────────
+    // ── Route through adapter ────────────────────────────────────────────────
     executeOrder(mode, payload).then(result => {
       get().addExecutionResult(result);
       if (result.status === 'FAILED') {
-        // Roll back: remove the optimistically-created trade and unmark pipeline
+        // Roll back the specific trade by ID
         set(s => ({
-          activeTrades: s.activeTrades.filter(t => t.symbol.toUpperCase() !== symbol.toUpperCase()),
+          activeTrades: s.activeTrades.filter(t => t.id !== uniqueTradeId),
           pipelineSignals: s.pipelineSignals.map(n =>
-            n.symbol === symbol ? { ...n, status: 'QUEUED' } : n
+            n.id === signalId ? { ...n, status: 'QUEUED' } : n
           )
         }));
-        console.error(`[ExecAdapter] Rolled back ${symbol} — reason: ${result.error}`);
+        console.error(`[ExecAdapter] Rolled back ${symbol} (ID: ${signalId}) — reason: ${result.error}`);
       }
     });
   },
@@ -363,10 +365,12 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     const TERMINAL = ['TP2_HIT', 'SL_HIT', 'CLOSED', 'CANCELLED'];
     const now = Date.now();
 
+    // Mapping over all active trades. If there are multiple (e.g. ZRO v1 and v2 both somehow active),
+    // they each get their respective math based on their own entryPrice.
     const updatedTrades = state.activeTrades.map(t => {
       if (t.symbol.toUpperCase() !== symbol.toUpperCase()) return t;
 
-      // ── Skip terminal trades: they never get live price updates ─────────────
+      // ── Skip terminal trades ────────────────────────────────────────────────
       if (TERMINAL.includes(t.status)) return t;
 
       const entry  = t.entryPrice;
@@ -374,7 +378,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       const dir    = t.side === 'LONG' ? 1 : -1;
       const status = t.status;
 
-      // ── Recompute live metrics ───────────────────────────────────────────────
+      // ── Recompute live metrics (using trade-specific entryPrice) ─────────────
       const priceDiff     = (livePrice - entry) * dir;
       const unrealizedPnl = priceDiff * t.qty;
       const riskPerUnit   = Math.abs(entry - sl);
@@ -384,94 +388,66 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       const distToTp2     = t.t2 ? pct(t.t2) : undefined;
       const distToSl      = sl   ? -pct(sl)   : undefined;
 
-      // ── Level-hit detection (direction-aware) ────────────────────────────────
-      // LONG: price >= target is a hit; SHORT: price <= target is a hit
-      const crossed = (target: number) =>
-        dir === 1 ? livePrice >= target : livePrice <= target;
-      const slCrossed = (slLevel: number) =>
-        dir === 1 ? livePrice <= slLevel : livePrice >= slLevel;
+      // Hit detection...
+      const crossed   = (target: number) => dir === 1 ? livePrice >= target : livePrice <= target;
+      const slCrossed = (slLevel: number) => dir === 1 ? livePrice <= slLevel : livePrice >= slLevel;
 
       let newStatus: string = status;
       let realizedPnl       = t.realizedPnl;
       let history           = t.statusHistory ?? [];
 
-      // ── SL hit — highest priority, evaluated first ───────────────────────────
-      // Allowed from ACTIVE or TP1_HIT (partial exit scenario)
       if ((status === 'ACTIVE' || status === 'TP1_HIT') && slCrossed(sl)) {
         const pnl = parseFloat(((livePrice - entry) * dir * t.qty).toFixed(2));
-        newStatus   = 'SL_HIT';
-        realizedPnl = pnl;
-        history     = [...history, { status: 'SL_HIT' as const, ts: now, price: livePrice, note: 'Automatic stop hit' }];
-        console.log(`[TradeMonitor] 🛑 SL HIT: ${symbol} @ ${livePrice} | PnL: ${pnl > 0 ? '+' : ''}${pnl} USDT`);
-
-      // ── TP2 hit — from TP1_HIT only ─────────────────────────────────────────
+        newStatus = 'SL_HIT'; realizedPnl = pnl;
+        history = [...history, { status: 'SL_HIT' as const, ts: now, price: livePrice, note: 'Automatic stop hit' }];
       } else if (status === 'TP1_HIT' && t.t2 && crossed(t.t2)) {
         const pnl = parseFloat(((livePrice - entry) * dir * t.qty).toFixed(2));
-        newStatus   = 'TP2_HIT';
-        realizedPnl = pnl;
-        history     = [...history, { status: 'TP2_HIT' as const, ts: now, price: livePrice, note: 'Full target reached' }];
-        console.log(`[TradeMonitor] ✅✅ TP2 HIT: ${symbol} @ ${livePrice} | PnL: +${pnl} USDT`);
-
-      // ── TP1 hit — from ACTIVE only ───────────────────────────────────────────
+        newStatus = 'TP2_HIT'; realizedPnl = pnl;
+        history = [...history, { status: 'TP2_HIT' as const, ts: now, price: livePrice, note: 'Full target reached' }];
       } else if (status === 'ACTIVE' && t.t1 && crossed(t.t1)) {
         const pnl = parseFloat(((livePrice - entry) * dir * t.qty).toFixed(2));
-        newStatus   = 'TP1_HIT';
-        realizedPnl = pnl;  // snapshot partial PnL at TP1 (updated again at TP2)
-        history     = [...history, { status: 'TP1_HIT' as const, ts: now, price: livePrice, note: 'First target reached' }];
-        console.log(`[TradeMonitor] ✅ TP1 HIT: ${symbol} @ ${livePrice} | PnL so far: +${pnl} USDT`);
+        newStatus = 'TP1_HIT'; realizedPnl = pnl;
+        history = [...history, { status: 'TP1_HIT' as const, ts: now, price: livePrice, note: 'First target reached' }];
       }
 
       return {
-        ...t,
-        livePrice,
-        unrealizedPnl:  parseFloat(unrealizedPnl.toFixed(2)),
-        rMultiple:  rMultiple  !== undefined ? parseFloat(rMultiple.toFixed(3))  : undefined,
-        distToTp1:  distToTp1 !== undefined ? parseFloat(distToTp1.toFixed(3)) : undefined,
-        distToTp2:  distToTp2 !== undefined ? parseFloat(distToTp2.toFixed(3)) : undefined,
-        distToSl:   distToSl  !== undefined ? parseFloat(distToSl.toFixed(3))  : undefined,
+        ...t, livePrice, status: newStatus, realizedPnl, statusHistory: history,
+        unrealizedPnl: parseFloat(unrealizedPnl.toFixed(2)),
+        rMultiple:     rMultiple  !== undefined ? parseFloat(rMultiple.toFixed(3))  : undefined,
+        distToTp1:     distToTp1 !== undefined ? parseFloat(distToTp1.toFixed(3)) : undefined,
+        distToTp2:     distToTp2 !== undefined ? parseFloat(distToTp2.toFixed(3)) : undefined,
+        distToSl:      distToSl  !== undefined ? parseFloat(distToSl.toFixed(3))  : undefined,
         priceUpdatedAt: now,
-        // Status transition fields — only changed when a level was hit
-        status:        newStatus,
-        realizedPnl,
-        statusHistory: history,
       };
     });
 
     const newState = {
       activeTrades: updatedTrades,
-      currentPrices: {
-        ...state.currentPrices,
-        [symbol.toUpperCase()]: { last: livePrice, ts: now }
-      }
+      currentPrices: { ...state.currentPrices, [symbol.toUpperCase()]: { last: livePrice, ts: now } }
     };
 
-    // ── Auto-close paper trades that just hit a fully terminal status ─────────
-    // TP1_HIT is NOT terminal (runners continue), only TP2_HIT / SL_HIT trigger this
+    // Auto-close check by ID
     const PAPER_TERMINAL = ['TP2_HIT', 'SL_HIT', 'CLOSED', 'CANCELLED'];
-    const justTerminated  = updatedTrades.find(
-      t => t.symbol.toUpperCase() === symbol.toUpperCase() &&
-           t.isPaperTrade &&
-           PAPER_TERMINAL.includes(t.status) &&
-           !PAPER_TERMINAL.includes(state.activeTrades.find(o => o.symbol === t.symbol)?.status ?? '')
-    );
-    if (justTerminated) {
-      // Schedule micro-task so it runs after this set() resolves
-      setTimeout(() => get().closePaperTrade(symbol, livePrice), 0);
-    }
+    updatedTrades.forEach(t => {
+      const wasNotTerminal = !PAPER_TERMINAL.includes(state.activeTrades.find(o => o.id === t.id)?.status ?? '');
+      if (t.isPaperTrade && wasNotTerminal && PAPER_TERMINAL.includes(t.status)) {
+        setTimeout(() => get().closePaperTrade(t.id, livePrice), 0);
+      }
+    });
 
     return newState;
   }),
 
 
 
-  updateTradeStatus: (symbol, newStatus, price, note) => set(state => ({
+  updateTradeStatus: (idOrSymbol, newStatus, price, note) => set(state => ({
     activeTrades: state.activeTrades.map(t => {
-      if (t.symbol.toUpperCase() !== symbol.toUpperCase()) return t;
+      const match = (t.id === idOrSymbol) || (t.symbol.toUpperCase() === idOrSymbol.toUpperCase());
+      if (!match) return t;
 
       const event = { status: newStatus as any, ts: Date.now(), price, note };
       const history = [...(t.statusHistory ?? []), event];
 
-      // On terminal statuses, compute realized PnL from exit price
       const TERMINAL = ['TP1_HIT', 'TP2_HIT', 'SL_HIT', 'CLOSED', 'CANCELLED'];
       let realizedPnl = t.realizedPnl;
       if (TERMINAL.includes(newStatus) && price) {
@@ -502,10 +478,10 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }
   }),
 
-  closePaperTrade: (symbol, closePrice) => {
+  closePaperTrade: (idOrSymbol, closePrice) => {
     const state = get();
     const trade = state.activeTrades.find(
-      t => t.symbol.toUpperCase() === symbol.toUpperCase() && t.isPaperTrade
+      t => t.isPaperTrade && (t.id === idOrSymbol || t.symbol.toUpperCase() === idOrSymbol.toUpperCase())
     );
     if (!trade) return;
 
@@ -531,13 +507,11 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     const avgR   = allR.length ? parseFloat((allR.reduce((a, b) => a + b, 0) / allR.length).toFixed(3)) : 0;
     const newBalance   = parseFloat((prev.currentBalance + realizedPnl).toFixed(2));
     const totalPnl     = parseFloat((newBalance - prev.startBalance).toFixed(2));
-    const openTrades   = state.activeTrades.filter(t => t.isPaperTrade && t.symbol !== symbol);
+    const openTrades   = state.activeTrades.filter(t => t.isPaperTrade && t.id !== trade.id);
     const openExposure = openTrades.reduce((sum, t) => sum + (t.sizeUSDT ?? 0), 0);
 
     set(s => ({
-      activeTrades: s.activeTrades.filter(
-        t => !(t.symbol.toUpperCase() === symbol.toUpperCase() && t.isPaperTrade)
-      ),
+      activeTrades: s.activeTrades.filter(t => t.id !== trade.id),
       paperSession: {
         ...prev, currentBalance: newBalance, totalPnl,
         openExposure: parseFloat(openExposure.toFixed(2)),
@@ -547,7 +521,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       }
     }));
 
-    console.log(`[Paper] 📋 ${symbol} CLOSED @ ${closePrice} | PnL: ${realizedPnl >= 0 ? '+' : ''}${realizedPnl} | Balance: $${newBalance} | ${outcome}`);
+    console.log(`[Paper] 📋 ${trade.symbol} (ID: ${trade.id}) CLOSED @ ${closePrice} | PnL: ${realizedPnl >= 0 ? '+' : ''}${realizedPnl} | Balance: $${newBalance} | ${outcome}`);
   }
 }));
 

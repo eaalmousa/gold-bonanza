@@ -51,6 +51,22 @@ tradeRouter.post('/toggle', requireAuth, (req: any, res: any) => {
   res.json({ enabled: isAutoTradingEnabled });
 });
 
+tradeRouter.get('/config', requireAuth, (req: any, res: any) => {
+  res.json({
+    riskPerTrade: RISK_PER_TRADE,
+    maxConcurrent: MAX_CONCURRENT_TRADES,
+    leverage: LEVERAGE,
+    slEnabled: SL_ENABLED,
+    tpEnabled: TP_ENABLED,
+    tp1Only: TP1_ONLY,
+    tp1RR: TP1_RR,
+    tp2RR: TP2_RR,
+    minScore: MIN_SCORE,
+    btcGateEnabled: BTC_GATE_ENABLED,
+    trailTpEnabled: TRAIL_TP_ENABLED
+  });
+});
+
 tradeRouter.post('/config', requireAuth, (req: any, res: any) => {
   updateTraderConfig(req.body);
   res.json({ success: true });

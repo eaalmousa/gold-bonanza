@@ -3,7 +3,7 @@ import { Crosshair, Power, Wifi, WifiOff } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function Header() {
-  const { isDataLive, activeMode, activeTrades, binancePositions, sniperSignals, breakoutSignals, binanceStatus, isAutoTradeActive, setAutoTradeActive } = useTradingStore();
+  const { isDataLive, activeMode, activeTrades, binancePositions, pipelineSignals, binanceStatus, isAutoTradeActive, setAutoTradeActive } = useTradingStore();
 
   const handleToggleAutoTrade = async () => {
     try {
@@ -14,8 +14,7 @@ export default function Header() {
     }
   };
 
-  const pendingCount = sniperSignals.filter(s => s.status === 'QUEUED').length + 
-                       breakoutSignals.filter(s => s.status === 'QUEUED').length;
+  const pendingCount = pipelineSignals.filter(s => s.status === 'QUEUED').length;
 
   const activeLocalOnly = activeTrades.filter(t => !binancePositions.some(p => p.symbol.toUpperCase() === t.symbol.toUpperCase())).length;
   const totalActiveCount = binancePositions.length + activeLocalOnly + pendingCount;

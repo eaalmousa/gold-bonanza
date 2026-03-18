@@ -3,10 +3,10 @@ import LoginGate from './components/LoginGate';
 import Header from './components/Header';
 import SystemStatus from './components/SystemStatus';
 import AutoTraderConsole from './components/AutoTraderConsole';
-import SniperSignals from './components/SniperSignals';
-import BreakoutSignals from './components/BreakoutSignals';
+import PipelineSignals from './components/PipelineSignals';
 import MarketIntelligence from './components/MarketIntelligence';
 import CommandSyncHub from './components/CommandSyncHub';
+import PaperAccountPanel from './components/PaperAccountPanel';
 import InstitutionalLiquidityMap from './components/InstitutionalLiquidityMap';
 import SniperRadar from './components/SniperRadar';
 import LockdownDiagnostics from './components/LockdownDiagnostics';
@@ -15,6 +15,7 @@ import MicrostructureTable from './components/MicrostructureTable';
 import CurrencyAnalyzer from './components/CurrencyAnalyzer';
 import BtcCyclePanel from './components/BtcCyclePanel';
 import BtcExhaustionPanel from './components/BtcExhaustionPanel';
+import { PipelineObservability } from './components/PipelineObservability';
 import { useScanner } from './hooks/useScanner';
 import { useLiveFeeds } from './hooks/useLiveFeeds';
 import { useTradingStore } from './store/tradingStore';
@@ -23,7 +24,7 @@ import { api } from './services/api';
 
 function App() {
   const {
-    sniperSignals, breakoutSignals, marketRows,
+    pipelineSignals, marketRows,
     scannerRunning, queueSignal, setBinanceStatus,
     setAutoTradeActive
   } = useTradingStore();
@@ -84,6 +85,7 @@ function App() {
       </div>
 
       <div className="terminal-panel" style={{ padding: '32px' }}>
+        <PipelineObservability />
         <LockdownDiagnostics />
       </div>
 
@@ -153,13 +155,16 @@ function App() {
       <div className="terminal-panel" style={{ padding: '32px' }}>
         <div className="sections-stack" style={{ gap: 36 }}>
           <SniperRadar />
-          <BreakoutSignals signals={breakoutSignals} onDeploy={(row) => queueSignal(row.id, 'breakout')} />
-          <SniperSignals signals={sniperSignals} onDeploy={(row) => queueSignal(row.id, 'SNIPER')} />
+          <PipelineSignals signals={pipelineSignals} onDeploy={(row) => queueSignal(row.id)} />
         </div>
       </div>
 
       <div className="terminal-panel" style={{ padding: '32px' }}>
         <CommandSyncHub />
+      </div>
+
+      <div className="terminal-panel" style={{ padding: '32px' }}>
+        <PaperAccountPanel />
       </div>
 
       <div className="terminal-panel" style={{ padding: '32px' }}>

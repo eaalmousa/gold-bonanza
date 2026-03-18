@@ -15,9 +15,11 @@ import { calcEMA, calcRSI, calcATR, calcSMA, calcMACD, calcBollingerBands, detec
 import { validateOrderFlow } from './regimeFilter';
 
 // ─── DEBUG LOGGER ─────────────────────────────────────────────────
+export const globalDebugLogs: string[][] = [];
 function makeDebugLog(symbol?: string): string[] {
   const log: string[] = [];
   if (symbol) log.push(`[SniperV3] ${symbol}`);
+  globalDebugLogs.push(log);
   return log;
 }
 
@@ -36,7 +38,10 @@ export function evaluateSniperSignal(
   const modeKey: string = activeMode.key;
   const debugLog = makeDebugLog(symbol);
 
-  if (!tf1h || tf1h.length < 210 || !tf15m || tf15m.length < 90) return null;
+  if (!tf1h || tf1h.length < 210 || !tf15m || tf15m.length < 90) {
+    debugLog.push('REJECT: Insufficient klines data');
+    return null;
+  }
 
   // ─── GATE 1: REGIME ───────────────────────────────────
   if (regime === 'CRASH') {
@@ -59,7 +64,10 @@ export function evaluateSniperSignal(
   const e50_1h    = ema50_1h[idx1h];
   const e200_1h   = ema200_1h[idx1h];
 
-  if ([e20_1h, e50_1h, e200_1h].some(v => v == null)) return null;
+  if ([e20_1h, e50_1h, e200_1h].some(v => v == null)) {
+    debugLog.push('REJECT: Missing 1h EMA values');
+    return null;
+  }
 
   // ─── GATE 2: DIRECTION ────────────────────────────────
   const isUptrend   = close1h > e200_1h! && e20_1h! > e50_1h! && e50_1h! > e200_1h!;
@@ -83,10 +91,10 @@ export function evaluateSniperSignal(
     debugLog.push('Direction: BREAKING_DOWN — price below both EMAs with negative slope');
   } else if (isUptrend && e20Slope1h > 0 && e50Slope1h >= 0) {
     side = 'LONG';
-    if (regime === 'TRENDING_DOWN') return null;
+    if (regime === 'TRENDING_DOWN') { debugLog.push('REJECT: Counter-trend regime (LONG in DOWN)'); return null; }
   } else if (isDowntrend && e20Slope1h < 0 && e50Slope1h <= 0) {
     side = 'SHORT';
-    if (regime === 'TRENDING_UP') return null;
+    if (regime === 'TRENDING_UP') { debugLog.push('REJECT: Counter-trend regime (SHORT in UP)'); return null; }
   } else if (isRecovering) {
     // Recovering from deep pullback — allow LONGs
     side = 'LONG';
@@ -130,7 +138,10 @@ export function evaluateSniperSignal(
   const doublePattern = detectDoublePattern(highs15, lows15, closes15);
 
   const lastIdx = closes15.length - 2;
-  if (lastIdx <= 60) return null;
+  if (lastIdx <= 60) {
+    debugLog.push('REJECT: Insufficient 15m index');
+    return null;
+  }
 
   const candle  = tf15m[lastIdx];
   const prev    = tf15m[lastIdx - 1];
@@ -149,7 +160,10 @@ export function evaluateSniperSignal(
   const volAvg    = volSMA20_15[lastIdx];
   const volLongAvg = volSMA50_15[lastIdx] ?? volAvg;
 
-  if ([e20_15, e50_15, rsiNow, rsiPrev, atr, volAvg].some(v => v == null)) return null;
+  if ([e20_15, e50_15, rsiNow, rsiPrev, atr, volAvg].some(v => v == null)) {
+    debugLog.push('REJECT: Missing 15m indicator values');
+    return null;
+  }
 
   const cfg    = activeMode.pullback;
   const slack  = cfg.valueZoneSlack;
@@ -582,7 +596,7 @@ export function evaluateSniperSignal(
     }
 
     if (breakdownZoneBypass && !inZone) {
-      debugLog.push(`PASS [BREAKING_DOWN crash path]: bypassed normal EMA zone — price below both EMAs, RSI:${rsiNow!.toFixed(1)}, bearish candle confirmed`);
+      debugLog.push(`PROVISIONAL PASS [BREAKING_DOWN crash path]: EMA zone bypassed — price below both EMAs, RSI:${rsiNow!.toFixed(1)}, bearish candle. Note: downstream gates (anatomy, volume, floor, score) still apply and can reject.`);
     } else {
       debugLog.push(`PASS [normal short zone]: price in EMA retest zone`);
     }
@@ -590,15 +604,16 @@ export function evaluateSniperSignal(
     // ─── LATE-ENTRY BLOCKER (SHORT) ─────────────────────────────
     const extensionBelowZone = (e20_15! - close15) / atr!;
     // Normal cap: 1.0x ATR — prevents shorting far below EMA zone (stale entries)
-    // BREAKING_DOWN cap: raised to 1.8x ATR — crash entries are by definition extended,
-    //   but 1.8x still blocks pure capitulation chasing (2.0x+ candles already screened upstream)
-    const lateCap = isBreakingDown ? 1.8 : 1.0;
+    // Crash-bypass cap: raised to 1.8x ATR — only for shorts that used the BREAKING_DOWN
+    //   zone bypass. An in-zone BREAKING_DOWN signal keeps the normal 1.0x cap.
+    //   1.8x bound still catches anything, since 2.0x ATR candles are screened upstream.
+    const lateCap = breakdownZoneBypass ? 1.8 : 1.0;
     if (extensionBelowZone > lateCap) {
-      debugLog.push(`REJECT: Short late entry — ${extensionBelowZone.toFixed(2)}x ATR below EMA20 exceeds ${lateCap}x cap${isBreakingDown ? ' (BREAKING_DOWN cap)' : ''}`);
+      debugLog.push(`REJECT: Short late entry — ${extensionBelowZone.toFixed(2)}x ATR below EMA20 exceeds ${lateCap}x cap${breakdownZoneBypass ? ' (crash-bypass cap)' : ''}`);
       return null;
     }
-    if (isBreakingDown && extensionBelowZone > 1.0) {
-      debugLog.push(`PASS [BREAKING_DOWN late-entry exception]: ${extensionBelowZone.toFixed(2)}x ATR below EMA20 (normal cap 1.0x, BD cap 1.8x)`);
+    if (breakdownZoneBypass && extensionBelowZone > 1.0) {
+      debugLog.push(`PASS [crash-bypass late-entry exception]: ${extensionBelowZone.toFixed(2)}x ATR below EMA20 (normal cap 1.0x, crash-bypass cap 1.8x)`);
     }
 
     const zoneIdealShort  = (e20_15! + e50_15!) / 2;
@@ -610,7 +625,10 @@ export function evaluateSniperSignal(
     const guard = modeKey === 'CONSERVATIVE' ? 0.0025 : modeKey === 'BALANCED' ? 0.004 : 0.006;
     const distFrom1hE20 = (e20_1h! - close15) / e20_1h!;
     const distFrom1hE50 = (e50_1h! - close15) / e50_1h!;
-    if (modeKey !== 'AGGRESSIVE' && (distFrom1hE20 < -guard || distFrom1hE50 < -guard * 1.4)) return null;
+    if (modeKey !== 'AGGRESSIVE' && (distFrom1hE20 < -guard || distFrom1hE50 < -guard * 1.4)) {
+      debugLog.push(`REJECT: 1H structure guard failed (too far extended from 1H EMAs)`);
+      return null;
+    }
 
     // GATE: RSI for SHORT
     // Use direct RSI range (not naive 100-x inversion) to avoid rejecting panic-sell conditions.
@@ -634,11 +652,20 @@ export function evaluateSniperSignal(
 
     // Volume
     const dollarVolAvg = dollarVolSMA20_15[lastIdx];
-    if (cfg.minDollarVol15m && dollarVolAvg != null && dollarVolAvg < cfg.minDollarVol15m) return null;
+    if (cfg.minDollarVol15m && dollarVolAvg != null && dollarVolAvg < cfg.minDollarVol15m) {
+      debugLog.push('REJECT: Dollar volume below minimum');
+      return null;
+    }
     const volSpike = volLongAvg ? (vol / volLongAvg!) : 0;
-    if (cfg.volSpikeMult && volSpike < cfg.volSpikeMult) return null;
+    if (cfg.volSpikeMult && volSpike < cfg.volSpikeMult) {
+      debugLog.push('REJECT: Volume spike below minimum');
+      return null;
+    }
     const volRatio = vol / volAvg!;
-    if (volRatio < cfg.volMult) return null;
+    if (volRatio < cfg.volMult) {
+      debugLog.push(`REJECT: Volume ratio below minimum (${volRatio.toFixed(2)}x < ${cfg.volMult}x)`);
+      return null;
+    }
     let volScore = 2;
     if (volRatio > 2.0) volScore += 2;
     if (volRatio > 3.5) volScore += 2;
@@ -660,13 +687,19 @@ export function evaluateSniperSignal(
     if (prev2) {
       const accel    = (prev.close - close15) - (prev2.close - prev.close);
       const accelPct = accel / close15;
-      if (modeKey !== 'AGGRESSIVE' && cfg.accelPctMin && accelPct < cfg.accelPctMin) return null;
+      if (modeKey !== 'AGGRESSIVE' && cfg.accelPctMin && accelPct < cfg.accelPctMin) {
+        debugLog.push(`REJECT: Downward acceleration below minimum (${accelPct.toFixed(4)})`);
+        return null;
+      }
       if (accelPct > 0.0015) { score += 2; reasons.push(`Strong downward accel`); }
       else if (accelPct > 0) score += 1;
     }
 
     const atrPct = (atr! / close15) * 100;
-    if (!(atrPct > cfg.atrPctMin && atrPct < cfg.atrPctMax)) return null;
+    if (!(atrPct > cfg.atrPctMin && atrPct < cfg.atrPctMax)) {
+      debugLog.push(`REJECT: ATR% out of range (${atrPct.toFixed(2)}%)`);
+      return null;
+    }
 
     // Setup type reversal gate
     const prevE20     = ema20_15[lastIdx - 1];
@@ -684,15 +717,24 @@ export function evaluateSniperSignal(
 
     if (shortEntryType === 'REVERSAL') {
       const hasStrongReversal = reversalCandle || twoBarReversal || doublePattern === 'DOUBLE_TOP';
-      if (!hasStrongReversal && modeKey !== 'AGGRESSIVE') return null;
+      if (!hasStrongReversal && modeKey !== 'AGGRESSIVE') {
+        debugLog.push('REJECT: Short reversal not confirmed (needs strong tail or 2-bar pattern)');
+        return null;
+      }
       score += reversalCandle || twoBarReversal ? 4 : 2;
       reasons.push('Bearish reversal confirmed');
     } else {
       const confirmed = modeKey === 'AGGRESSIVE' || lostE20 || (lowerHigh && rsiNow! < 50) || twoBarReversal;
-      if (!confirmed) return null;
+      if (!confirmed) {
+        debugLog.push('REJECT: Continuation not confirmed (lost EMA20 or lower-high with RSI<50 req)');
+        return null;
+      }
       const closedBelowPrevLow  = close15 < prev.low;
       const heldBelowE20ByClose = close15 <= e20_15! * 0.999;
-      if (modeKey !== 'AGGRESSIVE' && !(closedBelowPrevLow && heldBelowE20ByClose)) return null;
+      if (modeKey !== 'AGGRESSIVE' && !(closedBelowPrevLow && heldBelowE20ByClose)) {
+        debugLog.push('REJECT: Short continuation failed 15m structure hold');
+        return null;
+      }
       score += 2; reasons.push('Short continuation hold');
     }
 
@@ -734,7 +776,10 @@ export function evaluateSniperSignal(
     // Order flow
     const flowCheck = validateOrderFlow(orderFlow, 'SHORT');
     const missingFlowPenalty = flowCheck.missingFlow ? 3 : 0;
-    if (!flowCheck.ok && modeKey !== 'AGGRESSIVE') return null;
+    if (!flowCheck.ok && modeKey !== 'AGGRESSIVE') {
+      debugLog.push('REJECT: Order flow strictly invalid for SHORT');
+      return null;
+    }
     score += flowCheck.score;
     if (flowCheck.reasons.length > 0) reasons.push(flowCheck.reasons[0]);
 
@@ -744,13 +789,19 @@ export function evaluateSniperSignal(
     if (shortRegimeBonus > 0) reasons.push('Regime supports shorts');
 
     const effectiveScoreMin = cfg.scoreMin + missingFlowPenalty;
-    if (score < effectiveScoreMin) return null;
+    if (score < effectiveScoreMin) {
+      debugLog.push(`REJECT: Score below minimum threshold (${score} < ${effectiveScoreMin})`);
+      return null;
+    }
 
     // Entry/exit (SHORT)
     const triggerBuffer  = modeKey === 'CONSERVATIVE' ? 0.0015 : modeKey === 'BALANCED' ? 0.0012 : 0.0010;
     const triggerPrice   = low15 * (1 - triggerBuffer);
     const chasePct       = ((close15 - triggerPrice) / close15) * 100;
-    if (modeKey !== 'AGGRESSIVE' && (chasePct > 0.45 || (close15 - triggerPrice) > atr! * 0.35)) return null;
+    if (modeKey !== 'AGGRESSIVE' && (chasePct > 0.45 || (close15 - triggerPrice) > atr! * 0.35)) {
+      debugLog.push(`REJECT: Entry chase too far (${chasePct.toFixed(2)}%)`);
+      return null;
+    }
 
     const riskPerTrade   = balance * activeMode.riskPct;
     const structureStop  = Math.max(high15, e50_15!) * (1 + 0.0012);
@@ -760,7 +811,10 @@ export function evaluateSniperSignal(
     const stopLoss       = Math.max(rawStop, minAtrStop);
     const stopDistance   = Math.max(stopLoss - triggerPrice, triggerPrice * 0.0035);
     const stopPctVal     = (stopDistance / triggerPrice) * 100;
-    if (modeKey !== 'AGGRESSIVE' && (stopPctVal > 2.5 || stopPctVal < 0.4)) return null;
+    if (modeKey !== 'AGGRESSIVE' && (stopPctVal > 2.5 || stopPctVal < 0.4)) {
+      debugLog.push(`REJECT: Stop% out of bounds for short setup (${stopPctVal.toFixed(2)}%)`);
+      return null;
+    }
 
     const takeProfit  = triggerPrice - 1.25 * stopDistance;
     const takeProfit2 = triggerPrice - 2.5  * stopDistance;

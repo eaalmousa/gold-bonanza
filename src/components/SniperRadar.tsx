@@ -3,8 +3,8 @@ import { useMemo } from 'react';
 import { useTradingStore } from '../store/tradingStore';
 
 export default function SniperRadar() {
-  const { sniperSignals } = useTradingStore();
-  const detectedSignals = sniperSignals.filter(s => s.status === 'DETECTED');
+  const { pipelineSignals } = useTradingStore();
+  const detectedSignals = pipelineSignals.filter(s => s.status === 'ACCEPTED');
 
   // Stable blip positions — memoized so they don't jump on every render
   const blips = useMemo(() =>
@@ -20,7 +20,7 @@ export default function SniperRadar() {
         delay:   `${(i * 0.18).toFixed(2)}s`,
       };
     }),
-    [sniperSignals]
+    [pipelineSignals]
   );
 
   return (

@@ -9,7 +9,7 @@ export function useScanner() {
   const {
     symbols, setSymbols,
     activeMode, balance,
-    setSniperSignals, setBreakoutSignals,
+    setPipelineSignals, addPipelineTraces,
     setMarketRows, setDataLive, setScannerRunning,
     addSignalToHistory,
     orderFlowSnapshots, setMarketRegime,
@@ -49,19 +49,19 @@ export function useScanner() {
         }
       );
 
-      setSniperSignals(result.sniperSignals);
-      setBreakoutSignals(result.breakoutSignals);
+      setPipelineSignals(result.pipelineSignals);
+      addPipelineTraces(result.pipelineTraces);
       setMarketRows(result.marketRows);
       setDataLive(result.marketRows.length > 0);
       setLastScanAt(Date.now());
 
       console.log(
-        `%c[SCAN DONE] Mode=${activeMode.key} | Sniper=${result.sniperSignals.length} | Breakout=${result.breakoutSignals.length} | MarketRows=${result.marketRows.length}`,
-        result.sniperSignals.length > 0 ? 'color:lime;font-weight:bold' : 'color:orange;font-weight:bold'
+        `%c[SCAN DONE] Mode=${activeMode.key} | Tradeable=${result.pipelineSignals.length} | Traces=${result.pipelineTraces.length} | MarketRows=${result.marketRows.length}`,
+        result.pipelineSignals.length > 0 ? 'color:lime;font-weight:bold' : 'color:orange;font-weight:bold'
       );
 
-      // Add to history
-      result.sniperSignals.forEach(s => {
+      // Add to history (only ACCEPTED status signals should go into the long-term historical graph record)
+      result.pipelineSignals.filter(s => s.status === 'ACCEPTED').forEach(s => {
         addSignalToHistory({
           kind: s.signal.side === 'SHORT' ? 'SNIPER_SHORT' : 'SNIPER',
           symbol: s.symbol,
@@ -71,19 +71,9 @@ export function useScanner() {
           ts: Date.now()
         });
       });
-      result.breakoutSignals.forEach(s => {
-        addSignalToHistory({
-          kind: s.signal.side === 'SHORT' ? 'SUPER_SHORT' : 'SUPER',
-          symbol: s.symbol,
-          price: s.price,
-          change24h: s.change24h,
-          score: s.signal.score,
-          ts: Date.now()
-        });
-      });
 
       console.log(
-        `[Scanner] Scan complete — ${result.sniperSignals.length} sniper, ${result.breakoutSignals.length} breakout, ${result.marketRows.length} market rows`
+        `[Scanner] Scan complete — ${result.pipelineSignals.length} tradeable, ${result.pipelineTraces.length} traces, ${result.marketRows.length} market rows`
       );
     } catch (e: any) {
       setScanError(e?.message || 'Scan failed');
@@ -93,7 +83,7 @@ export function useScanner() {
       scanLock.current = false;
       setScannerRunning(false);
     }
-  }, [activeMode, balance, setSniperSignals, setBreakoutSignals, setMarketRows, setDataLive, setScannerRunning, addSignalToHistory, setMarketRegime]);
+  }, [activeMode, balance, setPipelineSignals, addPipelineTraces, setMarketRows, setDataLive, setScannerRunning, addSignalToHistory, setMarketRegime]);
 
   // Initialize universe and start scanning
   useEffect(() => {
@@ -131,16 +121,14 @@ export function useScanner() {
   useEffect(() => {
     if (isScannerActive && symbols.length > 0) {
       // Clear out old signals to avoid confusion
-      setSniperSignals([]);
-      setBreakoutSignals([]);
+      setPipelineSignals([]);
       setMarketRows([]);
       setScanProgress(0); // Reset progress clock
       
       doScan(symbols);
     } else if (!isScannerActive) {
       // User turned off the engine: clear everything and stop the clock immediately
-      setSniperSignals([]);
-      setBreakoutSignals([]);
+      setPipelineSignals([]);
       setMarketRows([]);
       setScanProgress(0);
       setLastScanAt(null);
@@ -152,8 +140,7 @@ export function useScanner() {
   // Re-scan when mode changes
   useEffect(() => {
     // Always clear old signals on mode change so stale "AGGRESSIVE" signals don't persist in "CONSERVATIVE" view
-    setSniperSignals([]);
-    setBreakoutSignals([]);
+    setPipelineSignals([]);
     setMarketRows([]);
     setLastScanAt(null);
 

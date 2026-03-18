@@ -222,4 +222,68 @@ export function useLiveFeeds() {
       clearInterval(uiDataLoop);
     };
   }, [store.isDataLive]);
+
+  // ─── Active Trade Live Price Feed ────────────────────────────────────────────
+  // Subscribes to Binance miniTicker streams for every symbol in activeTrades.
+  // Re-connects any time the set of active trade symbols changes.
+  const tradeTickerWs = useRef<WebSocket | null>(null);
+  const activeTrades = useTradingStore(s => s.activeTrades);
+
+  useEffect(() => {
+    const TERMINAL = ['TP1_HIT', 'TP2_HIT', 'SL_HIT', 'CLOSED', 'CANCELLED'];
+    // Only subscribe for open (non-terminal) trades
+    const openTrades = activeTrades.filter(t => !TERMINAL.includes(t.status));
+
+    // Close old connection
+    if (tradeTickerWs.current) {
+      tradeTickerWs.current.close();
+      tradeTickerWs.current = null;
+    }
+
+    if (openTrades.length === 0) return;
+
+    // Build combined stream URL: SYMBOL@miniTicker for each trade
+    const streams = openTrades
+      .map(t => `${t.symbol.toLowerCase()}@miniTicker`)
+      .join('/');
+
+    const ws = new WebSocket(`${WS_URL}${streams}`);
+    tradeTickerWs.current = ws;
+
+    ws.onopen = () => {
+      console.log(`[TradeMonitor] Subscribed to live tickers for: ${openTrades.map(t => t.symbol).join(', ')}`);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const raw = JSON.parse(event.data);
+        // Combined streams wrap payload under "data"
+        const ticker = raw.data || raw;
+        if (ticker.e === '24hrMiniTicker' && ticker.s && ticker.c) {
+          const livePrice = parseFloat(ticker.c);
+          if (isFinite(livePrice) && livePrice > 0) {
+            useTradingStore.getState().updateTradeLivePrice(ticker.s, livePrice);
+          }
+        }
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    ws.onerror = (e) => {
+      console.warn('[TradeMonitor] WebSocket error', e);
+    };
+
+    ws.onclose = () => {
+      console.log('[TradeMonitor] Ticker WS closed');
+    };
+
+    return () => {
+      ws.close();
+      tradeTickerWs.current = null;
+    };
+  // Re-subscribe when the set of active symbols changes (new deploy or status change)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTrades.map(t => `${t.symbol}:${t.status}`).join(',')]);
 }
+

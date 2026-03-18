@@ -11,8 +11,9 @@ import { evaluateSniperSignal } from './sniperEngine';
 import { evaluateBreakoutSignal } from './breakoutEngine';
 import { detectMarketRegime, getCorrelationPositionLimit } from './regimeFilter';
 import { checkPortfolioExposure, type PortfolioSnapshot } from './portfolioRisk';
-import type { ModeConfig, SignalRow, MarketRow, MarketRegime, OrderFlowSnapshot } from '../types/trading';
+import type { ModeConfig, SignalRow, MarketRow, MarketRegime, OrderFlowSnapshot, UnifiedTrace } from '../types/trading';
 import { SPOT_API, FUTURES_API } from '../types/trading';
+import { globalDebugLogs as sniperLogs } from './sniperEngine';
 
 const BATCH_SIZE = 8;
 const BATCH_DELAY = 400;
@@ -28,13 +29,13 @@ export async function runBonanzaCore(
   currentOpenPositionCount?: number,
   portfolio?: PortfolioSnapshot        // For portfolio risk checks
 ): Promise<{
-  sniperSignals: SignalRow[];
-  breakoutSignals: SignalRow[];
+  pipelineSignals: SignalRow[];
+  pipelineTraces: UnifiedTrace[];
   marketRows: MarketRow[];
   regimeLabel: string;
 }> {
-  const sniperSignals: SignalRow[]   = [];
-  const breakoutSignals: SignalRow[] = [];
+  const pipelineSignals: SignalRow[]   = [];
+  const pipelineTraces: UnifiedTrace[] = [];
   const marketRows: MarketRow[]      = [];
   let processed = 0;
 
@@ -65,7 +66,7 @@ export async function runBonanzaCore(
   const corrLimit = getCorrelationPositionLimit(regime, btc4hTrend, openCount);
   if (!corrLimit.allowNew) {
     console.log(`[Correlation Limiter] ${corrLimit.reason} — scan skipped`);
-    return { sniperSignals: [], breakoutSignals: [], marketRows: [], regimeLabel };
+    return { pipelineSignals: [], pipelineTraces: [], marketRows: [], regimeLabel };
   }
   console.log(`[Correlation Limiter] ${corrLimit.reason} | Max new: ${corrLimit.maxNewPositions}`);
 
@@ -97,13 +98,20 @@ export async function runBonanzaCore(
         const data = await res.json();
         for (const t of data) tickers[t.symbol] = parseFloat(t.priceChangePercent) || 0;
       }
-    } catch { /* continue */ }
+    } catch {
+      console.warn('[Scanner] Failed to fetch 24h tickers');
+    }
+  }
+
+  if (Object.keys(tickers).length === 0) {
+    console.log('[Scanner] No tickers loaded, returning empty pipeline signals');
+    return { pipelineSignals: [], pipelineTraces: [], marketRows: [], regimeLabel };
   }
 
   // ─── REGIME GATE ─────────────────────────────────────────────
   if (regime === 'CRASH' && activeMode.key !== 'AGGRESSIVE') {
     console.log('[Scanner] CRASH regime — scan blocked (non-aggressive mode)');
-    return { sniperSignals: [], breakoutSignals: [], marketRows: [], regimeLabel };
+    return { pipelineSignals: [], pipelineTraces: [], marketRows: [], regimeLabel };
   }
 
   // ─── STEP 4: Scan symbols in batches ─────────────────────────
@@ -121,10 +129,46 @@ export async function runBonanzaCore(
     currentScanCycleStart: Date.now()
   };
 
+  function createTrace(symbol: string, engine: 'SNIPER'|'BREAKOUT', logs: string[], sig: any, now: number): UnifiedTrace {
+    const logsStr = logs.join(' | ');
+    let status: UnifiedTrace['status'] = 'REJECTED';
+    let lastRejectReason = undefined;
+
+    if (sig) {
+      if (sig.entryType?.includes('PENDING') || sig.entryType?.includes('RETEST_FAILED')) status = 'PENDING';
+      else status = 'ACCEPTED';
+      
+      if (sig.entryType === 'RETEST_FAILED' || sig.entryType === 'INVALIDATED') status = 'INVALIDATED';
+      else if (sig.entryType === 'EXPIRED_NO_RETEST') status = 'EXPIRED';
+    } else {
+      for (let j = logs.length - 1; j >= 0; j--) {
+        if (logs[j].includes('REJECT:')) {
+          lastRejectReason = logs[j].split('REJECT:')[1].split('—')[0].split('-')[0].trim();
+          break;
+        }
+      }
+    }
+
+    return {
+      id: `${symbol}-${engine}-${now}`,
+      symbol, engine, status,
+      score: sig?.score,
+      entryType: sig?.entryType,
+      entryTiming: sig?.entryTiming,
+      lastRejectReason,
+      usedBreakingDownBypass: logsStr.includes('crash path') || logsStr.includes('BREAKING_DOWN'),
+      usedBtcBypass: logsStr.includes('BTC uptrend gate bypassed'),
+      usedLateException: logsStr.includes('crash-bypass late-entry exception'),
+      timestamp: now
+    };
+  }
+
   type BatchCandidate = {
     symbol: string;
-    sniper?: { signal: ReturnType<typeof evaluateSniperSignal>; price: number; change24h: number };
-    breakout?: { signal: ReturnType<typeof evaluateBreakoutSignal>; price: number; change24h: number };
+    sniperTrace: UnifiedTrace;
+    breakoutTrace: UnifiedTrace;
+    sniper?: { signal: any; price: number; change24h: number };
+    breakout?: { signal: any; price: number; change24h: number };
   };
 
   for (let batch = 0; batch < symbols.length; batch += BATCH_SIZE) {
@@ -147,10 +191,21 @@ export async function runBonanzaCore(
         const change24h = tickers[symbol] ?? 0;
         if (lastClose > 0) marketRows.push({ symbol, lastPrice: lastClose, changePct: change24h });
         const symbolFlow = orderFlowSnapshots?.[symbol];
+        const sniperLogStart = sniperLogs.length;
         const sniper  = evaluateSniperSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, symbolFlow, btc4hTrend, regimeLabel, symbol);
+        const currentSniperLogs = sniperLogs.slice(sniperLogStart).find(l => l[0]?.includes(symbol)) || (sniper?.debugLog || []);
+        
         const breakout = evaluateBreakoutSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, symbolFlow, btc4hTrend, regimeLabel, symbol);
+        const currentBreakoutLogs = breakout?.debugLog || []; // Only exports on accept unless we mod it.
+
+        const now = Date.now();
+        const sniperTrace = createTrace(symbol, 'SNIPER', currentSniperLogs, sniper, now);
+        const breakoutTrace = createTrace(symbol, 'BREAKOUT', currentBreakoutLogs, breakout, now);
+
         return {
           symbol,
+          sniperTrace,
+          breakoutTrace,
           sniper:  sniper  ? { signal: sniper,  price: lastClose, change24h } : undefined,
           breakout: breakout ? { signal: breakout, price: lastClose, change24h } : undefined
         };
@@ -160,53 +215,47 @@ export async function runBonanzaCore(
     // ── Evaluate candidates SEQUENTIALLY to enforce caps accurately ──
     for (const result of candidateResults) {
       if (result.status !== 'fulfilled') continue;
-      const { symbol, sniper, breakout } = result.value;
+      const { symbol, sniper, breakout, sniperTrace, breakoutTrace } = result.value;
+
+      pipelineTraces.push(sniperTrace);
+      if (breakoutTrace.lastRejectReason || breakoutTrace.status !== 'REJECTED') {
+         pipelineTraces.push(breakoutTrace);
+      }
 
       if (sniper?.signal && newSignalsThisScan < corrLimit.maxNewPositions) {
         const check = checkPortfolioExposure(symbol, sniper.signal.side, regime as any, btc4hTrend, defaultPortfolio, signalsThisCycle);
         if (check.allowed) {
-          const now = Date.now();
-          // Window ID to 10 minutes to maintain stability during a trend move
-          const windowId = Math.floor(now / 600000); 
-          const id = `${symbol}-SNIPER-${windowId}`;
-          sniperSignals.push({ 
+          const id = sniperTrace.id; // use unified ID
+          pipelineSignals.push({ 
             symbol, signal: sniper.signal, price: sniper.price, 
-            change24h: sniper.change24h, timestamp: now,
-            id, status: 'DETECTED'
+            change24h: sniper.change24h, timestamp: sniperTrace.timestamp,
+            id, status: 'ACCEPTED'
           });
           signalsThisCycle.add(symbol);
           newSignalsThisScan++;
-          if (sniper.signal.debugLog?.length) {
-            console.log(`[Sniper✅] ${symbol} | ${sniper.signal.entryType} | ${sniper.signal.entryTiming} | score=${sniper.signal.score} | id=${id}`);
-          }
-        } else {
-          console.log(`[Portfolio🚫] ${symbol} sniper: ${check.reason}`);
         }
       }
 
       if (breakout?.signal && newSignalsThisScan < corrLimit.maxNewPositions) {
+        const id = breakoutTrace.id;
         if (breakout.signal.entryType === 'RETEST_CONFIRMED') {
           const check = checkPortfolioExposure(symbol, breakout.signal.side, regime as any, btc4hTrend, defaultPortfolio, signalsThisCycle);
           if (check.allowed) {
-            const now = Date.now();
-            const windowId = Math.floor(now / 600000);
-            const id = `${symbol}-BREAKOUT-${windowId}`;
-            breakoutSignals.push({ 
+             pipelineSignals.push({ 
               symbol, signal: breakout.signal, price: breakout.price, 
-              change24h: breakout.change24h, timestamp: now,
-              id, status: 'DETECTED'
+              change24h: breakout.change24h, timestamp: breakoutTrace.timestamp,
+              id, status: 'ACCEPTED'
             });
             signalsThisCycle.add(symbol);
             newSignalsThisScan++;
-            console.log(`[Breakout✅] ${symbol} | RETEST CONFIRMED | score=${breakout.signal.score} | id=${id}`);
-          } else {
-            console.log(`[Portfolio🚫] ${symbol} breakout: ${check.reason}`);
           }
-        } else {
-          // It's just a PENDING or INVALIDATED state from the retest engine, log it dynamically
-          if (breakout.signal.entryType === 'PENDING_BREAKOUT') {
-            console.log(`[Breakout⏳] ${symbol} Pending Breakout detected. Waiting for retest.`);
-          }
+        } else if (breakout.signal.entryType === 'PENDING_BREAKOUT' || breakout.signal.entryType === 'INVALIDATED' || breakout.signal.entryType === 'EXPIRED_NO_RETEST') {
+          // Push meaningful non-active states
+          pipelineSignals.push({ 
+            symbol, signal: breakout.signal, price: breakout.price, 
+            change24h: breakout.change24h, timestamp: breakoutTrace.timestamp,
+            id, status: breakoutTrace.status as any
+          });
         }
       }
     }
@@ -219,11 +268,9 @@ export async function runBonanzaCore(
     if (batch + BATCH_SIZE < symbols.length) await sleep(BATCH_DELAY);
   }
 
-  // Sort by score
-  sniperSignals.sort((a, b) => b.signal.score - a.signal.score);
-  breakoutSignals.sort((a, b) => b.signal.score - a.signal.score);
+  pipelineSignals.sort((a, b) => b.signal.score - a.signal.score);
   marketRows.sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
 
-  console.log(`[Scanner] Complete — Snipers: ${sniperSignals.length} | Breakouts: ${breakoutSignals.length} | Regime: ${regime}`);
-  return { sniperSignals, breakoutSignals, marketRows, regimeLabel };
+  console.log(`[Scanner] Complete — Traces: ${pipelineTraces.length} | Tradeable: ${pipelineSignals.length} | Regime: ${regime}`);
+  return { pipelineSignals, pipelineTraces, marketRows, regimeLabel };
 }

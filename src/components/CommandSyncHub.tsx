@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Target, X, TrendingUp, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { Target, X, TrendingUp, RefreshCw, Wifi, WifiOff, Activity, Clock } from 'lucide-react';
 import { api } from '../services/api';
 import { useTradingStore } from '../store/tradingStore';
+import type { ActiveTrade } from '../types/trading';
 
 export default function CommandSyncHub() {
   const [loading, setLoading] = useState(true);
@@ -10,7 +11,7 @@ export default function CommandSyncHub() {
 
   // Pull from local store (manually-deployed trades and queued signals)
   const { 
-    activeTrades, sniperSignals, breakoutSignals, 
+    activeTrades, pipelineSignals, 
     removeActiveTrade, deploySignal,
     binancePositions, setBinancePositions
   } = useTradingStore();
@@ -72,9 +73,7 @@ export default function CommandSyncHub() {
   const localOnly = activeTrades.filter(t => !binanceSymbols.has(t.symbol.toUpperCase()));
   
   // Signals currently sitting in the hub awaiting deployment
-  const pendingSniper = sniperSignals.filter(s => s.status === 'QUEUED');
-  const pendingBreakout = breakoutSignals.filter(s => s.status === 'QUEUED');
-  const allPending = [...pendingSniper, ...pendingBreakout];
+  const allPending = pipelineSignals.filter(s => s.status === 'QUEUED');
   
   const totalCount = binancePositions.length + localOnly.length + allPending.length;
 
@@ -241,80 +240,181 @@ export default function CommandSyncHub() {
             );
           })}
 
-          {/* ── Local (manually deployed) trades ── */}
+          {/* ── Local (manually deployed) trades — full lifecycle ── */}
           {localOnly.map((trade, i) => {
             const sym = trade.symbol.replace('USDT', '');
             const idxInFull = activeTrades.indexOf(trade);
-
             return (
-              <div key={`local-${trade.symbol}-${i}`} className="opportunity-card card-entry" style={{
-                padding: '24px 22px',
-                borderColor: trade.side === 'LONG' ? 'rgba(16,185,129,0.2)' : 'rgba(244,63,94,0.2)',
-                animationDelay: `${(binancePositions.length + i) * 0.08}s`,
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <div>
-                    <div className="font-mono" style={{ fontWeight: 900, fontSize: 16, fontStyle: 'italic' }}>
-                      {sym}<span style={{ color: 'var(--text-muted)', fontSize: 11 }}>USDT</span>
-                    </div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--gold-light)', letterSpacing: '0.1em', marginTop: 2 }}>
-                      {trade.leverage}x {trade.side}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{
-                      fontSize: 9, fontWeight: 800, padding: '2px 6px',
-                      borderRadius: 4, letterSpacing: '0.1em',
-                      background: 'rgba(212,175,55,0.08)', color: 'var(--text-muted)',
-                      border: '1px solid rgba(212,175,55,0.2)'
-                    }}>LOCAL</span>
-                    <button
-                      onClick={() => handleCloseLocal(idxInFull)}
-                      style={{
-                        background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.3)',
-                        borderRadius: 'var(--radius-sm)', padding: '6px 8px',
-                        cursor: 'pointer', color: 'var(--red)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                      }}
-                      title="Remove from view"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Status banner */}
-                <div style={{
-                  padding: '10px 14px', borderRadius: 'var(--radius-sm)',
-                  background: 'rgba(212,175,55,0.05)',
-                  border: '1px solid rgba(212,175,55,0.15)',
-                  textAlign: 'center', marginBottom: 16
-                }}>
-                  <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.2em', fontWeight: 800, marginBottom: 4 }}>STATUS</div>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--gold-light)' }}>
-                    DEPLOYED — AWAITING BINANCE SYNC
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6 }}>
-                  {[
-                    { label: 'ENTRY', value: fmtPrice(trade.entryPrice) },
-                    { label: 'SL', value: fmtPrice(trade.sl) },
-                    { label: 'TP 1', value: fmtPrice(trade.t1) },
-                    { label: 'TP 2', value: trade.t2 ? fmtPrice(trade.t2) : '--' },
-                  ].map(m => (
-                    <div key={m.label} style={{ padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-subtle)' }}>
-                      <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.15em', fontWeight: 800, marginBottom: 2 }}>{m.label}</div>
-                      <div className="font-mono" style={{ fontSize: 11, fontWeight: 900, fontStyle: 'italic' }}>{m.value}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <LocalTradeCard
+                key={`local-${trade.symbol}-${i}`}
+                trade={trade}
+                index={binancePositions.length + i}
+                onClose={() => handleCloseLocal(idxInFull)}
+              />
             );
           })}
         </div>
       )}
     </section>
+  );
+}
+
+// ─── Status Meta ─────────────────────────────────────────────────────────────
+const STATUS_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  ACTIVE:     { label: 'ACTIVE',     color: 'var(--green)',     bg: 'rgba(34,197,94,0.05)',   border: 'rgba(34,197,94,0.25)' },
+  TP1_HIT:    { label: 'TP1 HIT',    color: 'var(--green)',     bg: 'rgba(34,197,94,0.08)',   border: 'rgba(34,197,94,0.3)' },
+  TP2_HIT:    { label: 'TP2 HIT ✓', color: '#a3e635',          bg: 'rgba(163,230,53,0.08)',  border: 'rgba(163,230,53,0.3)' },
+  SL_HIT:     { label: 'SL HIT',     color: 'var(--red)',       bg: 'rgba(244,63,94,0.08)',   border: 'rgba(244,63,94,0.3)' },
+  CANCELLED:  { label: 'CANCELLED',  color: 'var(--text-muted)',bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.08)' },
+  CLOSED:     { label: 'CLOSED',     color: 'var(--text-muted)',bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.08)' },
+};
+
+function LocalTradeCard({ trade, index, onClose }: { trade: ActiveTrade; index: number; onClose: () => void }) {
+  const sym = trade.symbol.replace('USDT', '');
+  const meta = STATUS_META[trade.status] ?? STATUS_META['ACTIVE'];
+  const TERMINAL = ['TP1_HIT', 'TP2_HIT', 'SL_HIT', 'CLOSED', 'CANCELLED'];
+  const isTerminal = TERMINAL.includes(trade.status);
+
+  const pnl = trade.unrealizedPnl ?? 0;
+  const realized = trade.realizedPnl;
+  const displayPnl = isTerminal && realized !== undefined ? realized : pnl;
+  const isPnlPos   = displayPnl >= 0;
+
+  return (
+    <div
+      className="opportunity-card card-entry"
+      style={{
+        padding: '24px 22px',
+        borderColor: trade.side === 'LONG' ? 'rgba(16,185,129,0.2)' : 'rgba(244,63,94,0.2)',
+        animationDelay: `${index * 0.08}s`,
+        opacity: isTerminal ? 0.8 : 1
+      }}
+    >
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+        <div>
+          <div className="font-mono" style={{ fontWeight: 900, fontSize: 16, fontStyle: 'italic' }}>
+            {sym}<span style={{ color: 'var(--text-muted)', fontSize: 11 }}>USDT</span>
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: trade.side === 'LONG' ? 'var(--green)' : 'var(--red)', marginTop: 2 }}>
+            {trade.leverage}x {trade.side}
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+          {/* Status pill */}
+          <div style={{
+            padding: '4px 10px', borderRadius: 'var(--radius-full)',
+            background: meta.bg, border: `1px solid ${meta.border}`,
+            fontSize: 10, fontWeight: 900, color: meta.color, letterSpacing: '0.1em'
+          }}>
+            {meta.label}
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.2)',
+              borderRadius: 6, padding: '4px 6px', cursor: 'pointer',
+              color: 'var(--red)', display: 'flex', alignItems: 'center'
+            }}
+            title="Remove"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      </div>
+
+      {/* ── PnL Banner ── */}
+      <div style={{
+        padding: '10px 14px', borderRadius: 'var(--radius-sm)',
+        background: isPnlPos ? 'var(--green-soft)' : 'var(--red-soft)',
+        border: `1px solid ${isPnlPos ? 'rgba(34,197,94,0.2)' : 'rgba(244,63,94,0.2)'}`,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12
+      }}>
+        <div>
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.15em' }}>
+            {isTerminal ? 'REALIZED PnL' : 'UNREALIZED PnL'}
+          </div>
+          <div className="font-mono" style={{ fontSize: 18, fontWeight: 900, fontStyle: 'italic', color: isPnlPos ? 'var(--green)' : 'var(--red)' }}>
+            {displayPnl >= 0 ? '+' : ''}{displayPnl.toFixed(2)} USDT
+          </div>
+        </div>
+        {trade.rMultiple !== undefined && (
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 800 }}>R MULTIPLE</div>
+            <div className="font-mono" style={{ fontSize: 16, fontWeight: 900, color: trade.rMultiple >= 0 ? 'var(--green)' : 'var(--red)' }}>
+              {trade.rMultiple >= 0 ? '+' : ''}{trade.rMultiple.toFixed(2)}R
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Level Metrics ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, marginBottom: 12 }}>
+        {[
+          { label: 'ENTRY', value: fmtPrice(trade.entryPrice) },
+          { label: 'SL',    value: `${fmtPrice(trade.sl)}`, sub: trade.distToSl !== undefined ? `${trade.distToSl > 0 ? '+' : ''}${trade.distToSl.toFixed(2)}%` : undefined },
+          { label: 'TP 1',  value: fmtPrice(trade.t1),  sub: trade.distToTp1 !== undefined ? `${trade.distToTp1.toFixed(2)}%` : undefined },
+          { label: 'TP 2',  value: trade.t2 ? fmtPrice(trade.t2) : '--', sub: trade.distToTp2 !== undefined ? `${trade.distToTp2.toFixed(2)}%` : undefined },
+        ].map(m => (
+          <div key={m.label} style={{ padding: '6px 8px', borderRadius: 'var(--radius-sm)', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-subtle)', textAlign: 'center' }}>
+            <div style={{ fontSize: 8, color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.1em' }}>{m.label}</div>
+            <div className="font-mono" style={{ fontSize: 10, fontWeight: 900 }}>{m.value}</div>
+            {m.sub && <div style={{ fontSize: 8, color: 'var(--text-muted)', marginTop: 1 }}>{m.sub}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Live price + last updated ── */}
+      {trade.livePrice !== undefined && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 11, color: 'var(--text-muted)' }}>
+          <Activity size={12} />
+          <span>Live: <strong className="font-mono" style={{ color: 'var(--text-primary)' }}>{fmtPrice(trade.livePrice)}</strong></span>
+          {trade.priceUpdatedAt && (
+            <span style={{ opacity: 0.5 }}>· {new Date(trade.priceUpdatedAt).toLocaleTimeString()}</span>
+          )}
+        </div>
+      )}
+
+      {/* ── Analytical metadata ── */}
+      {(trade.score !== undefined || trade.entryType) && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+          {trade.score !== undefined && (
+            <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: 'rgba(212,175,55,0.08)', color: 'var(--gold)', border: '1px solid rgba(212,175,55,0.2)' }}>
+              SCORE {trade.score}
+            </span>
+          )}
+          {trade.entryType && (
+            <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              {trade.entryType}
+            </span>
+          )}
+          {trade.entryTiming && (
+            <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              {trade.entryTiming}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Status History timeline ── */}
+      {trade.statusHistory && trade.statusHistory.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.15em', marginBottom: 6 }}>STATUS TIMELINE</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {trade.statusHistory.slice().reverse().map((ev, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10 }}>
+                <Clock size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                <span style={{ color: STATUS_META[ev.status]?.color ?? 'var(--text-secondary)', fontWeight: 700 }}>{ev.status}</span>
+                {ev.price && <span className="font-mono" style={{ color: 'var(--text-muted)' }}>@ {fmtPrice(ev.price)}</span>}
+                <span style={{ color: 'var(--text-muted)', opacity: 0.5, marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+                  {new Date(ev.ts).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

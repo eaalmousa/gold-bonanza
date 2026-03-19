@@ -7,7 +7,7 @@ interface Props {
 }
 
 export default function MarketIntelligence({ rows }: Props) {
-  const display = rows.slice(0, 24);
+  const display = Array.isArray(rows) ? rows.slice(0, 24) : [];
 
   return (
     <section>

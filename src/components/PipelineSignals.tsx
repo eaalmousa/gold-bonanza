@@ -9,8 +9,9 @@ interface Props {
 }
 
 export default function PipelineSignals({ signals, onDeploy }: Props) {
+  const signalList = Array.isArray(signals) ? signals : [];
   // Only display signals that are actively tradeable or pending/tracking
-  const displaySignals = signals.filter(s => 
+  const displaySignals = signalList.filter(s => 
     s.status === 'ACCEPTED' || 
     s.status === 'PENDING' || 
     s.status === 'INVALIDATED' || 

@@ -175,9 +175,10 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     currentPrices: { ...state.currentPrices, ...newPrices }
   })),
 
-  setMarketRows: (marketRows) => set({ marketRows }),
+  setMarketRows: (marketRows) => set({ marketRows: Array.isArray(marketRows) ? marketRows : [] }),
   
   setPipelineSignals: (newSignals) => set(state => {
+    const signals = Array.isArray(newSignals) ? newSignals : [];
     // 1. Identify signals already in a PROTECTED state (Queued/Deployed)
     //    We guard by ID here to allow new signals for the same symbol to enter
     //    as 'PENDING' or 'ACCEPTED' without overwriting the queued ones.
@@ -196,7 +197,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     //      For now, just merge.
     const merged = [
       ...protectedSignals,
-      ...newSignals.filter(ns => !protectedIds.has(ns.id))
+      ...signals.filter(ns => !protectedIds.has(ns.id))
     ];
 
     // 5. Deduplicate by ID only (never by symbol)
@@ -206,9 +207,12 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   }),
 
 
-  addPipelineTraces: (traces) => set(state => ({
-    pipelineTraces: [...traces, ...state.pipelineTraces].slice(0, 200)
-  })),
+  addPipelineTraces: (traces) => set(state => {
+    const validTraces = Array.isArray(traces) ? traces : [];
+    return {
+      pipelineTraces: [...validTraces, ...state.pipelineTraces].slice(0, 200)
+    };
+  }),
 
   addSignalToHistory: (entry) => set(state => ({
     signalHistory: [
@@ -217,7 +221,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     ].slice(0, 60)
   })),
 
-  setBinancePositions: (positions) => set({ binancePositions: positions }),
+  setBinancePositions: (positions) => set({ binancePositions: Array.isArray(positions) ? positions : [] }),
 
   addActiveTrade: (trade) => set(state => {
     // We NO LONGER overwrite by symbol. Every trade is a unique instance.
@@ -243,11 +247,11 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     return get().dealStatus[key] || 'ACTIVE';
   },
 
-  setMicrostructureRows: (rows) => set({ microstructureRows: rows }),
-  setLiquidityLayers: (layers) => set({ liquidityLayers: layers }),
-  setTriggerLevels: (levels) => set({ triggerLevels: levels }),
-  setBlockedSignals: (signals) => set({ blockedSignals: signals }),
-  setPipelineHealth: (health) => set({ pipelineHealth: health }),
+  setMicrostructureRows: (rows) => set({ microstructureRows: Array.isArray(rows) ? rows : [] }),
+  setLiquidityLayers: (layers) => set({ liquidityLayers: Array.isArray(layers) ? layers : [] }),
+  setTriggerLevels: (levels) => set({ triggerLevels: Array.isArray(levels) ? levels : [] }),
+  setBlockedSignals: (signals) => set({ blockedSignals: Array.isArray(signals) ? signals : [] }),
+  setPipelineHealth: (health) => set({ pipelineHealth: Array.isArray(health) ? health : [] }),
 
   setMarketRegime: (regime) => set({ marketRegime: regime }),
   setOrderFlowSnapshot: (symbol, snapshot) => set(state => ({

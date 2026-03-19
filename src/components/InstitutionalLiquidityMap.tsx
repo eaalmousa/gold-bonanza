@@ -3,6 +3,7 @@ import { useTradingStore } from '../store/tradingStore';
 
 export default function InstitutionalLiquidityMap() {
   const liquidityLayers = useTradingStore(s => s.liquidityLayers);
+  const validLayers = Array.isArray(liquidityLayers) ? liquidityLayers : [];
 
   return (
     <div className="sections-stack">
@@ -22,7 +23,7 @@ export default function InstitutionalLiquidityMap() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {liquidityLayers.map((row, i) => {
+        {validLayers.map((row, i) => {
           const isCurrent = row.type === 'current';
           const isAsk = row.type === 'ask';
           const isBid = row.type === 'bid';

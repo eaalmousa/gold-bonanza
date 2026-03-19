@@ -2,7 +2,8 @@ import React from 'react';
 import { useTradingStore } from '../store/tradingStore';
 
 export function PipelineObservability() {
-  const traces = useTradingStore(s => s.pipelineTraces);
+  const rawTraces = useTradingStore(s => s.pipelineTraces);
+  const traces = Array.isArray(rawTraces) ? rawTraces : [];
 
   if (traces.length === 0) {
     return (

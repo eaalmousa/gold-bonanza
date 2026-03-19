@@ -99,8 +99,12 @@ export default function BtcExhaustionPanel() {
         fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=4h&limit=200'),
         fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=100'),
       ]);
-      const raw4h: any[][] = await res4h.json();
-      const raw1d: any[][] = await res1d.json();
+      const raw4h: any = await res4h.json();
+      const raw1d: any = await res1d.json();
+
+      if (!Array.isArray(raw4h) || !Array.isArray(raw1d)) {
+        throw new Error('Invalid response from Binance API (likely rate limited)');
+      }
 
       const closes4h = raw4h.map(k => parseFloat(k[4]));
       const closes1d = raw1d.map(k => parseFloat(k[4]));

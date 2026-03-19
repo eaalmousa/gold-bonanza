@@ -3,6 +3,7 @@
 // ============================================
 
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type {
   ModeConfig, ActiveTrade, ClosedTrade, PaperSession,
   ExecutionMode, ExecutionResult, MarketRow,
@@ -105,7 +106,9 @@ interface TradingState {
   deployManualSignal: (signal: any, symbol: string) => void;
 }
 
-export const useTradingStore = create<TradingState>((set, get) => ({
+export const useTradingStore = create<TradingState>()(
+  persist(
+    (set, get) => ({
   balance: 300,
   activeMode: MODES.AGGRESSIVE,
   symbols: [],
@@ -361,10 +364,10 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   },
 
   setExecutionMode: (mode) => {
-    set(state => ({
+    set({
       executionMode: mode,
-      paperMode: mode === 'PAPER' ? true : state.paperMode
-    }));
+      paperMode: mode === 'PAPER'
+    });
     
     // BACKEND SYNC: Push the execution mode truth to the server
     api.updateAutoTradeConfig({ executionMode: mode }).catch((err: any) => {
@@ -573,6 +576,23 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     executeOrder(mode, payload).then(result => {
       get().addExecutionResult(result);
     });
-  }
-}));
+      }
+    }),
+    {
+      name: 'gold-bonanza-storage',
+      partialize: (state) => ({
+        executionMode: state.executionMode,
+        activeModeId: state.activeMode.key,
+        isAutoTradeActive: state.isAutoTradeActive,
+        isScannerActive: state.isScannerActive,
+        balance: state.balance
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (state && (state as any).activeModeId) {
+          state.activeMode = MODES[(state as any).activeModeId as keyof typeof MODES] || MODES.AGGRESSIVE;
+        }
+      }
+    }
+  )
+);
 

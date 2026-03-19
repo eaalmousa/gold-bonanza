@@ -14,11 +14,6 @@ export default function Header() {
     const modes: ('PAPER' | 'DEMO' | 'LIVE')[] = ['PAPER', 'DEMO', 'LIVE'];
     const currentIdx = modes.indexOf(executionMode);
     const nextMode = modes[(currentIdx + 1) % modes.length];
-
-    if (nextMode === 'LIVE') {
-      const ok = window.confirm('⚠️ WARNING: You are switching to LIVE REAL-MONEY TRADING. Every trade deployed from this point will be executed on your real Binance account. Proceed?');
-      if (!ok) return;
-    }
     setExecutionMode(nextMode);
   };
 

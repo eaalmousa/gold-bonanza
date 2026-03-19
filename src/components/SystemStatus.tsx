@@ -13,7 +13,8 @@ export default function SystemStatus() {
     symbols: rawSymbols,
     isScannerActive, setScannerActive,
     binancePositions: rawPositions,
-    pipelineSignals: rawSignals
+    pipelineSignals: rawSignals,
+    executionMode, setExecutionMode
   } = useTradingStore();
 
   const activeTrades    = Array.isArray(rawTrades)    ? rawTrades    : [];
@@ -24,29 +25,18 @@ export default function SystemStatus() {
   // CANONICAL count — same formula used in Header.tsx and CommandSyncHub.tsx
   const counts = getCanonicalPositionCount(binancePositions, activeTrades, pipelineSignals);
 
-  // TRUTH RECONCILIATION: Match Header logic
-  // Initial state now mirrors the backend CANONICAL_DEFAULTS exactly
-  const [config, setConfig] = useState({
-    riskPct:        CANONICAL_DEFAULTS.riskPct,
-    maxTrades:      CANONICAL_DEFAULTS.maxTrades,
-    leverage:       CANONICAL_DEFAULTS.leverage,
-    slEnabled:      CANONICAL_DEFAULTS.slEnabled,
-    tpEnabled:      CANONICAL_DEFAULTS.tpEnabled,
-    tp1Only:        CANONICAL_DEFAULTS.tp1Only,
-    tp1RR:          CANONICAL_DEFAULTS.tp1RR,
-    tp2RR:          CANONICAL_DEFAULTS.tp2RR,
-    minScore:       CANONICAL_DEFAULTS.minScore,
-    btcGate:        CANONICAL_DEFAULTS.btcGate,
-    trailTp:        CANONICAL_DEFAULTS.trailTp,
-    circuitBreaker: CANONICAL_DEFAULTS.circuitBreaker,
-  });
+  const [config, setConfig] = useState<any>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    // Keep it synced with backend
     api.getAutoTradeConfig()
       .then(res => {
-        const newCfg = {
+        // Hydrate the store if the backend has different settings
+        if (res.executionMode && res.executionMode !== executionMode) {
+          setExecutionMode(res.executionMode as any);
+        }
+        
+        setConfig({
           riskPct:        res.riskPerTrade      ?? CANONICAL_DEFAULTS.riskPct,
           maxTrades:      res.maxConcurrent     ?? CANONICAL_DEFAULTS.maxTrades,
           leverage:       res.leverage          ?? CANONICAL_DEFAULTS.leverage,
@@ -59,22 +49,17 @@ export default function SystemStatus() {
           btcGate:        res.btcGateEnabled    ?? CANONICAL_DEFAULTS.btcGate,
           trailTp:        res.trailTpEnabled    ?? CANONICAL_DEFAULTS.trailTp,
           circuitBreaker: res.circuitBreakerEnabled ?? false,
-        };
-        setConfig(newCfg);
+        });
         setIsLoaded(true);
       })
       .catch(console.error);
   }, []);
 
-  // saveConfig was historically used here but is now rolled into handleConfigChange
-
-  const handleConfigChange = (key: keyof typeof config, value: any) => {
+  const handleConfigChange = (key: string, value: any) => {
     const val = typeof value === 'boolean' ? value : Number(value);
     const newConf = { ...config, [key]: val };
     setConfig(newConf);
     
-    // Save to the backend immediately 
-    // This prevents the "onBlur" bug where hitting Enter or not clicking away fails to save changes.
     api.updateAutoTradeConfig({
       riskPerTrade: newConf.riskPct,
       maxConcurrent: newConf.maxTrades,
@@ -90,6 +75,7 @@ export default function SystemStatus() {
       circuitBreakerEnabled: newConf.circuitBreaker,
     }).catch(console.error);
   };
+
 
   // Use canonical count for capacity bar (Binance + Unsynced Real + Queued, do not count Paper against backend limit)
   const realDeployments = counts.binance + counts.localReal + counts.queued;

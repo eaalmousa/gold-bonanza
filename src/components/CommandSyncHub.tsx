@@ -79,10 +79,6 @@ export default function CommandSyncHub() {
   };
 
   const handleModeSwitch = (mode: 'PAPER' | 'DEMO' | 'LIVE') => {
-    if (mode === 'LIVE') {
-      const ok = window.confirm('⚠️ WARNING: You are switching to LIVE REAL-MONEY TRADING. Every trade deployed from this point will be executed on your real Binance account. Proceed?');
-      if (!ok) return;
-    }
     setExecutionMode(mode);
   };
 

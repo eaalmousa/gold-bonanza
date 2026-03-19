@@ -94,15 +94,16 @@ export default function Header() {
 
         {totalActiveCount > 0 && (
           <div style={{
-            padding: '10px 20px',
-            borderRadius: 'var(--radius-full)',
-            fontSize: 11, fontWeight: 900,
-            border: '1px solid rgba(59,130,246,0.2)',
-            background: 'rgba(59,130,246,0.05)',
-            color: 'var(--blue)',
-            letterSpacing: '0.2em'
+            padding: '8px 16px', borderRadius: 'var(--radius-full)',
+            fontSize: 10, fontWeight: 900,
+            border: '1px solid rgba(59,130,246,0.2)', background: 'rgba(59,130,246,0.05)',
+            color: 'var(--blue)', letterSpacing: '0.15em', display: 'flex', gap: 12
           }}>
-            {totalActiveCount} ACTIVE
+            <span style={{ color: 'var(--text-muted)' }}>OPEN TRADES:</span>
+            {getCanonicalPositionCount(positions, trades, signals).binance > 0 && <span>{getCanonicalPositionCount(positions, trades, signals).binance} EXCHANGE</span>}
+            {getCanonicalPositionCount(positions, trades, signals).localReal > 0 && <span>{getCanonicalPositionCount(positions, trades, signals).localReal} UNSYNCED</span>}
+            {getCanonicalPositionCount(positions, trades, signals).paper > 0 && <span style={{ color: '#818cf8' }}>{getCanonicalPositionCount(positions, trades, signals).paper} PAPER</span>}
+            {getCanonicalPositionCount(positions, trades, signals).queued > 0 && <span style={{ color: 'var(--gold)' }}>{getCanonicalPositionCount(positions, trades, signals).queued} QUEUED</span>}
           </div>
         )}
 

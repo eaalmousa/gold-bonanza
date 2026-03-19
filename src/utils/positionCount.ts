@@ -14,7 +14,7 @@ export function getCanonicalPositionCount(
   binancePositions: any[],
   activeTrades: any[],
   pipelineSignals?: any[]
-): { binance: number; local: number; queued: number; total: number } {
+): { binance: number; paper: number; localReal: number; queued: number; total: number } {
   const safePositions = Array.isArray(binancePositions) ? binancePositions : [];
   const safeTrades    = Array.isArray(activeTrades)     ? activeTrades     : [];
   const safeSignals   = Array.isArray(pipelineSignals)  ? pipelineSignals  : [];
@@ -33,13 +33,17 @@ export function getCanonicalPositionCount(
     return !binanceSymbols.has(t.symbol.toUpperCase());
   });
 
+  const paperTrades = localOnly.filter(t => t.isPaperTrade);
+  const localReal   = localOnly.filter(t => !t.isPaperTrade);
+
   // Signals queued by user but not yet submitted to exchange
   const queued = safeSignals.filter((s: any) => s?.status === 'QUEUED');
 
   return {
-    binance: safePositions.length,
-    local:   localOnly.length,
-    queued:  queued.length,
-    total:   safePositions.length + localOnly.length + queued.length,
+    binance:   safePositions.length,
+    paper:     paperTrades.length,
+    localReal: localReal.length,
+    queued:    queued.length,
+    total:     safePositions.length + paperTrades.length + localReal.length + queued.length,
   };
 }

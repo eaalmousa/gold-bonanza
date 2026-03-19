@@ -91,8 +91,9 @@ export default function SystemStatus() {
     }).catch(console.error);
   };
 
-  // Use canonical count for capacity bar (Binance + local, not just local)
-  const capacity = counts.total / config.maxTrades;
+  // Use canonical count for capacity bar (Binance + Unsynced Real + Queued, do not count Paper against backend limit)
+  const realDeployments = counts.binance + counts.localReal + counts.queued;
+  const capacity = realDeployments / config.maxTrades;
   const capacityPct = Math.min(100, Math.round((isNaN(capacity) ? 0 : capacity) * 100));
 
   const modes = [
@@ -123,7 +124,7 @@ export default function SystemStatus() {
             {!isLoaded ? 'SYNCING WITH CLOUD...' : 'SYSTEM STATUS'}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
-            {symbols.length} Pairs Monitored · {counts.total}/{config.maxTrades} Positions Open
+            {symbols.length} Pairs Monitored
           </div>
         </div>
 
@@ -173,14 +174,13 @@ export default function SystemStatus() {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         flexWrap: 'wrap', gap: 20
       }}>
-        {/* Capacity bar */}
+        {/* ── Real Deployments Capacity Bar ── */}
         <div style={{ flex: 1, minWidth: 220 }}>
-          <div style={{
-            display: 'flex', justifyContent: 'space-between', marginBottom: 6,
-            fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.2em', fontWeight: 800
-          }}>
-            <span>OPS CAPACITY</span>
-            <span>{capacityPct}%</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)' }}>MAPPING DEPLOYMENTS (EXCHANGE)</div>
+            <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--text-primary)' }}>
+              {realDeployments} / {config.maxTrades} ACTIVE
+            </div>
           </div>
           <div className="capacity-bar-track">
             <div

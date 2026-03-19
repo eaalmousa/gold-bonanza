@@ -3,11 +3,12 @@ import { TrendingUp, TrendingDown, Activity, BarChart2, RefreshCw, BookOpen, Shi
 import type { ExecutionMode } from '../types/trading';
 
 const MODE_META: Record<ExecutionMode, { label: string; color: string; bg: string; border: string; warn?: string }> = {
-  PAPER:        { label: '📋 PAPER',   color: '#818cf8', bg: 'rgba(99,102,241,0.1)',  border: 'rgba(99,102,241,0.35)' },
+  PAPER:        { label: '📋 PAPER',   color: '#818cf8', bg: 'rgba(99,102,241,0.1)',  border: 'rgba(99,102,241,0.35)',
+                  warn: 'New deployments target PAPER. Existing positions unaffected.' },
   BINANCE_TEST: { label: '🧪 TESTNET', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.35)',
-                  warn: 'Orders reach Binance Testnet. Real API keys required.' },
+                  warn: 'New deployments target Binance Testnet. Existing positions unaffected.' },
   BINANCE_LIVE: { label: '⚡ LIVE',    color: 'var(--red)', bg: 'rgba(244,63,94,0.1)', border: 'rgba(244,63,94,0.35)',
-                  warn: 'REAL MONEY. Live exchange orders. Cannot be undone.' },
+                  warn: 'REAL MONEY. New deployments target live exchange. Cannot be undone.' },
 };
 
 const RESULT_COLOR: Record<string, string> = {
@@ -45,7 +46,7 @@ export default function PaperAccountPanel() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <ShieldAlert size={15} color={modeMeta.color} />
             <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: '0.2em', color: modeMeta.color }}>
-              EXECUTION MODE
+              NEW DEPLOYMENT TARGET
             </span>
           </div>
           <span style={{
@@ -97,7 +98,7 @@ export default function PaperAccountPanel() {
               </div>
               <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 1 }}>
                 {paperMode
-                  ? `${openPaper.length} open · $${paperSession.currentBalance.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  ? `${openPaper.length} PAPER open · $${paperSession.currentBalance.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   : 'Inactive'}
               </div>
             </div>
@@ -132,16 +133,16 @@ export default function PaperAccountPanel() {
       {executionMode === 'BINANCE_TEST' && (
         <div style={{ padding: '24px', textAlign: 'center', background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, marginBottom: 16 }}>
           <ShieldAlert size={24} color="#f59e0b" style={{ margin: '0 auto 12px' }} />
-          <div style={{ fontWeight: 900, color: '#f59e0b', fontSize: 13, letterSpacing: '0.1em' }}>BINANCE TESTNET</div>
-          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 8 }}>Orders deployed from this dashboard will route to Binance Testnet.<br/>No real capital is at risk. Test API keys are required in the server `.env` file.</div>
+          <div style={{ fontWeight: 900, color: '#f59e0b', fontSize: 13, letterSpacing: '0.1em' }}>TESTNET DEPLOYMENTS ONLY</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 8 }}>Future deployments will route to Binance Testnet.<br/>Open live trades and paper trades are not hidden or cancelled.</div>
         </div>
       )}
 
       {executionMode === 'BINANCE_LIVE' && (
         <div style={{ padding: '24px', textAlign: 'center', background: 'rgba(244,63,94,0.05)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: 8, marginBottom: 16 }}>
           <Zap size={24} color="var(--red)" style={{ margin: '0 auto 12px' }} />
-          <div style={{ fontWeight: 900, color: 'var(--red)', fontSize: 13, letterSpacing: '0.1em' }}>BINANCE LIVE</div>
-          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 8 }}>Orders deployed from this dashboard will route to your live Binance account.<br/>REAL CAPITAL IS AT RISK.</div>
+          <div style={{ fontWeight: 900, color: 'var(--red)', fontSize: 13, letterSpacing: '0.1em' }}>LIVE DEPLOYMENTS ONLY</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 8 }}>Future deployments will route to your REAL Binance account.<br/>Open TESTNET trades and paper trades are not hidden or cancelled.</div>
         </div>
       )}
 
@@ -152,12 +153,12 @@ export default function PaperAccountPanel() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
             {[
               {
-                label: 'BALANCE',
+                label: 'PAPER BALANCE',
                 value: `$${paperSession.currentBalance.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
                 color: 'var(--text-primary)', sub: `Start: $${paperSession.startBalance.toLocaleString()}`
               },
               {
-                label: 'SESSION PnL',
+                label: 'PAPER PnL',
                 value: `${pnlPos ? '+' : ''}$${paperSession.totalPnl.toFixed(2)}`,
                 color: pnlPos ? 'var(--green)' : paperSession.totalPnl < 0 ? 'var(--red)' : 'var(--text-muted)',
                 sub: `${pnlPos ? '+' : ''}${paperSession.startBalance > 0 ? ((paperSession.totalPnl / paperSession.startBalance) * 100).toFixed(2) : '0.00'}%`
@@ -297,7 +298,7 @@ export default function PaperAccountPanel() {
 
       {executionMode === 'PAPER' && paperSession.closedTrades.length === 0 && !openPaper.length && executionResults.length === 0 && (
         <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11, opacity: 0.5 }}>
-          Deploy a signal to begin simulated trading.
+          No PAPER trades opened yet. Simulation applies only to future orders.
         </div>
       )}
     </section>

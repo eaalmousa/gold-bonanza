@@ -199,8 +199,9 @@ export default function CommandSyncHub() {
                     <div className="font-mono" style={{ fontWeight: 900, fontSize: 16, fontStyle: 'italic' }}>
                       {sym}<span style={{ color: 'var(--text-muted)', fontSize: 11 }}>USDT</span>
                     </div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--gold-light)', letterSpacing: '0.1em', marginTop: 2 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--gold-light)', letterSpacing: '0.1em', marginTop: 2, display: 'flex', alignItems: 'center' }}>
                       {leverage}x {side}
+                      <span style={{ marginLeft: 8, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontSize: 9 }}>EXCHANGE</span>
                     </div>
                   </div>
                   <button
@@ -320,8 +321,16 @@ function LocalTradeCard({
           <div className="font-mono" style={{ fontWeight: 900, fontSize: 16, fontStyle: 'italic' }}>
             {sym}<span style={{ color: 'var(--text-muted)', fontSize: 11 }}>USDT</span>
           </div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: trade.side === 'LONG' ? 'var(--green)' : 'var(--red)', marginTop: 2 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: trade.side === 'LONG' ? 'var(--green)' : 'var(--red)', marginTop: 2, display: 'flex', alignItems: 'center' }}>
             {trade.leverage}x {trade.side}
+            <span style={{ 
+              marginLeft: 8, padding: '2px 6px', borderRadius: 4, 
+              background: trade.isPaperTrade ? 'rgba(99,102,241,0.1)' : 'rgba(245,158,11,0.1)', 
+              color: trade.isPaperTrade ? '#818cf8' : '#f59e0b', fontSize: 9, letterSpacing: '0.1em',
+              border: `1px solid ${trade.isPaperTrade ? 'rgba(99,102,241,0.3)' : 'rgba(245,158,11,0.3)'}`
+            }}>
+              {trade.isPaperTrade ? 'PAPER' : 'UNSYNCED'}
+            </span>
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>

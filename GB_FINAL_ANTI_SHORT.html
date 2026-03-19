@@ -4002,9 +4002,9 @@ window.evaluateExitStrategy = function(position, marketCtx) {
     maxPending: 120,
     // Relaxed confirmation so legitimate setups can actually convert instead of stalling forever.
     // SNIPER: shallower sweep, wider retest tolerance, smaller final confirmation move.
-    sniper: { sweepPct: 0.0015, retestTolPct: 0.0028, confirmMovePct: 0.0012, timeoutMs: 45*60*1000 },
+    sniper: { sweepPct: 0.0015, retestTolPct: 0.0028, confirmMovePct: 0.0012, timeoutMs: 45*60*1000, shortCancelWindowMs: 15*60*1000 },
     // SUPER: smaller break requirement, wider retest, smaller reconfirmation.
-    super:  { breakPct: 0.0012, retestTolPct: 0.0028, confirmMovePct: 0.0010, timeoutMs: 45*60*1000 }
+    super:  { breakPct: 0.0012, retestTolPct: 0.0028, confirmMovePct: 0.0010, timeoutMs: 45*60*1000, shortCancelWindowMs: 15*60*1000 }
   };
 
   var now = () => Date.now();
@@ -4040,6 +4040,43 @@ window.evaluateExitStrategy = function(position, marketCtx) {
   }
 
   const pending = new Map();
+  function loadPending() {
+    try {
+      const stored = localStorage.getItem('gb76_pending');
+      if (!stored) return;
+      const arr = JSON.parse(stored);
+      if (!Array.isArray(arr)) throw new Error("Invalid array");
+      
+      const nowTs = Date.now();
+      arr.forEach((item) => {
+        if (!Array.isArray(item) || item.length !== 2 || !item[0] || !item[1]) return;
+        const [k, v] = item;
+        if (typeof v !== 'object') return;
+        
+        // Repair corrupted fields
+        v.state = String(v.state || "PENDING").toUpperCase();
+        v.status = String(v.status || v.state);
+        v.type = String(v.type || "SNIPER").toUpperCase();
+        v.hint = v.hint != null ? String(v.hint) : "";
+        v.createdAt = Number(v.createdAt) || nowTs;
+        v.level = Number(v.level) || 0;
+        v.lowestSeen = Number(v.lowestSeen) || v.level;
+        v.data = typeof v.data === 'object' ? v.data : {};
+        
+        pending.set(String(k), v);
+      });
+    } catch(e) {
+      console.warn("Storage read failed, clearing corrupt payload.", e);
+      localStorage.removeItem('gb76_pending');
+    }
+  }
+  function savePending() {
+    try {
+      localStorage.setItem('gb76_pending', JSON.stringify(Array.from(pending.entries())));
+    } catch(e) {}
+  }
+  loadPending();
+
 
   // Console-debug bridge: expose trigger state as a true array-like view over the internal pending Map.
   // This supports: window.triggers[0], .length, .map/.filter/.find, and .push(...) for console testing.
@@ -4223,6 +4260,8 @@ window.evaluateExitStrategy = function(position, marketCtx) {
     return TERMINAL_STATES.has(s);
   }
   function markState(st, state, hint){
+    try{ st.state = String(state||"").toUpperCase(); if (hint != null) st.hint = String(hint); st.completedAt = st.completedAt || now(); savePending(); }catch(e){} return;
+    /*
     try{
       st.state = String(state||"").toUpperCase();
       if (hint != null) st.hint = String(hint);
@@ -4421,6 +4460,8 @@ window.__gbPendingKeyOf = keyOf;
   }
 
   function renderPendingTable(){
+    try{ savePending(); }catch(e){}
+
     const tb = document.querySelector("#gbTriggerTable tbody");
     if(!tb) return;
     const nowTs = Date.now();
@@ -4472,7 +4513,7 @@ window.__gbPendingKeyOf = keyOf;
             ${badges ? `<div style="display:flex;gap:4px;flex-wrap:wrap;">${badges}</div>` : ""}
             <div style="font-size:10px;line-height:1.45;white-space:nowrap;overflow-x:auto;max-width:360px;">${progress}</div>
             ${tsTrail ? `<div style="font-size:10px;line-height:1.3;opacity:.72;white-space:normal;">${tsTrail}</div>` : ""}
-            ${hint ? `<div style="font-size:10px;line-height:1.35;opacity:.78;max-width:360px;white-space:normal;">${hint}</div>` : ""}
+            ${hint ? `<div style="font-size:10px;line-height:1.35;opacity:.78;max-width:360px;white-space:normal;${st === "CANCELLED" ? "color:rgba(255,140,140,0.95);" : ""}">${hint}</div>` : ""}
           </div>
         </td>
         <td>${sym}</td>
@@ -4736,6 +4777,8 @@ window.__gbPendingKeyOf = keyOf;
   window.gb76PendingOrder = window.gb76PendingOrder || [];
   window.gb76PendingTTL = window.gb76PendingTTL || Object.create(null);
 function renderUI(){
+    try{ savePending(); }catch(e){}
+
     uiEnsure();
     const badge = document.getElementById("gb76-badge");
     if (badge) badge.textContent = CFG.enabled ? "ENABLED" : "DISABLED";
@@ -4886,15 +4929,40 @@ function renderUI(){
   }
 
   function updateState(st, price){
+    if (isTerminalState(st)) return "HOLD";
+    
     st.lastPrice = price;
     const type = st.type, side = st.side, lvl = st.level;
     const cfg = (type === "SUPER") ? CFG.super : CFG.sniper;
 
-    if (now() - st.createdAt > cfg.timeoutMs) {
+    if (Date.now() - st.createdAt > cfg.timeoutMs) {
       st.state = "EXPIRED"; st.hint = "Expired (timeout)."; return "EXPIRE";
     }
 
     const isLong = side === "LONG";
+
+    // ---- SHORT EXPLICIT INVALIDATION ----
+    if (!isLong && st.data && st.state !== "TRIGGERED" && st.state !== "CONFIRMED") {
+      const sl = st.data.stopLoss || (lvl * 1.02);
+      const atr = st.data.atr15 || (lvl * 0.005);
+      
+      st.lowestSeen = Math.min(st.lowestSeen || price, price);
+      
+      // 1. & 3. Reclaims EMA rejection zone or local reclaim structure
+      if (price > sl || price > lvl + (atr * 0.8)) {
+        st.state = "CANCELLED"; st.hint = "Cancelled: Reclaimed above EMA / local structure."; return "CANCEL";
+      }
+      // 2. Forms higher low after bearish setup
+      if (st.lowestSeen < lvl - (atr * 0.2) && price >= lvl) {
+        st.state = "CANCELLED"; st.hint = "Cancelled: Formed higher low after sweep."; return "CANCEL";
+      }
+      // 4. Rejection does not occur within allowed bar window
+      const ageMs = Date.now() - st.createdAt;
+      if (ageMs > (cfg.shortCancelWindowMs || 15*60*1000) && st.state === "WAIT") {
+        st.state = "CANCELLED"; st.hint = "Cancelled: Stalled rejection (15m elapsed)."; return "CANCEL";
+      }
+    }
+
     if (type === "SNIPER") {
       if (st.state === "WAIT") {
         const swept = isLong ? (price <= lvl * (1 - cfg.sweepPct)) : (price >= lvl * (1 + cfg.sweepPct));
@@ -4934,10 +5002,12 @@ function renderUI(){
       if (res !== "HOLD") changed = true;
 
       if (res === "TRIGGER") {
-        speak(st.type === "SUPER"
-          ? `Super sniper trigger confirmed on ${String(st.symbol).replace("USDT","")}`
-          : `Sniper trigger confirmed on ${String(st.symbol).replace("USDT","")}`
-        );
+        if (typeof speak === 'function') {
+          speak(st.type === "SUPER"
+            ? `Super sniper trigger confirmed on ${String(st.symbol).replace("USDT","")}`
+            : `Sniper trigger confirmed on ${String(st.symbol).replace("USDT","")}`
+          );
+        }
         const dispatch = confirmAndDispatch(st);
         if (dispatch && dispatch.ok && !dispatch.skipped) {
           st.hint = st.hint || "Confirmed ✅ forwarded to signal engine.";
@@ -4945,12 +5015,15 @@ function renderUI(){
         changed = true;
       }
       if (res === "EXPIRE") {
-        // Keep record: already marked EXPIRED by updateState
         markState(st, "EXPIRED", st.hint || "Expired (timeout)." );
         changed = true;
       }
+      if (res === "CANCEL") {
+        markState(st, "CANCELLED", st.hint || "Cancelled by struct validation." );
+        changed = true;
+      }
     }
-    if (changed) renderUI();
+    if (changed) { renderUI(); savePending(); }
   }
 
   // Wrap triggers (preserve previous wrappers — v7.5 already wrapped them)

@@ -1,89 +1,188 @@
+// PipelineObservability — Live Pipeline Trace Table
+// Fixed: Removed all TailwindCSS classes (project uses vanilla CSS only).
+//        All styling is now inline style objects compatible with the design system.
 import React from 'react';
 import { useTradingStore } from '../store/tradingStore';
+import { Activity } from 'lucide-react';
 
 export function PipelineObservability() {
   const rawTraces = useTradingStore(s => s.pipelineTraces);
   const traces = Array.isArray(rawTraces) ? rawTraces : [];
 
+  const containerStyle: React.CSSProperties = {
+    background: 'rgba(13,17,23,0.96)',
+    border: '1px solid rgba(35,38,49,0.9)',
+    borderRadius: 'var(--radius-xl)',
+    padding: '20px 24px',
+    marginBottom: 24,
+    boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+  };
+
+  const headerStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  };
+
+  const titleRowStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+  };
+
+  const badgeStyle: React.CSSProperties = {
+    fontSize: 10,
+    fontWeight: 700,
+    padding: '3px 10px',
+    background: 'rgba(30,41,59,0.9)',
+    color: 'rgba(148,163,184,0.9)',
+    borderRadius: 6,
+    border: '1px solid rgba(51,65,85,0.6)',
+    letterSpacing: '0.05em',
+  };
+
   if (traces.length === 0) {
     return (
-      <div className="bg-[#11131a] border border-[#232631] rounded-xl p-4 mb-6">
-        <h3 className="text-[#e2e8f0] font-semibold flex items-center gap-2 mb-2">
-          <span className="w-2 h-2 rounded-full bg-[#334155]"></span>
-          Pipeline Observability
-        </h3>
-        <p className="text-sm text-[#475569]">Awaiting signal pipeline output...</p>
+      <div style={containerStyle}>
+        <div style={titleRowStyle}>
+          <span style={{
+            width: 8, height: 8, borderRadius: '50%',
+            background: 'rgba(51,65,85,0.9)', display: 'inline-block'
+          }} />
+          <span style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: 13 }}>
+            Pipeline Observability
+          </span>
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 10 }}>
+          Awaiting signal pipeline output... Start the Engine to populate traces.
+        </p>
       </div>
     );
   }
 
+  const statusStyle = (status: string): React.CSSProperties => {
+    if (status === 'ACCEPTED') return {
+      background: 'rgba(16,185,129,0.1)', color: '#34d399',
+      border: '1px solid rgba(16,185,129,0.25)',
+    };
+    if (status === 'REJECTED') return {
+      background: 'rgba(239,68,68,0.1)', color: '#f87171',
+      border: '1px solid rgba(239,68,68,0.2)',
+    };
+    if (status === 'INVALIDATED') return {
+      background: 'rgba(100,116,139,0.1)', color: '#94a3b8',
+      border: '1px solid rgba(100,116,139,0.2)',
+    };
+    return {
+      background: 'rgba(245,158,11,0.1)', color: '#fbbf24',
+      border: '1px solid rgba(245,158,11,0.2)',
+    };
+  };
+
+  const timingStyle = (timing?: string): React.CSSProperties => {
+    if (timing === 'OPTIMAL') return { color: '#34d399' };
+    if (timing === 'EARLY') return { color: '#fbbf24' };
+    if (timing === 'LATE') return { color: '#f87171' };
+    return { color: 'var(--text-muted)' };
+  };
+
+  const thStyle: React.CSSProperties = {
+    padding: '10px 14px',
+    fontWeight: 600,
+    fontSize: 11,
+    color: 'rgba(148,163,184,0.8)',
+    letterSpacing: '0.05em',
+    textAlign: 'left',
+    background: 'rgba(24,26,36,0.95)',
+    borderBottom: '1px solid rgba(35,38,49,0.8)',
+    whiteSpace: 'nowrap',
+  };
+
+  const tdStyle: React.CSSProperties = {
+    padding: '9px 14px',
+    fontSize: 11,
+    fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+    color: 'rgba(148,163,184,0.9)',
+    borderBottom: '1px solid rgba(35,38,49,0.4)',
+    verticalAlign: 'middle',
+  };
+
   return (
-    <div className="bg-[#11131a] border border-[#232631] rounded-xl p-4 mb-6 shadow-xl">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-[#e2e8f0] font-semibold flex items-center gap-2 text-lg">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          Live Pipeline Observability
-        </h3>
-        <span className="text-xs font-semibold px-2 py-1 bg-[#1e293b] text-[#94a3b8] rounded-md border border-[#334155]">
+    <div style={containerStyle}>
+      <div style={headerStyle}>
+        <div style={titleRowStyle}>
+          <Activity size={14} color="#34d399" style={{ animation: 'pulse 2s infinite' }} />
+          <span style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: 13 }}>
+            Live Pipeline Observability
+          </span>
+        </div>
+        <span style={badgeStyle}>
           Last {traces.length} Traces
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-[#232631]">
-        <table className="w-full text-left text-sm text-[#94a3b8]">
-          <thead className="bg-[#181a24] border-b border-[#232631]">
+      <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid rgba(35,38,49,0.8)' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12 }}>
+          <thead>
             <tr>
-              <th className="py-3 px-4 font-medium">Symbol</th>
-              <th className="py-3 px-4 font-medium">Engine</th>
-              <th className="py-3 px-4 font-medium">Status</th>
-              <th className="py-3 px-4 font-medium">Score</th>
-              <th className="py-3 px-4 font-medium">Type</th>
-              <th className="py-3 px-4 font-medium">Timing</th>
-              <th className="py-3 px-4 font-medium w-1/4">Last Reason</th>
-              <th className="py-3 px-4 font-medium text-center block leading-[1]">BREAKING<br/><span className="text-[10px] text-zinc-500">DOWN</span></th>
-              <th className="py-3 px-4 font-medium text-center">BTC Skip</th>
-              <th className="py-3 px-4 font-medium text-center">Late Cap</th>
+              <th style={thStyle}>Symbol</th>
+              <th style={thStyle}>Engine</th>
+              <th style={thStyle}>Status</th>
+              <th style={thStyle}>Score</th>
+              <th style={thStyle}>Type</th>
+              <th style={thStyle}>Timing</th>
+              <th style={{ ...thStyle, maxWidth: 240 }}>Last Reason</th>
+              <th style={{ ...thStyle, textAlign: 'center' }}>BREAKDOWN</th>
+              <th style={{ ...thStyle, textAlign: 'center' }}>BTC Skip</th>
+              <th style={{ ...thStyle, textAlign: 'center' }}>Late Cap</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#232631]/50 font-mono text-xs">
+          <tbody>
             {traces.slice(0, 50).map(t => (
-              <tr key={t.id} className="hover:bg-[#181a24]/80 transition-colors">
-                <td className="py-2.5 px-4 text-[#f8fafc] font-semibold">{t.symbol}</td>
-                <td className="py-2.5 px-4 text-emerald-400">{t.engine}</td>
-                <td className="py-2.5 px-4">
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium border ${
-                    t.status === 'ACCEPTED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                    t.status === 'REJECTED' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
-                    t.status === 'INVALIDATED' ? 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20' :
-                    'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                  }`}>
+              <tr key={t.id} style={{ transition: 'background 0.15s' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(24,26,36,0.7)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <td style={{ ...tdStyle, color: '#f8fafc', fontWeight: 700 }}>{t.symbol}</td>
+                <td style={{ ...tdStyle, color: '#34d399' }}>{t.engine}</td>
+                <td style={tdStyle}>
+                  <span style={{
+                    ...statusStyle(t.status),
+                    padding: '2px 8px', borderRadius: 4,
+                    fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
+                    display: 'inline-block'
+                  }}>
                     {t.status}
                   </span>
                 </td>
-                <td className="py-2.5 px-4">
-                  <span className={t.score && t.score >= 10 ? 'text-emerald-400' : ''}>{t.score ?? '-'}</span>
-                </td>
-                <td className="py-2.5 px-4">{t.entryType || '-'}</td>
-                <td className="py-2.5 px-4">
-                  <span className={`${
-                    t.entryTiming === 'OPTIMAL' ? 'text-emerald-500' :
-                    t.entryTiming === 'EARLY' ? 'text-amber-500' :
-                    t.entryTiming === 'LATE' ? 'text-rose-500' : ''
-                  }`}>
-                    {t.entryTiming || '-'}
+                <td style={tdStyle}>
+                  <span style={{ color: t.score != null && t.score >= 10 ? '#34d399' : 'var(--text-muted)' }}>
+                    {t.score ?? '-'}
                   </span>
                 </td>
-                <td className="py-2.5 px-4 truncate max-w-[250px] text-zinc-300" title={t.lastRejectReason}>
+                <td style={tdStyle}>{t.entryType || '-'}</td>
+                <td style={{ ...tdStyle, ...timingStyle(t.entryTiming) }}>
+                  {t.entryTiming || '-'}
+                </td>
+                <td style={{ ...tdStyle, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'rgba(203,213,225,0.8)' }}
+                  title={t.lastRejectReason}>
                   {t.lastRejectReason || '-'}
                 </td>
-                <td className="py-2.5 px-4 text-center">
-                  {t.usedBreakingDownBypass ? <span className="text-rose-400 font-bold">✓</span> : <span className="text-zinc-600">-</span>}
+                <td style={{ ...tdStyle, textAlign: 'center' }}>
+                  {t.usedBreakingDownBypass
+                    ? <span style={{ color: '#f87171', fontWeight: 700 }}>✓</span>
+                    : <span style={{ color: 'rgba(100,116,139,0.5)' }}>-</span>}
                 </td>
-                <td className="py-2.5 px-4 text-center">
-                  {t.usedBtcBypass ? <span className="text-blue-400 font-bold">✓</span> : <span className="text-zinc-600">-</span>}
+                <td style={{ ...tdStyle, textAlign: 'center' }}>
+                  {t.usedBtcBypass
+                    ? <span style={{ color: '#60a5fa', fontWeight: 700 }}>✓</span>
+                    : <span style={{ color: 'rgba(100,116,139,0.5)' }}>-</span>}
                 </td>
-                <td className="py-2.5 px-4 text-center">
-                  {t.usedLateException ? <span className="text-amber-400 font-bold">✓</span> : <span className="text-zinc-600">-</span>}
+                <td style={{ ...tdStyle, textAlign: 'center' }}>
+                  {t.usedLateException
+                    ? <span style={{ color: '#fbbf24', fontWeight: 700 }}>✓</span>
+                    : <span style={{ color: 'rgba(100,116,139,0.5)' }}>-</span>}
                 </td>
               </tr>
             ))}

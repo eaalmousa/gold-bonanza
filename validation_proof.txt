@@ -1,0 +1,19 @@
+--- 1. Login ---
+Token received: true
+
+--- 2. Initial /trade/status ---
+Enabled state: true
+
+--- 3. Toggle AUTO-TRADE ON ---
+Toggle response: {"enabled":true}
+
+--- 4. Verify /trade/status after ON ---
+Explicitly enabled? true
+Logs length: 6
+
+--- 5. Wait 6s for Engine / Scanner iteration logs ---
+Final Logs length: 6
+Last 3 logs:
+ -> [2026-03-19T01:26:57.356Z] Fetching latest Top-200 dynamic universe...
+ -> [2026-03-19T01:26:38.274Z] State changed and saved to: ON
+ -> [2026-03-19T01:26:18.397Z] State changed and saved to: ON

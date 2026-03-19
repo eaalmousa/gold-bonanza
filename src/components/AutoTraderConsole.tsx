@@ -17,8 +17,11 @@ export default function AutoTraderConsole() {
     const fetchStatus = async () => {
       try {
         const res = await api.getAutoTradeStatus();
-        // CRITICAL: normalize — API may return logs: undefined/null
-        const safeRes = { ...res, logs: Array.isArray(res?.logs) ? res.logs : [] };
+        // FIXED: /trade/status now returns { enabled, autoTrading, logs, config }
+        // We read 'enabled' (added in fix) with fallback to 'autoTrading' for backwards compatibility.
+        const resolvedEnabled = res?.enabled ?? res?.autoTrading ?? false;
+        const resolvedLogs = Array.isArray(res?.logs) ? res.logs : [];
+        const safeRes: AutoTraderStatus = { enabled: resolvedEnabled, logs: resolvedLogs };
         setStatus(safeRes);
         if (safeRes.enabled !== isAutoTradeActive) {
           setAutoTradeActive(safeRes.enabled);
@@ -64,18 +67,18 @@ export default function AutoTraderConsole() {
     let icon = <ChevronRight size={12} color="var(--text-muted)" />;
     let color = 'var(--text-secondary)';
 
-    if (msg.includes('Blocked') || msg.includes('Skipping') || msg.includes('REJECT')) {
+    if (msg.includes('Blocked') || msg.includes('Skipping') || msg.includes('REJECT') || msg.includes('❌')) {
       type = 'blocked';
       icon = <XCircle size={12} color="var(--red)" />;
       color = 'var(--text-muted)'; // Keep it subtle so it doesn't overwhelm
       if (msg.includes('Circuit Breaker') || msg.includes('deep red')) {
         color = 'var(--red)';
       }
-    } else if (msg.includes('Deployed') || msg.includes('🚀') || msg.includes('✅') || msg.includes('ACCEPT')) {
+    } else if (msg.includes('Deployed') || msg.includes('🚀') || msg.includes('✅') || msg.includes('ACCEPT') || msg.includes('EXECUTING')) {
       type = 'success';
       icon = <CheckCircle size={12} color="var(--green)" />;
       color = 'var(--green)';
-    } else if (msg.includes('ON') || msg.includes('OFF') || msg.includes('Updated')) {
+    } else if (msg.includes('ON') || msg.includes('OFF') || msg.includes('Updated') || msg.includes('Config') || msg.includes('Scanning') || msg.includes('Loaded')) {
       type = 'system';
       icon = <ChevronRight size={12} color="var(--gold)" />;
       color = 'var(--gold)';
@@ -133,7 +136,9 @@ export default function AutoTraderConsole() {
       }} ref={containerRef}>
         {status.logs.length === 0 ? (
           <div style={{ color: 'var(--text-muted)', fontSize: 11, textAlign: 'center', marginTop: 100 }}>
-            {status.enabled ? 'Monitoring signals... waiting for deployment events.' : 'Auto-Trader is OFF. No logs.'}
+            {status.enabled
+              ? 'Auto-Trader is ON. Monitoring signals... waiting for deployment events.'
+              : 'Auto-Trader is OFF. Toggle ON to begin scanning and deployment.'}
           </div>
         ) : (
           [...status.logs].reverse().map((log, i) => {

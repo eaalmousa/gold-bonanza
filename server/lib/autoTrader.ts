@@ -131,17 +131,17 @@ export async function runTraderLoop() {
     }
     
     // We pass empty objects for snapshots since this is server side mapping
+    // NOTE: runBonanzaCore returns { pipelineSignals, pipelineTraces, marketRows, regimeLabel }
     const results = await runBonanzaCore(activeSymbols, mode, balance, undefined, {}, undefined);
-    const snipers = results.sniperSignals || [];
-    const breakouts = results.breakoutSignals || [];
+    const allSignals = results.pipelineSignals || [];
     
     // Sort combined by score desc, but EXCLUDE pending/invalidated breakouts
-    const combined = [...snipers, ...breakouts]
+    const combined = allSignals
       .filter(s => {
-        if (s.signal.score < MIN_SCORE) return false;
+        if (!s.signal || s.signal.score < MIN_SCORE) return false;
         const et = s.signal.entryType;
-        // Breakout engine returns PENDING_BREAKOUT for the initial pump.
-        // We only want to auto-trade RETEST_CONFIRMED or normal Sniper signals.
+        // Only trade ACCEPTED sniper signals and RETEST_CONFIRMED breakouts
+        if (s.status !== 'ACCEPTED') return false;
         if (et === 'PENDING_BREAKOUT' || et === 'INVALIDATED' || et === 'EXPIRED_NO_RETEST') {
           return false;
         }

@@ -12,7 +12,7 @@ export function useScanner() {
     setPipelineSignals, addPipelineTraces,
     setMarketRows, setDataLive, setScannerRunning,
     addSignalToHistory,
-    orderFlowSnapshots, setMarketRegime,
+    setMarketRegime,
     isScannerActive
   } = useTradingStore();
 
@@ -96,13 +96,22 @@ export function useScanner() {
         setSymbols(symbolList);
         console.log(`[Scanner] Universe loaded: ${symbolList.length} symbols`);
 
+        // Only scan + start interval if scanner is currently ON
+        const isActive = useTradingStore.getState().isScannerActive;
+        if (!isActive) {
+          console.log('[Scanner] Engine is OFF — universe pre-loaded, awaiting Start Engine.');
+          return;
+        }
+
         // First scan
         await doScan(symbolList);
 
-        // Periodic scans
-        intervalRef.current = setInterval(() => {
-          doScan(symbolList);
-        }, SCAN_INTERVAL_MS);
+        // Periodic scans — only while mounted
+        if (mounted) {
+          intervalRef.current = setInterval(() => {
+            doScan(symbolList);
+          }, SCAN_INTERVAL_MS);
+        }
       } catch (e: any) {
         console.error('[Scanner] Boot failed:', e);
         setScanError(e?.message || 'Initialization failed');
@@ -117,17 +126,30 @@ export function useScanner() {
     };
   }, []); // Boot once
 
-  // Re-scan when the engine is turned ON
+  // Re-scan when the engine is turned ON / OFF
   useEffect(() => {
     if (isScannerActive && symbols.length > 0) {
       // Clear out old signals to avoid confusion
       setPipelineSignals([]);
       setMarketRows([]);
-      setScanProgress(0); // Reset progress clock
-      
+      setScanProgress(0);
+
+      // Clear any stale interval before starting fresh
+      if (intervalRef.current) clearInterval(intervalRef.current);
+
+      // Immediate first scan
       doScan(symbols);
+
+      // Set up periodic scanning while engine is ON
+      intervalRef.current = setInterval(() => {
+        doScan(symbols);
+      }, SCAN_INTERVAL_MS);
     } else if (!isScannerActive) {
-      // User turned off the engine: clear everything and stop the clock immediately
+      // User turned off the engine — clear interval and state immediately
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
       setPipelineSignals([]);
       setMarketRows([]);
       setScanProgress(0);

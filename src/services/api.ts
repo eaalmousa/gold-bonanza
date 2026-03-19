@@ -1,6 +1,6 @@
 let token = localStorage.getItem('gb_token') || '';
 
-export const API_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL)
+export const API_URL = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL)
   || 'http://localhost:8085/api';
 
 export function setToken(t: string) {
@@ -72,6 +72,7 @@ export const api = {
   closeTrade: (symbol: string, side: string, qty: number) => apiRequest('/trade/close', { method: 'POST', body: JSON.stringify({ symbol, side, qty }) }),
   toggleAutoTrade: (enabled: boolean) => apiRequest('/trade/toggle', { method: 'POST', body: JSON.stringify({ enabled }) }),
   getAutoTradeStatus: () => apiRequest('/trade/status'),
+  getLogs: () => apiRequest('/trade/logs'),
   getAutoTradeConfig: () => apiRequest('/trade/config'),
   updateAutoTradeConfig: (config: { riskPerTrade?: number; maxConcurrent?: number; leverage?: number; slEnabled?: boolean; tpEnabled?: boolean; tp1Only?: boolean; tp1RR?: number; tp2RR?: number; minScore?: number; btcGateEnabled?: boolean; trailTpEnabled?: boolean }) => 
     apiRequest('/trade/config', { method: 'POST', body: JSON.stringify(config) }),

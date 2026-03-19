@@ -16,8 +16,8 @@ async function testScanner() {
     { openPositions: [], currentScanCycleStart: Date.now() } // portfolio
   );
 
-  console.log(`Scanner complete: found ${result.sniperSignals.length} snipers, ${result.breakoutSignals.length} breakouts.`);
-  console.log(result.sniperSignals.map(s => `${s.symbol} ${s.signal.side} ${s.signal.score}`).join('\n'));
+  console.log(`Scanner complete: found ${result.pipelineSignals.length} total active signals.`);
+  console.log(result.pipelineSignals.map(s => `${s.symbol} ${s.signal.side} ${s.signal.score}`).join('\n'));
 }
 
 testScanner();

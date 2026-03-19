@@ -25,7 +25,9 @@ function resolveBaseUrl(mode?: string): string {
 
 tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
   res.json({
+    enabled: isAutoTradingEnabled,
     autoTrading: isAutoTradingEnabled,
+    logs: tradeLogs,
     config: {
       riskPerTrade: RISK_PER_TRADE,
       maxConcurrent: MAX_CONCURRENT_TRADES,
@@ -47,7 +49,9 @@ tradeRouter.get('/logs', requireAuth, (req: any, res: any) => {
 });
 
 tradeRouter.post('/toggle', requireAuth, (req: any, res: any) => {
-  toggleAutoTrade(!isAutoTradingEnabled);
+  // Use explicit value from body when provided; otherwise flip current state
+  const desired = req.body?.enabled !== undefined ? !!req.body.enabled : !isAutoTradingEnabled;
+  toggleAutoTrade(desired);
   res.json({ enabled: isAutoTradingEnabled });
 });
 

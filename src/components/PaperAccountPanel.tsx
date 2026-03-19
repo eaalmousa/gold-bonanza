@@ -1,15 +1,17 @@
 import { useTradingStore } from '../store/tradingStore';
 import { TrendingUp, TrendingDown, Activity, BarChart2, RefreshCw, BookOpen, ShieldAlert, Zap } from 'lucide-react';
-import type { ExecutionMode } from '../types/trading';
 
-const MODE_META: Record<ExecutionMode, { label: string; color: string; bg: string; border: string; warn?: string }> = {
-  PAPER:        { label: '📋 PAPER',   color: '#818cf8', bg: 'rgba(99,102,241,0.1)',  border: 'rgba(99,102,241,0.35)',
-                  warn: 'New deployments target PAPER. Existing positions unaffected.' },
-  BINANCE_TEST: { label: '🧪 TESTNET', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.35)',
-                  warn: 'New deployments target Binance Testnet. Existing positions unaffected.' },
-  BINANCE_LIVE: { label: '⚡ LIVE',    color: 'var(--red)', bg: 'rgba(244,63,94,0.1)', border: 'rgba(244,63,94,0.35)',
-                  warn: 'REAL MONEY. New deployments target live exchange. Cannot be undone.' },
+
+const MODE_META: Record<string, { label: string; color: string; bg: string; border: string; warn?: string }> = {
+  PAPER:  { label: '📋 PAPER',   color: '#818cf8', bg: 'rgba(99,102,241,0.1)',  border: 'rgba(99,102,241,0.35)',
+            warn: 'New deployments target PAPER. Existing positions unaffected.' },
+  DEMO:   { label: '🧪 DEMO',    color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.35)',
+            warn: 'New deployments target Binance Demo. Existing positions unaffected.' },
+  LIVE:   { label: '⚡ LIVE',    color: 'var(--red)', bg: 'rgba(244,63,94,0.1)', border: 'rgba(244,63,94,0.35)',
+            warn: 'REAL MONEY. New deployments target live exchange. Cannot be undone.' },
 };
+
+const FALLBACK_META = { label: 'UNKNOWN', color: 'var(--text-muted)', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)' };
 
 const RESULT_COLOR: Record<string, string> = {
   PAPER:      '#818cf8',
@@ -27,7 +29,7 @@ export default function PaperAccountPanel() {
   } = useTradingStore();
 
   const openPaper  = activeTrades.filter(t => t.isPaperTrade);
-  const modeMeta   = MODE_META[executionMode];
+  const modeMeta   = MODE_META[executionMode] || FALLBACK_META;
   const winRate    = paperSession.winCount + paperSession.lossCount > 0
     ? ((paperSession.winCount / (paperSession.winCount + paperSession.lossCount)) * 100).toFixed(1)
     : '--';
@@ -56,21 +58,24 @@ export default function PaperAccountPanel() {
         </div>
 
         <div style={{ display: 'flex', gap: 6 }}>
-          {(Object.keys(MODE_META) as ExecutionMode[]).map(m => (
-            <button
-              key={m}
-              onClick={() => setExecutionMode(m)}
-              style={{
-                flex: 1, padding: '7px 0', fontSize: 9, fontWeight: 900, cursor: 'pointer',
-                borderRadius: 6, letterSpacing: '0.08em', transition: 'all 0.15s',
-                background: executionMode === m ? MODE_META[m].bg          : 'rgba(0,0,0,0.3)',
-                border:     `1px solid ${executionMode === m ? MODE_META[m].border : 'rgba(255,255,255,0.06)'}`,
-                color:      executionMode === m ? MODE_META[m].color        : 'var(--text-muted)',
-              }}
-            >
-              {MODE_META[m].label}
-            </button>
-          ))}
+          {(['PAPER', 'DEMO', 'LIVE'] as const).map(m => {
+            const meta = MODE_META[m] || FALLBACK_META;
+            return (
+              <button
+                key={m}
+                onClick={() => setExecutionMode(m)}
+                style={{
+                  flex: 1, padding: '7px 0', fontSize: 9, fontWeight: 900, cursor: 'pointer',
+                  borderRadius: 6, letterSpacing: '0.08em', transition: 'all 0.15s',
+                  background: executionMode === m ? meta.bg          : 'rgba(0,0,0,0.3)',
+                  border:     `1px solid ${executionMode === m ? meta.border : 'rgba(255,255,255,0.06)'}`,
+                  color:      executionMode === m ? meta.color        : 'var(--text-muted)',
+                }}
+              >
+                {meta.label}
+              </button>
+            );
+          })}
         </div>
 
         {modeMeta.warn && (
@@ -130,15 +135,15 @@ export default function PaperAccountPanel() {
         </div>
       )}
 
-      {executionMode === 'BINANCE_TEST' && (
+      {executionMode === 'DEMO' && (
         <div style={{ padding: '24px', textAlign: 'center', background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, marginBottom: 16 }}>
           <ShieldAlert size={24} color="#f59e0b" style={{ margin: '0 auto 12px' }} />
-          <div style={{ fontWeight: 900, color: '#f59e0b', fontSize: 13, letterSpacing: '0.1em' }}>TESTNET DEPLOYMENTS ONLY</div>
-          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 8 }}>Future deployments will route to Binance Testnet.<br/>Open live trades and paper trades are not hidden or cancelled.</div>
+          <div style={{ fontWeight: 900, color: '#f59e0b', fontSize: 13, letterSpacing: '0.1em' }}>DEMO DEPLOYMENTS ONLY</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 8 }}>Future deployments will route to Binance Demo.<br/>Open live trades and paper trades are not hidden or cancelled.</div>
         </div>
       )}
 
-      {executionMode === 'BINANCE_LIVE' && (
+      {executionMode === 'LIVE' && (
         <div style={{ padding: '24px', textAlign: 'center', background: 'rgba(244,63,94,0.05)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: 8, marginBottom: 16 }}>
           <Zap size={24} color="var(--red)" style={{ margin: '0 auto 12px' }} />
           <div style={{ fontWeight: 900, color: 'var(--red)', fontSize: 13, letterSpacing: '0.1em' }}>LIVE DEPLOYMENTS ONLY</div>

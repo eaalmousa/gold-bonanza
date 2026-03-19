@@ -2,7 +2,7 @@
 // Execution Adapter v1
 //
 // Single-entry routing layer between deploySignal and any
-// execution backend (PAPER | BINANCE_TEST | BINANCE_LIVE).
+// execution backend (PAPER | DEMO | LIVE).
 //
 // CONTRACT:
 //  - Receives a canonical ExecutionPayload
@@ -59,7 +59,7 @@ function executePaper(payload: ExecutionPayload): ExecutionResult {
 // ─── Exchange Path (TEST + LIVE share same route, mode is server-gated) ──────
 
 async function executeExchange(
-  mode: 'BINANCE_TEST' | 'BINANCE_LIVE',
+  mode: 'DEMO' | 'LIVE',
   payload: ExecutionPayload
 ): Promise<ExecutionResult> {
   const base: ExecutionResult = {
@@ -158,9 +158,13 @@ export async function executeOrder(
   }
 
   switch (mode) {
-    case 'PAPER':        return executePaper(payload);
-    case 'BINANCE_TEST': return await executeExchange('BINANCE_TEST', payload);
-    case 'BINANCE_LIVE': return await executeExchange('BINANCE_LIVE', payload);
+    case 'PAPER':  return executePaper(payload);
+    case 'DEMO':   return await executeExchange('DEMO', payload);
+    case 'LIVE':   return await executeExchange('LIVE', payload);
+    default: {
+      console.error(`[Execution] Unknown mode: ${mode}`);
+      return { signalId: payload.signalId, symbol: payload.symbol, mode, status: 'FAILED', ts: Date.now(), error: `Unknown execution mode: ${mode}`, payload };
+    }
   }
 }
 

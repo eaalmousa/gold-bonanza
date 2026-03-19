@@ -5,7 +5,7 @@ import {
 } from '../lib/binance';
 import {
   TRADER_CONFIG, toggleAutoTrade, tradeLogs,
-  updateTraderConfig, backendSignalCache
+  updateTraderConfig, backendSignalCache, evaluateFrontendSignals
 } from '../lib/autoTrader';
 
 export const tradeRouter = Router();
@@ -46,6 +46,12 @@ tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
 
 tradeRouter.get('/signals', requireAuth, (req: any, res: any) => {
   res.json({ signals: backendSignalCache });
+});
+
+tradeRouter.post('/sync', requireAuth, async (req: any, res: any) => {
+  const { signals } = req.body;
+  const decisionCache = await evaluateFrontendSignals(signals || []);
+  res.json({ signals: decisionCache });
 });
 
 tradeRouter.get('/logs', requireAuth, (req: any, res: any) => {

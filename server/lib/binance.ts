@@ -50,8 +50,8 @@ async function request(m: string, e: string, d: Record<string, any> = {}) {
   return binanceRequest(m, e, d);
 }
 
-export async function getBalance(): Promise<number> {
-  const res = await request('GET', '/fapi/v2/balance');
+export async function getBalance(overrideBaseUrl?: string): Promise<number> {
+  const res = await binanceRequest('GET', '/fapi/v2/balance', {}, overrideBaseUrl);
   const usdtAsset = (res as any[]).find(a => a.asset === 'USDT');
   return usdtAsset ? parseFloat(usdtAsset.balance) : 0;
 }
@@ -65,22 +65,23 @@ export interface Position {
   positionSide: string;
 }
 
-export async function getPositions(): Promise<Position[]> {
-  const res = await request('GET', '/fapi/v2/positionRisk');
+export async function getPositions(overrideBaseUrl?: string): Promise<Position[]> {
+  const res = await binanceRequest('GET', '/fapi/v2/positionRisk', {}, overrideBaseUrl);
   // Only return open positions
   return (res as Position[]).filter(p => parseFloat(p.positionAmt) !== 0);
 }
 
-export async function setLeverage(symbol: string, leverage: number) {
-  return request('POST', '/fapi/v1/leverage', { symbol, leverage });
+export async function setLeverage(symbol: string, leverage: number, overrideBaseUrl?: string) {
+  return binanceRequest('POST', '/fapi/v1/leverage', { symbol, leverage }, overrideBaseUrl);
 }
 
 let cachedExchangeInfo: any = null;
 
-export async function getExchangeInfo() {
+export async function getExchangeInfo(overrideBaseUrl?: string) {
   if (cachedExchangeInfo) return cachedExchangeInfo;
   try {
-    const res = await fetch(`${getBaseUrl()}/fapi/v1/exchangeInfo`);
+    const base = overrideBaseUrl || getBaseUrl();
+    const res = await fetch(`${base}/fapi/v1/exchangeInfo`);
     cachedExchangeInfo = await res.json();
     return cachedExchangeInfo;
   } catch (e) {
@@ -95,8 +96,8 @@ function roundTo(value: number, precision: number): string {
 }
 
 // Helper to find symbol rules
-async function getSymbolPrecision(symbol: string) {
-  const info = await getExchangeInfo();
+async function getSymbolPrecision(symbol: string, overrideBaseUrl?: string) {
+  const info = await getExchangeInfo(overrideBaseUrl);
   if (!info || !info.symbols) return { price: 2, qty: 3 };
   const s = info.symbols.find((x: any) => x.symbol === symbol);
   if (!s) return { price: 2, qty: 3 };
@@ -106,32 +107,32 @@ async function getSymbolPrecision(symbol: string) {
   };
 }
 
-export async function placeMarketOrder(symbol: string, side: 'BUY' | 'SELL', qty: number) {
-  const { qty: qPrec } = await getSymbolPrecision(symbol);
+export async function placeMarketOrder(symbol: string, side: 'BUY' | 'SELL', qty: number, overrideBaseUrl?: string) {
+  const { qty: qPrec } = await getSymbolPrecision(symbol, overrideBaseUrl);
   
-  return request('POST', '/fapi/v1/order', {
+  return binanceRequest('POST', '/fapi/v1/order', {
     symbol,
     side,
     type: 'MARKET',
     quantity: roundTo(qty, qPrec)
-  });
+  }, overrideBaseUrl);
 }
 
-export async function placeStopMarket(symbol: string, side: 'BUY' | 'SELL', stopPrice: number) {
-  const { price: pPrec } = await getSymbolPrecision(symbol);
+export async function placeStopMarket(symbol: string, side: 'BUY' | 'SELL', stopPrice: number, overrideBaseUrl?: string) {
+  const { price: pPrec } = await getSymbolPrecision(symbol, overrideBaseUrl);
   
-  return request('POST', '/fapi/v1/algoOrder', {
+  return binanceRequest('POST', '/fapi/v1/algoOrder', {
     algoType: 'CONDITIONAL',
     symbol,
     side,
     type: 'STOP_MARKET',
     triggerPrice: roundTo(stopPrice, pPrec),
     closePosition: 'true'
-  });
+  }, overrideBaseUrl);
 }
 
-export async function placeTakeProfitMarket(symbol: string, side: 'BUY' | 'SELL', stopPrice: number, qty?: number) {
-  const { price: pPrec, qty: qPrec } = await getSymbolPrecision(symbol);
+export async function placeTakeProfitMarket(symbol: string, side: 'BUY' | 'SELL', stopPrice: number, qty?: number, overrideBaseUrl?: string) {
+  const { price: pPrec, qty: qPrec } = await getSymbolPrecision(symbol, overrideBaseUrl);
   
   const params: any = {
     symbol,
@@ -148,11 +149,11 @@ export async function placeTakeProfitMarket(symbol: string, side: 'BUY' | 'SELL'
     params.closePosition = 'true';
   }
 
-  return request('POST', '/fapi/v1/algoOrder', params);
+  return binanceRequest('POST', '/fapi/v1/algoOrder', params, overrideBaseUrl);
 }
 
-export async function placeTrailingStopMarket(symbol: string, side: 'BUY' | 'SELL', callbackRatePct: number, activationPrice?: number, qty?: number) {
-  const { price: pPrec, qty: qPrec } = await getSymbolPrecision(symbol);
+export async function placeTrailingStopMarket(symbol: string, side: 'BUY' | 'SELL', callbackRatePct: number, activationPrice?: number, qty?: number, overrideBaseUrl?: string) {
+  const { price: pPrec, qty: qPrec } = await getSymbolPrecision(symbol, overrideBaseUrl);
   
   const params: any = {
     symbol,
@@ -172,5 +173,5 @@ export async function placeTrailingStopMarket(symbol: string, side: 'BUY' | 'SEL
     params.closePosition = 'true';
   }
 
-  return request('POST', '/fapi/v1/order', params);
+  return binanceRequest('POST', '/fapi/v1/order', params, overrideBaseUrl);
 }

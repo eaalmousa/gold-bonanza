@@ -59,13 +59,13 @@ export function useScanner() {
 
       // Fetch unified backend decision truth for these signals
       try {
-        const sigRes = await api.getSignals();
+        const sigRes = await api.syncSignals(result.pipelineSignals);
         if (sigRes && sigRes.signals) {
           setBackendSignals(sigRes.signals);
-          console.log(`[Scanner] Unified ${Object.keys(sigRes.signals).length} backend signal states.`);
+          console.log(`[Scanner] Unified ${Object.keys(sigRes.signals).length} backend signal states via sync.`);
         }
       } catch (err) {
-        console.warn(`[Scanner] Could not fetch backend signals truth:`, err);
+        console.warn(`[Scanner] Could not sync signals with backend:`, err);
       }
 
       console.log(

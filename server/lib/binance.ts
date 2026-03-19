@@ -2,7 +2,10 @@ import crypto from 'crypto';
 
 const getApiKey = (url?: string) => {
   const isTest = url?.includes('testnet') || process.env.BINANCE_BASE_URL?.includes('testnet');
-  if (isTest && process.env.BINANCE_TEST_API_KEY) return process.env.BINANCE_TEST_API_KEY;
+  if (isTest) {
+    if (process.env.BINANCE_TEST_API_KEY) return process.env.BINANCE_TEST_API_KEY;
+    console.warn('[Binance] WARNING: Mode is TESTNET but BINANCE_TEST_API_KEY is missing. Falling back to BINANCE_API_KEY (this will cause a 401 if it stays a Live Key)');
+  }
   return process.env.BINANCE_API_KEY || '';
 };
 

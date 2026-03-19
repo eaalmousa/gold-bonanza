@@ -17,9 +17,11 @@ export default function AutoTraderConsole() {
     const fetchStatus = async () => {
       try {
         const res = await api.getAutoTradeStatus();
-        setStatus(res);
-        if (res.enabled !== isAutoTradeActive) {
-          setAutoTradeActive(res.enabled);
+        // CRITICAL: normalize — API may return logs: undefined/null
+        const safeRes = { ...res, logs: Array.isArray(res?.logs) ? res.logs : [] };
+        setStatus(safeRes);
+        if (safeRes.enabled !== isAutoTradeActive) {
+          setAutoTradeActive(safeRes.enabled);
         }
       } catch (e) {
         console.warn('Failed to fetch auto-trader status:', e);

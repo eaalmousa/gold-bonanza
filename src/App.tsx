@@ -27,7 +27,7 @@ function App() {
   const {
     pipelineSignals, marketRows,
     scannerRunning, queueSignal, setBinanceStatus,
-    setAutoTradeActive
+    setAutoTradeActive, setBackendSignals
   } = useTradingStore();
 
   const { scanProgress, lastScanAt, scanError } = useScanner();
@@ -40,8 +40,6 @@ function App() {
         if (config.enabled !== undefined) {
           setAutoTradeActive(config.enabled);
         }
-        // Scanner is local state, default to OFF on boot unless we want it persistent.
-        // For now, we keep them separate. User has to manually 'Start Engine'.
       } catch (e) {
         console.warn('[Sync] Could not fetch initial state from cloud');
       }
@@ -63,6 +61,31 @@ function App() {
     const inv = setInterval(check, 10000);
     return () => clearInterval(inv);
   }, [setBinanceStatus]);
+
+  // 3. BACKEND SIGNAL TRUTH SYNC
+  // Poll /trade/status every 5s to get backendSignalCache.
+  // This gives every frontend card its canonical backend decision state.
+  useEffect(() => {
+    const pollBackend = async () => {
+      try {
+        const status = await api.getAutoTradeStatus();
+        // status.signals is backendSignalCache from autoTrader.ts
+        if (status?.signals && typeof status.signals === 'object') {
+          setBackendSignals(status.signals);
+        }
+        // Also sync auto-trade enabled state
+        if (typeof status?.enabled === 'boolean') {
+          setAutoTradeActive(status.enabled);
+        }
+      } catch (e) {
+        // Backend unreachable — silently continue; UI degrades gracefully
+      }
+    };
+    pollBackend();
+    const inv = setInterval(pollBackend, 5000);
+    return () => clearInterval(inv);
+  }, [setBackendSignals, setAutoTradeActive]);
+
 
   // Mount the live websocket feeds
   useLiveFeeds();

@@ -3,6 +3,7 @@ import { Target, X, TrendingUp, RefreshCw, Wifi, WifiOff, Activity, Clock } from
 import { api } from '../services/api';
 import { useTradingStore } from '../store/tradingStore';
 import type { ActiveTrade, SignalRow } from '../types/trading';
+import { getCanonicalPositionCount } from '../utils/positionCount';
 
 export default function CommandSyncHub() {
   const [loading, setLoading] = useState(true);
@@ -76,15 +77,13 @@ export default function CommandSyncHub() {
     if (idx >= 0) removeActiveTrade(idx);
   };
 
-  // Merge: Binance positions take priority; local trades fill in the rest
-  const validBinancePositions = Array.isArray(binancePositions) ? binancePositions : [];
-  const binanceSymbols = new Set(validBinancePositions.map(p => p.symbol.toUpperCase()));
-  const localOnly = activeTrades.filter(t => !binanceSymbols.has(t.symbol.toUpperCase()));
-  
-  // Signals currently sitting in the hub awaiting deployment
-  const allPending = Array.isArray(pipelineSignals) ? pipelineSignals.filter(s => s.status === 'QUEUED') : [];
-  
-  const totalCount = validBinancePositions.length + localOnly.length + allPending.length;
+  // CANONICAL count — same formula as Header.tsx and SystemStatus.tsx
+  const { total: totalCount } = getCanonicalPositionCount(binancePositions, activeTrades, pipelineSignals);
+
+  // Keep these for rendering the separate sections below
+  const binanceSymbols = new Set(binancePositions.map((p: any) => p.symbol?.toUpperCase()));
+  const localOnly      = activeTrades.filter(t => !binanceSymbols.has(t.symbol?.toUpperCase()));
+  const allPending     = pipelineSignals.filter(s => s.status === 'QUEUED');
 
   return (
     <section>

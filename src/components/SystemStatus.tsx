@@ -3,39 +3,42 @@ import React, { useEffect, useState } from 'react';
 import { useTradingStore } from '../store/tradingStore';
 import { Shield, Zap, Flame } from 'lucide-react';
 import { api } from '../services/api';
+import { CANONICAL_DEFAULTS } from '../config/defaults';
+import { getCanonicalPositionCount } from '../utils/positionCount';
 
 export default function SystemStatus() {
   const { 
-    activeMode, setMode, activeTrades: rawTrades, symbols: rawSymbols, 
-    isScannerActive, setScannerActive, binancePositions: rawPositions,
+    activeMode, setMode,
+    activeTrades: rawTrades,
+    symbols: rawSymbols,
+    isScannerActive, setScannerActive,
+    binancePositions: rawPositions,
     pipelineSignals: rawSignals
   } = useTradingStore();
 
-  const activeTrades = Array.isArray(rawTrades) ? rawTrades : [];
-  const symbols = Array.isArray(rawSymbols) ? rawSymbols : [];
+  const activeTrades    = Array.isArray(rawTrades)    ? rawTrades    : [];
+  const symbols         = Array.isArray(rawSymbols)   ? rawSymbols   : [];
   const binancePositions = Array.isArray(rawPositions) ? rawPositions : [];
-  const pipelineSignals = Array.isArray(rawSignals) ? rawSignals : [];
+  const pipelineSignals  = Array.isArray(rawSignals)   ? rawSignals   : [];
+
+  // CANONICAL count — same formula used in Header.tsx and CommandSyncHub.tsx
+  const counts = getCanonicalPositionCount(binancePositions, activeTrades, pipelineSignals);
 
   // TRUTH RECONCILIATION: Match Header logic
-  const binanceSymbolsSet = new Set(binancePositions.map(p => p.symbol.toUpperCase()));
-  const localOnlyCount = activeTrades.filter(t => !binanceSymbolsSet.has(t.symbol.toUpperCase())).length;
-  const pendingCount = pipelineSignals.filter(s => s.status === 'QUEUED').length;
-  const totalOpen = binancePositions.length + localOnlyCount + pendingCount;
-
-
+  // Initial state now mirrors the backend CANONICAL_DEFAULTS exactly
   const [config, setConfig] = useState({
-    riskPct: 0.04,
-    maxTrades: 4,
-    leverage: 5,
-    slEnabled: false,
-    tpEnabled: true,
-    tp1Only: false,
-    tp1RR: 0.35,
-    tp2RR: 0.50,
-    minScore: 13,
-    btcGate: true,
-    trailTp: false,
-    circuitBreaker: false,
+    riskPct:        CANONICAL_DEFAULTS.riskPct,
+    maxTrades:      CANONICAL_DEFAULTS.maxTrades,
+    leverage:       CANONICAL_DEFAULTS.leverage,
+    slEnabled:      CANONICAL_DEFAULTS.slEnabled,
+    tpEnabled:      CANONICAL_DEFAULTS.tpEnabled,
+    tp1Only:        CANONICAL_DEFAULTS.tp1Only,
+    tp1RR:          CANONICAL_DEFAULTS.tp1RR,
+    tp2RR:          CANONICAL_DEFAULTS.tp2RR,
+    minScore:       CANONICAL_DEFAULTS.minScore,
+    btcGate:        CANONICAL_DEFAULTS.btcGate,
+    trailTp:        CANONICAL_DEFAULTS.trailTp,
+    circuitBreaker: CANONICAL_DEFAULTS.circuitBreaker,
   });
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -44,17 +47,17 @@ export default function SystemStatus() {
     api.getAutoTradeConfig()
       .then(res => {
         const newCfg = {
-          riskPct: res.riskPerTrade ?? 0.04,
-          maxTrades: res.maxConcurrent ?? 4,
-          leverage: res.leverage ?? 5,
-          slEnabled: res.slEnabled ?? false,
-          tpEnabled: res.tpEnabled ?? true,
-          tp1Only: res.tp1Only ?? false,
-          tp1RR: res.tp1RR ?? 0.35,
-          tp2RR: res.tp2RR ?? 0.50,
-          minScore: res.minScore ?? 13,
-          btcGate: res.btcGateEnabled ?? true,
-          trailTp: res.trailTpEnabled ?? false,
+          riskPct:        res.riskPerTrade      ?? CANONICAL_DEFAULTS.riskPct,
+          maxTrades:      res.maxConcurrent     ?? CANONICAL_DEFAULTS.maxTrades,
+          leverage:       res.leverage          ?? CANONICAL_DEFAULTS.leverage,
+          slEnabled:      res.slEnabled         ?? CANONICAL_DEFAULTS.slEnabled,
+          tpEnabled:      res.tpEnabled         ?? CANONICAL_DEFAULTS.tpEnabled,
+          tp1Only:        res.tp1Only           ?? CANONICAL_DEFAULTS.tp1Only,
+          tp1RR:          res.tp1RR             ?? CANONICAL_DEFAULTS.tp1RR,
+          tp2RR:          res.tp2RR             ?? CANONICAL_DEFAULTS.tp2RR,
+          minScore:       res.minScore          ?? CANONICAL_DEFAULTS.minScore,
+          btcGate:        res.btcGateEnabled    ?? CANONICAL_DEFAULTS.btcGate,
+          trailTp:        res.trailTpEnabled    ?? CANONICAL_DEFAULTS.trailTp,
           circuitBreaker: res.circuitBreakerEnabled ?? false,
         };
         setConfig(newCfg);
@@ -88,7 +91,8 @@ export default function SystemStatus() {
     }).catch(console.error);
   };
 
-  const capacity = totalOpen / config.maxTrades;
+  // Use canonical count for capacity bar (Binance + local, not just local)
+  const capacity = counts.total / config.maxTrades;
   const capacityPct = Math.min(100, Math.round((isNaN(capacity) ? 0 : capacity) * 100));
 
   const modes = [
@@ -119,7 +123,7 @@ export default function SystemStatus() {
             {!isLoaded ? 'SYNCING WITH CLOUD...' : 'SYSTEM STATUS'}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
-            {symbols.length} Pairs Monitored · {totalOpen}/{config.maxTrades} Positions Open
+            {symbols.length} Pairs Monitored · {counts.total}/{config.maxTrades} Positions Open
           </div>
         </div>
 

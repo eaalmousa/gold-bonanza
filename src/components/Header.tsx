@@ -1,6 +1,7 @@
 import { useTradingStore } from '../store/tradingStore';
 import { Crosshair, Power, Wifi, WifiOff } from 'lucide-react';
 import { api } from '../services/api';
+import { getCanonicalPositionCount } from '../utils/positionCount';
 
 export default function Header() {
   const { isDataLive, activeMode, activeTrades, binancePositions, pipelineSignals, binanceStatus, isAutoTradeActive, setAutoTradeActive } = useTradingStore();
@@ -14,17 +15,12 @@ export default function Header() {
     }
   };
 
-  const signals = Array.isArray(pipelineSignals) ? pipelineSignals : [];
-  const trades = Array.isArray(activeTrades) ? activeTrades : [];
-  const positions = Array.isArray(binancePositions) ? binancePositions : [];
+  const signals   = Array.isArray(pipelineSignals)  ? pipelineSignals  : [];
+  const trades    = Array.isArray(activeTrades)      ? activeTrades     : [];
+  const positions = Array.isArray(binancePositions)  ? binancePositions : [];
 
-  const pendingCount = signals.filter(s => s.status === 'QUEUED').length;
-
-  const activeLocalOnly = trades.filter(t => {
-    if (!t || !t.symbol) return false;
-    return !positions.some(p => p && p.symbol && p.symbol.toUpperCase() === t.symbol.toUpperCase());
-  }).length;
-  const totalActiveCount = positions.length + activeLocalOnly + pendingCount;
+  // CANONICAL count — same formula as SystemStatus.tsx and CommandSyncHub.tsx
+  const { total: totalActiveCount } = getCanonicalPositionCount(positions, trades, signals);
 
   return (
     <header style={{

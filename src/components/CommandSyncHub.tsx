@@ -165,7 +165,7 @@ export default function CommandSyncHub() {
         </div>
       </div>
 
-      {totalCount === 0 ? (
+      {displayCount === 0 ? (
         <div style={{
           padding: '40px 24px',
           borderRadius: 'var(--radius-lg)',

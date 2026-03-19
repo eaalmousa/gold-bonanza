@@ -14,10 +14,17 @@ export default function Header() {
     }
   };
 
-  const pendingCount = pipelineSignals.filter(s => s.status === 'QUEUED').length;
+  const signals = Array.isArray(pipelineSignals) ? pipelineSignals : [];
+  const trades = Array.isArray(activeTrades) ? activeTrades : [];
+  const positions = Array.isArray(binancePositions) ? binancePositions : [];
 
-  const activeLocalOnly = activeTrades.filter(t => !binancePositions.some(p => p.symbol.toUpperCase() === t.symbol.toUpperCase())).length;
-  const totalActiveCount = binancePositions.length + activeLocalOnly + pendingCount;
+  const pendingCount = signals.filter(s => s.status === 'QUEUED').length;
+
+  const activeLocalOnly = trades.filter(t => {
+    if (!t || !t.symbol) return false;
+    return !positions.some(p => p && p.symbol && p.symbol.toUpperCase() === t.symbol.toUpperCase());
+  }).length;
+  const totalActiveCount = positions.length + activeLocalOnly + pendingCount;
 
   return (
     <header style={{

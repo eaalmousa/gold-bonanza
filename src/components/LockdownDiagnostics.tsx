@@ -2,7 +2,9 @@ import { Activity, ShieldAlert, ZapOff } from 'lucide-react';
 import { useTradingStore } from '../store/tradingStore';
 
 export default function LockdownDiagnostics() {
-  const { scannerRunning, isDataLive, pipelineHealth, blockedSignals } = useTradingStore();
+  const { scannerRunning, isDataLive, pipelineHealth: rawHealth, blockedSignals: rawBlocked } = useTradingStore();
+  const pipelineHealth = Array.isArray(rawHealth) ? rawHealth : [];
+  const blockedSignals = Array.isArray(rawBlocked) ? rawBlocked : [];
 
   return (
     <div className="sections-stack">

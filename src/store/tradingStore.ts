@@ -99,6 +99,7 @@ interface TradingState {
   setPaperMode: (enabled: boolean) => void;
   resetPaperSession: (startBalance?: number) => void;
   closePaperTrade: (idOrSymbol: string, closePrice: number) => void;
+  deployManualSignal: (signal: any, symbol: string) => void;
 }
 
 export const useTradingStore = create<TradingState>((set, get) => ({
@@ -526,6 +527,41 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }));
 
     console.log(`[Paper] 📋 ${trade.symbol} (ID: ${trade.id}) CLOSED @ ${closePrice} | PnL: ${realizedPnl >= 0 ? '+' : ''}${realizedPnl} | Balance: $${newBalance} | ${outcome}`);
+  },
+
+  deployManualSignal: (signal, symbol) => {
+    const state = get();
+    const payload = toExecutionPayload(signal, symbol);
+    const mode    = state.executionMode;
+    const isPaper = mode === 'PAPER';
+    const fakeId  = `manual_${Date.now()}`;
+
+    state.addActiveTrade({
+      id:         `tr_${fakeId}`,
+      signalId:   fakeId,
+      symbol,
+      kind:       payload.kind || 'MANUAL',
+      type:       'MANUAL',
+      side:       payload.side,
+      entryPrice: payload.entryPrice,
+      qty:        payload.qty,
+      qtyBase:    payload.qty,
+      sizeUSDT:   payload.sizeUSDT,
+      t1:         payload.takeProfit,
+      t2:         payload.takeProfit2,
+      sl:         payload.stopLoss,
+      stopPrice:  payload.stopLoss,
+      leverage:   payload.leverage,
+      deployedAt: Date.now(),
+      status:     'ACTIVE',
+      score:      payload.score,
+      isPaperTrade: isPaper,
+      statusHistory: [{ status: 'ACTIVE' as const, ts: Date.now() }]
+    });
+
+    executeOrder(mode, payload).then(result => {
+      get().addExecutionResult(result);
+    });
   }
 }));
 

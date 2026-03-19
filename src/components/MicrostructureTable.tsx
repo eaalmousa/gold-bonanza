@@ -2,7 +2,8 @@ import { Server } from 'lucide-react';
 import { useTradingStore } from '../store/tradingStore';
 
 export default function MicrostructureTable() {
-  const microstructureRows = useTradingStore(s => s.microstructureRows);
+  const rawRows = useTradingStore(s => s.microstructureRows);
+  const microstructureRows = Array.isArray(rawRows) ? rawRows : [];
 
   return (
     <div className="sections-stack">

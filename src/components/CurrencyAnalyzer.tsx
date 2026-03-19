@@ -377,12 +377,13 @@ async function runRealAnalysis(symbol: string): Promise<RealAnalysis> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function CurrencyAnalyzer() {
-  const { deploySignal } = useTradingStore();
+  const { deployManualSignal } = useTradingStore();
   const [query, setQuery] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<RealAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [topMovers, setTopMovers] = useState<TopMover[]>([]);
+  const [topMoversRaw, setTopMovers] = useState<TopMover[]>([]);
+  const topMovers = Array.isArray(topMoversRaw) ? topMoversRaw : [];
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const scanRef = useRef(false);
@@ -449,7 +450,7 @@ export default function CurrencyAnalyzer() {
     const t2 = result.targets.find(t => t.label.includes('Target 2'))?.price || 0;
     const sl = result.targets.find(t => t.type === 'SL')?.price || 0;
 
-    deploySignal({
+    deployManualSignal({
       kind: 'MACD_PREDICTIVE',
       side: result.direction,
       entryPrice: entry,

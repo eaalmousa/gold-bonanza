@@ -3,7 +3,8 @@ import { Database } from 'lucide-react';
 import { useTradingStore } from '../store/tradingStore';
 
 export default function TriggerLayers() {
-  const triggerLevels = useTradingStore(s => s.triggerLevels);
+  const rawLevels = useTradingStore(s => s.triggerLevels);
+  const triggerLevels = Array.isArray(rawLevels) ? rawLevels : [];
 
   return (
     <div className="sections-stack">

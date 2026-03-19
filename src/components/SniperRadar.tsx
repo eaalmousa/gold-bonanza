@@ -4,7 +4,8 @@ import { useTradingStore } from '../store/tradingStore';
 
 export default function SniperRadar() {
   const { pipelineSignals } = useTradingStore();
-  const detectedSignals = pipelineSignals.filter(s => s.status === 'ACCEPTED');
+  const signals = Array.isArray(pipelineSignals) ? pipelineSignals : [];
+  const detectedSignals = signals.filter(s => s && s.status === 'ACCEPTED');
 
   // Stable blip positions — memoized so they don't jump on every render
   const blips = useMemo(() =>

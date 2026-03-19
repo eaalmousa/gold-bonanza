@@ -4,7 +4,23 @@ import { api } from '../services/api';
 import { getCanonicalPositionCount } from '../utils/positionCount';
 
 export default function Header() {
-  const { isDataLive, activeMode, executionMode, activeTrades, binancePositions, pipelineSignals, binanceStatus, isAutoTradeActive, setAutoTradeActive } = useTradingStore();
+  const { 
+    isDataLive, activeMode, executionMode, activeTrades, 
+    binancePositions, pipelineSignals, binanceStatus, 
+    isAutoTradeActive, setAutoTradeActive, setExecutionMode 
+  } = useTradingStore();
+
+  const handleModeCycle = () => {
+    const modes: ('PAPER' | 'DEMO' | 'LIVE')[] = ['PAPER', 'DEMO', 'LIVE'];
+    const currentIdx = modes.indexOf(executionMode);
+    const nextMode = modes[(currentIdx + 1) % modes.length];
+
+    if (nextMode === 'LIVE') {
+      const ok = window.confirm('⚠️ WARNING: You are switching to LIVE REAL-MONEY TRADING. Every trade deployed from this point will be executed on your real Binance account. Proceed?');
+      if (!ok) return;
+    }
+    setExecutionMode(nextMode);
+  };
 
   const handleToggleAutoTrade = async () => {
     try {
@@ -92,18 +108,24 @@ export default function Header() {
           {activeMode.key}
         </div>
         
-        <div style={{
-          padding: '10px 20px',
-          borderRadius: 'var(--radius-full)',
-          fontSize: 11, fontWeight: 900,
-          border: `1px solid ${executionMode === 'LIVE' ? 'rgba(239,68,68,0.4)' : executionMode === 'DEMO' ? 'rgba(59,130,246,0.4)' : 'rgba(168,85,247,0.4)'}`,
-          background: executionMode === 'LIVE' ? 'rgba(239,68,68,0.1)' : executionMode === 'DEMO' ? 'rgba(59,130,246,0.1)' : 'rgba(168,85,247,0.1)',
-          color: executionMode === 'LIVE' ? '#f87171' : executionMode === 'DEMO' ? '#60a5fa' : '#c084fc',
-          letterSpacing: '0.35em',
-          boxShadow: executionMode === 'LIVE' ? '0 0 15px rgba(239,68,68,0.2)' : 'none'
-        }}>
+        <button 
+          onClick={handleModeCycle}
+          style={{
+            padding: '10px 20px',
+            borderRadius: 'var(--radius-full)',
+            fontSize: 11, fontWeight: 900,
+            border: `1px solid ${executionMode === 'LIVE' ? 'rgba(239,68,68,0.4)' : executionMode === 'DEMO' ? 'rgba(59,130,246,0.4)' : 'rgba(168,85,247,0.4)'}`,
+            background: executionMode === 'LIVE' ? 'rgba(239,68,68,0.1)' : executionMode === 'DEMO' ? 'rgba(59,130,246,0.1)' : 'rgba(168,85,247,0.1)',
+            color: executionMode === 'LIVE' ? '#f87171' : executionMode === 'DEMO' ? '#60a5fa' : '#c084fc',
+            letterSpacing: '0.35em',
+            boxShadow: executionMode === 'LIVE' ? '0 0 15px rgba(239,68,68,0.2)' : 'none',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
           {executionMode}
-        </div>
+        </button>
+
 
         {totalActiveCount > 0 && (
           <div style={{

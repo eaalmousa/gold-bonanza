@@ -86,13 +86,26 @@ export default function CommandSyncHub() {
     setExecutionMode(mode);
   };
 
-  // CANONICAL count — same formula as Header.tsx and SystemStatus.tsx
-  const { total: totalCount } = getCanonicalPositionCount(binancePositions, activeTrades, pipelineSignals);
+  // Filter logic: Only show trades matching the current mode
+  const isPaperMode = executionMode === 'PAPER';
+  
+  // 1. Filter Binance positions: Only show in DEMO/LIVE modes
+  const filteredPositions = isPaperMode ? [] : binancePositions;
+  const binanceSymbols = new Set(filteredPositions.map((p: any) => p.symbol?.toUpperCase()));
 
-  // Keep these for rendering the separate sections below
-  const binanceSymbols = new Set(binancePositions.map((p: any) => p.symbol?.toUpperCase()));
-  const localOnly      = activeTrades.filter(t => !binanceSymbols.has(t.symbol?.toUpperCase()));
-  const allPending     = pipelineSignals.filter(s => s.status === 'QUEUED');
+  // 2. Filter Local trades: 
+  //    - In PAPER mode: Only show isPaperTrade: true
+  //    - In DEMO/LIVE: Only show isPaperTrade: false (unsynced)
+  const filteredLocal = activeTrades.filter(t => {
+    const paperMatch = isPaperMode ? t.isPaperTrade : !t.isPaperTrade;
+    // We also exclude local trades if they are already in the Binance positions list to avoid double-counting
+    return paperMatch && !binanceSymbols.has(t.symbol?.toUpperCase());
+  });
+
+  // 3. Filter Pending: Show all queued signals
+  const allPending = pipelineSignals.filter(s => s.status === 'QUEUED');
+
+  const displayCount = filteredPositions.length + filteredLocal.length + allPending.length;
 
   return (
     <section>
@@ -107,11 +120,12 @@ export default function CommandSyncHub() {
               COMMAND SYNC HUB
             </div>
             <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
-              {loading ? 'Connecting...' : `${totalCount} Active Trade${totalCount !== 1 ? 's' : ''}`}
+              {loading ? 'Connecting...' : `${displayCount} Active Trade${displayCount !== 1 ? 's' : ''}`}
               {' '}{loading && '(Syncing...)'}
             </div>
           </div>
         </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {/* Execution Mode Toggle */}
           <div style={{ 
@@ -214,7 +228,7 @@ export default function CommandSyncHub() {
           })}
 
           {/* ── Binance live positions ── */}
-          {binancePositions.map((pos, i) => {
+          {filteredPositions.map((pos, i) => {
             const entryPrice = parseFloat(pos.entryPrice);
             const pnlUSD = parseFloat(pos.unRealizedProfit);
             const leverage = parseFloat(pos.leverage);
@@ -288,7 +302,7 @@ export default function CommandSyncHub() {
           })}
 
           {/* ── Local (manually deployed) trades — full lifecycle ── */}
-          {localOnly.map((trade, i) => {
+          {filteredLocal.map((trade, i) => {
             // Find prior signals for this same symbol for history display
             const history = pipelineSignals.filter(s => 
               s.symbol.toUpperCase() === trade.symbol.toUpperCase() && 
@@ -299,7 +313,7 @@ export default function CommandSyncHub() {
               <LocalTradeCard
                 key={trade.id}
                 trade={trade}
-                index={binancePositions.length + i}
+                index={filteredPositions.length + i}
                 history={history}
                 onClose={() => handleCloseLocal(trade.id)}
               />

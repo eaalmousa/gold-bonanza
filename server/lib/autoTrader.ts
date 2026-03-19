@@ -119,6 +119,8 @@ function logMsg(msg: string) {
 }
 
 function resolveBaseUrl(mode: string): string {
+  // If user has set a hard BASE_URL, we should respect it, 
+  // but for TEST vs LIVE separation we enforce standard endpoints.
   if (mode === 'BINANCE_LIVE') return 'https://fapi.binance.com';
   return 'https://testnet.binancefuture.com';
 }
@@ -130,43 +132,67 @@ export async function evaluateFrontendSignals(allSignals: any[]) {
   const baseUrl = resolveBaseUrl(mode);
 
   logMsg(`--- STARTING EVALUATION [${mode}] ---`);
+  
+  // 1. TRUTH SYNCHRONIZATION: Always update cache first so UI sees "Backend Reached"
+  allSignals.forEach(s => {
+    const sigId = s.id;
+    if (!backendSignalCache[sigId]) {
+      backendSignalCache[sigId] = {
+        signalId: sigId,
+        symbol: s.symbol,
+        createdAt: s.timestamp || Date.now(),
+        source: 'BACKEND',
+        backendDecision: 'PENDING',
+        backendDecisionAt: Date.now()
+      };
+    }
+  });
+
   try {
-    const activePos = await getPositions(baseUrl);
-    if (activePos.length >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
-      logMsg(`Max capacity reached (${activePos.length}/${TRADER_CONFIG.MAX_CONCURRENT_TRADES}). Skipping deployments.`);
+    // 2. Fetch Account State (with isolation for the chosen mode)
+    let activePos: any[] = [];
+    let balance = BASE_CAPITAL;
+    
+    try {
+      activePos = await getPositions(baseUrl);
+      const actualBalance = await getBalance(baseUrl);
+      if (actualBalance > 0) balance = actualBalance;
+    } catch (e: any) {
+      const is401 = e.message.includes('401');
+      const errorLabel = is401 ? 'Identity (401)' : 'Network';
+      logMsg(`CRITICAL ${errorLabel} ERROR fetch state: ${e.message}`);
+      
+      // If we can't talk to the exchange, we MUST mark all signals as blocked
+      allSignals.forEach(s => {
+        const sigId = s.id;
+        backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
+        backendSignalCache[sigId].blockerReason = `Exchange unreachable: ${e.message}`;
+        backendSignalCache[sigId].backendDecisionAt = Date.now();
+      });
       return backendSignalCache;
     }
 
-    let balance = BASE_CAPITAL;
-    try {
-      const actualBalance = await getBalance(baseUrl);
-      if (actualBalance > 0) balance = actualBalance; 
-    } catch (e) {
-      logMsg(`Could not fetch actual balance, using base capital of ${balance} USD`);
+    if (activePos.length >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
+      logMsg(`Max capacity reached (${activePos.length}/${TRADER_CONFIG.MAX_CONCURRENT_TRADES}). Marking as blocked.`);
+      allSignals.forEach(s => {
+        const sigId = s.id;
+        if (s.status === 'ACCEPTED') {
+          backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
+          backendSignalCache[sigId].blockerReason = `Portfolio Wave Cap Reached (${activePos.length}/${TRADER_CONFIG.MAX_CONCURRENT_TRADES})`;
+        }
+      });
+      return backendSignalCache;
     }
 
-    // --- TRUTH SYNCHRONIZATION: Cache all incoming frontend signals ---
-    allSignals.forEach(s => {
-      const sigId = s.id;
-      if (!backendSignalCache[sigId]) {
-        backendSignalCache[sigId] = {
-          signalId: sigId,
-          symbol: s.symbol,
-          createdAt: s.timestamp || Date.now(),
-          source: 'BACKEND',
-          backendDecision: 'PENDING',
-          backendDecisionAt: Date.now()
-        };
-      }
-      if (s.signal && s.signal.score < TRADER_CONFIG.MIN_SCORE) {
-        backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
-        backendSignalCache[sigId].blockerReason = `Score ${s.signal.score.toFixed(1)} below required ${TRADER_CONFIG.MIN_SCORE}.`;
-      }
-    });
-
+    // 3. Filter and Evaluate Actionable Signals
     const combined = allSignals
       .filter(s => {
-        if (!s.signal || s.signal.score < TRADER_CONFIG.MIN_SCORE) return false;
+        const sigId = s.id;
+        if (!s.signal || s.signal.score < TRADER_CONFIG.MIN_SCORE) {
+          backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
+          backendSignalCache[sigId].blockerReason = `Score ${s.signal?.score?.toFixed(1)} < ${TRADER_CONFIG.MIN_SCORE}`;
+          return false;
+        }
         const et = s.signal.entryType;
         if (s.status !== 'ACCEPTED') return false;
         if (et === 'PENDING_BREAKOUT' || et === 'INVALIDATED' || et === 'EXPIRED_NO_RETEST') return false;
@@ -175,10 +201,11 @@ export async function evaluateFrontendSignals(allSignals: any[]) {
       .sort((a, b) => b.signal.score - a.signal.score);
 
     if (combined.length === 0) {
-      logMsg(`Evaluation done. No actionable signals found.`);
+      logMsg(`Evaluation done. No actionable signals passed the gateway.`);
       return backendSignalCache;
     }
 
+    // 4. Detailed Risk Gates
     const activeLongsCount = activePos.filter(p => parseFloat(p.positionAmt) > 0).length;
     const activeShortsCount = activePos.filter(p => parseFloat(p.positionAmt) < 0).length;
 
@@ -210,7 +237,7 @@ export async function evaluateFrontendSignals(allSignals: any[]) {
 
       if (activePos.some(p => p.symbol === sym)) {
          backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
-         backendSignalCache[sigId].blockerReason = `Already holding active position for ${sym}.`;
+         backendSignalCache[sigId].blockerReason = `Already holding ${sym}.`;
          continue;
       }
 
@@ -219,24 +246,24 @@ export async function evaluateFrontendSignals(allSignals: any[]) {
 
       if (sig.side === 'LONG') {
          if (activeLongsCount + deployedLongsThisScan >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
-            blockReason = `Wave Cap: Too many LONGs already relative to total capacity.`;
+            blockReason = `Wave Cap (LONG)`;
             isBlocked = true;
          } else if (TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED && longsInDeepRed >= 1) {
-            blockReason = `Circuit Breaker: ${longsInDeepRed} LONG(s) in deep red.`;
+            blockReason = `Circuit Breaker (Deep Red LONG)`;
             isBlocked = true;
          } else if (deployedLongsThisScan >= MAX_DEPLOY_PER_SCAN) {
-            blockReason = `Cluster Limit: Deploy quota [${MAX_DEPLOY_PER_SCAN}] exhausted this scan.`;
+            blockReason = `Scan Cluster Limit (LONG)`;
             isBlocked = true;
          } 
       } else {
          if (activeShortsCount + deployedShortsThisScan >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
-            blockReason = `Wave Cap: Too many SHORTs already relative to total capacity.`;
+            blockReason = `Wave Cap (SHORT)`;
             isBlocked = true;
          } else if (TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED && shortsInDeepRed >= 1) {
-            blockReason = `Circuit Breaker: ${shortsInDeepRed} SHORT(s) in deep red.`;
+            blockReason = `Circuit Breaker (Deep Red SHORT)`;
             isBlocked = true;
          } else if (deployedShortsThisScan >= MAX_DEPLOY_PER_SCAN) {
-            blockReason = `Cluster Limit: Deploy quota [${MAX_DEPLOY_PER_SCAN}] exhausted this scan.`;
+            blockReason = `Scan Cluster Limit (SHORT)`;
             isBlocked = true;
          }
       }
@@ -288,7 +315,7 @@ export async function evaluateFrontendSignals(allSignals: any[]) {
       } catch (err: any) {
         logMsg(`❌ DEPLOY FAILED [${sym}]: ${err.message}`);
         backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
-        backendSignalCache[sigId].blockerReason = `Exchange execution failed: ${err.message}`;
+        backendSignalCache[sigId].blockerReason = `Execution failed: ${err.message}`;
       }
     }
 
@@ -296,7 +323,7 @@ export async function evaluateFrontendSignals(allSignals: any[]) {
     return backendSignalCache;
 
   } catch (error: any) {
-    logMsg(`CRITICAL ERROR: ${error.message}`);
+    logMsg(`CRITICAL ERROR UNHANDLED: ${error.message}`);
     return backendSignalCache;
   }
 }

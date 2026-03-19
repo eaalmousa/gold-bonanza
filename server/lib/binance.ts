@@ -1,17 +1,28 @@
 import crypto from 'crypto';
 
-const getApiKey = () => process.env.BINANCE_API_KEY || '';
-const getApiSecret = () => process.env.BINANCE_API_SECRET || '';
+const getApiKey = (url?: string) => {
+  const isTest = url?.includes('testnet') || process.env.BINANCE_BASE_URL?.includes('testnet');
+  if (isTest && process.env.BINANCE_TEST_API_KEY) return process.env.BINANCE_TEST_API_KEY;
+  return process.env.BINANCE_API_KEY || '';
+};
+
+const getApiSecret = (url?: string) => {
+  const isTest = url?.includes('testnet') || process.env.BINANCE_BASE_URL?.includes('testnet');
+  if (isTest && process.env.BINANCE_TEST_API_SECRET) return process.env.BINANCE_TEST_API_SECRET;
+  return process.env.BINANCE_API_SECRET || '';
+};
+
 const getBaseUrl = () => process.env.BINANCE_BASE_URL || 'https://testnet.binancefuture.com';
 
-function sign(queryString: string): string {
-  const secret = getApiSecret();
+function sign(queryString: string, url?: string): string {
+  const secret = getApiSecret(url);
   if (!secret) throw new Error('BINANCE_API_SECRET is not set');
   return crypto.createHmac('sha256', secret).update(queryString).digest('hex');
 }
 
 export async function binanceRequest(method: string, endpoint: string, data: Record<string, any> = {}, overrideBaseUrl?: string) {
-  const key = getApiKey();
+  const targetBaseUrl = overrideBaseUrl || getBaseUrl();
+  const key = getApiKey(targetBaseUrl);
   if (!key) throw new Error('BINANCE_API_KEY is not set');
 
   const payload = { ...data, timestamp: Date.now() };
@@ -22,12 +33,12 @@ export async function binanceRequest(method: string, endpoint: string, data: Rec
   
   params.sort(); // Binance requires sorted params in some endpoints
   const queryString = params.toString();
-  const signature = sign(queryString);
+  const signature = sign(queryString, targetBaseUrl);
   
-  const targetBaseUrl = overrideBaseUrl || getBaseUrl();
   const url = `${targetBaseUrl}${endpoint}?${queryString}&signature=${signature}`;
   
-  console.log(`[Binance:${method}] ${endpoint} via ${targetBaseUrl}`);
+  const censoredKey = key.substring(0, 6) + '...' + key.substring(key.length - 4);
+  console.log(`[Binance:${method}] ${endpoint} via ${targetBaseUrl} (Key: ${censoredKey})`);
 
   const res = await fetch(url, {
     method,

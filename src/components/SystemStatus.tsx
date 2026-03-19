@@ -25,7 +25,21 @@ export default function SystemStatus() {
   // CANONICAL count — same formula used in Header.tsx and CommandSyncHub.tsx
   const counts = getCanonicalPositionCount(binancePositions, activeTrades, pipelineSignals);
 
-  const [config, setConfig] = useState<any>(null);
+  // Initialize with safe defaults to prevent null-reference crashes before loading finishes
+  const [config, setConfig] = useState<any>({
+    riskPct:        CANONICAL_DEFAULTS.riskPct,
+    maxTrades:      CANONICAL_DEFAULTS.maxTrades,
+    leverage:       CANONICAL_DEFAULTS.leverage,
+    slEnabled:      CANONICAL_DEFAULTS.slEnabled,
+    tpEnabled:      CANONICAL_DEFAULTS.tpEnabled,
+    tp1Only:        CANONICAL_DEFAULTS.tp1Only,
+    tp1RR:          CANONICAL_DEFAULTS.tp1RR,
+    tp2RR:          CANONICAL_DEFAULTS.tp2RR,
+    minScore:       CANONICAL_DEFAULTS.minScore,
+    btcGate:        CANONICAL_DEFAULTS.btcGate,
+    trailTp:        CANONICAL_DEFAULTS.trailTp,
+    circuitBreaker: CANONICAL_DEFAULTS.circuitBreaker,
+  });
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {

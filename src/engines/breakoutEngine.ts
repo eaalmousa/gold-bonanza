@@ -437,14 +437,17 @@ function evaluateCoreBreakout(
     reasons.push('Breakdown below compression range');
 
     const lateExtension = (breakLevel - close15) / atr!;
-    if (lateExtension > 1.5 && modeKey !== 'AGGRESSIVE') return null;
+    if (lateExtension > 1.25 && modeKey !== 'AGGRESSIVE') {
+      debugLog.push(`REJECT: SHORT Breakdown late entry ${lateExtension.toFixed(2)}x ATR past breakLevel (Premium cap 1.25x)`);
+      return null;
+    }
     const entryTiming: 'EARLY' | 'OPTIMAL' | 'LATE' =
-      lateExtension < 0.5 ? 'OPTIMAL' : lateExtension < 1.0 ? 'EARLY' : 'LATE';
+      lateExtension < 0.5 ? 'OPTIMAL' : lateExtension < 0.9 ? 'EARLY' : 'LATE';
 
     const breakoutQuality = (breakLevel - close15) / Math.max(1e-9, breakLevel - low15);
-    const minBreakQuality = modeKey === 'AGGRESSIVE' ? 0.50 : 0.70;
+    const minBreakQuality = modeKey === 'AGGRESSIVE' ? 0.50 : 0.72; // was 0.70
     if (breakoutQuality < minBreakQuality) {
-      debugLog.push(`REJECT: Weak breakdown quality ${breakoutQuality.toFixed(2)}`);
+      debugLog.push(`REJECT: Weak breakdown quality ${breakoutQuality.toFixed(2)} (requires ${minBreakQuality})`);
       return null;
     }
     score += 1;
@@ -469,15 +472,23 @@ function evaluateCoreBreakout(
 
     const bodyPct    = (body / range) * 100;
     const closePos   = (close15 - low15) / range;
+    const lowerWick  = Math.min(open15, close15) - low15;
     const isBearCandle = close15 < open15;
-    const minBody    = modeKey === 'AGGRESSIVE' ? 45 : 65;
-    const maxClosePos = modeKey === 'AGGRESSIVE' ? 0.35 : 0.22;
+    const minBody    = modeKey === 'AGGRESSIVE' ? 45 : 70; // was 65
+    const maxClosePos = modeKey === 'AGGRESSIVE' ? 0.35 : 0.18; // was 0.22
+    
     if (!(isBearCandle && bodyPct >= minBody && closePos <= maxClosePos)) {
-      debugLog.push(`REJECT: Weak bearer anatomy — body:${bodyPct.toFixed(0)}% pos:${closePos.toFixed(2)}`);
+      debugLog.push(`REJECT: Weak bearer anatomy — body:${bodyPct.toFixed(0)}% pos:${closePos.toFixed(2)} (Req: ${minBody}% / ${maxClosePos})`);
+      return null;
+    }
+
+    // Buying Wick Penalty (Anti-Stall)
+    if (lowerWick > body * 0.40) {
+      debugLog.push(`REJECT: Excessive lower buying wick (${(lowerWick/body).toFixed(2)}x body) — breakdown stalling`);
       return null;
     }
     score += 1;
-    reasons.push('Strong bearish breakdown candle');
+    reasons.push('Decisive premium breakdown candle');
 
     if (prev2) {
       const accel    = (prev.close - close15) - (prev2.close - prev.close);

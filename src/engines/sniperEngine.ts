@@ -197,12 +197,11 @@ export function evaluateSniperSignal(
       debugLog.push(`PASS: Expanded candle has prior acceptance (prev closed above EMA20)`);
     }
   } else {
-    // SHORT: allow large crash candles, hard-cap at 2.0x ATR (truly exhausted collapses)
-    if (candleAtrRatio > 2.0) {
-      debugLog.push(`REJECT: Exhausted crash candle ${candleAtrRatio.toFixed(2)}x ATR > 2.0x (SHORT cap)`);
+    // SHORT: allow crash candles, but cap at 1.65x ATR (premium selectivity v8.0)
+    if (candleAtrRatio > 1.65) {
+      debugLog.push(`REJECT: SHORT Expansion candle ${candleAtrRatio.toFixed(2)}x ATR > 1.65x (Premium cap)`);
       return null;
     }
-    debugLog.push(`PASS: SHORT candle size ${candleAtrRatio.toFixed(2)}x ATR (cap 2.0x)`);
   }
 
   // ─── SETUP TYPE CLASSIFIER ─────────────────────────────
@@ -641,14 +640,15 @@ export function evaluateSniperSignal(
       debugLog.push(`REJECT: SHORT RSI ${rsiNow!.toFixed(1)} out of range [${rsiMinShort}-${rsiMaxShort}]`);
       return null;
     }
+    const rsiDrop = rsiPrev! - rsiNow!;
     const rsiTurningDown = modeKey !== 'AGGRESSIVE'
-      ? (rsiNow! < rsiPrev! && (rsiPrev! - rsiNow!) >= 0.7)
+      ? (rsiNow! < rsiPrev! && rsiDrop >= 1.2)
       : (rsiNow! < rsiPrev!);
     if (!rsiTurningDown) {
-      debugLog.push(`REJECT: SHORT RSI not turning down (${rsiPrev!.toFixed(1)} → ${rsiNow!.toFixed(1)})`);
+      debugLog.push(`REJECT: SHORT RSI velocity too low (${rsiPrev!.toFixed(1)} → ${rsiNow!.toFixed(1)}, drop ${rsiDrop.toFixed(2)} < 1.2)`);
       return null;
     }
-    score += 2; reasons.push(`RSI turning down (${rsiNow!.toFixed(1)})`);
+    score += 4; reasons.push(`Decisive RSI momentum failure (${rsiNow!.toFixed(1)})`);
 
     // Volume
     const dollarVolAvg = dollarVolSMA20_15[lastIdx];
@@ -671,17 +671,25 @@ export function evaluateSniperSignal(
     if (volRatio > 3.5) volScore += 2;
     score += volScore; reasons.push(`Bear volume (${volRatio.toFixed(2)}x)`);
 
-    // Candle anatomy — bearish
-    // Tightened for Aggressive mode to match LONG quality (was 10%/0.20 — too loose)
-    const bodyPct  = (body / range) * 100;
-    const closePos = (high15 - close15) / range; // distance from high
+    // Candle anatomy — bearish (Premium Selective v8.0)
+    const bodyPct    = (body / range) * 100;
+    const closePos   = (high15 - close15) / range; // distance from high
+    const lowerWick  = Math.min(open15, close15) - low15;
     const isBearCandle = close15 < open15;
-    const minBody    = modeKey === 'AGGRESSIVE' ? 25 : 55;    // was 10 in Aggressive — now 25
-    const minClosePos = modeKey === 'AGGRESSIVE' ? 0.45 : 0.70; // was 0.20 in Aggressive — now 0.45
+    const minBody    = modeKey === 'AGGRESSIVE' ? 30 : 62;    // was 55
+    const minClosePos = modeKey === 'AGGRESSIVE' ? 0.50 : 0.75; // was 0.70
+    
     if (!(isBearCandle && bodyPct >= minBody && closePos >= minClosePos)) {
-      debugLog.push(`REJECT: Weak bearish confirmation — body:${bodyPct.toFixed(0)}% pos:${closePos.toFixed(2)}`);
+      debugLog.push(`REJECT: Mediocre bearish confirmation — body:${bodyPct.toFixed(0)}% pos:${closePos.toFixed(2)} (Req: ${minBody}% / ${minClosePos})`);
       return null;
     }
+
+    // Buying Wick Penalty (Stabilization Detection)
+    if (lowerWick > body * 0.45) {
+      debugLog.push(`REJECT: Excessive lower buying wick (${(lowerWick/body).toFixed(2)}x body) indicates stabilizing bottom`);
+      return null;
+    }
+    score += 5; reasons.push('Premium bearish confirmation candle');
 
     // Acceleration (downward)
     if (prev2) {
@@ -701,16 +709,25 @@ export function evaluateSniperSignal(
       return null;
     }
 
-    // Setup type reversal gate
+    // Setup type reversal gate (ATR-weighted for Premium)
     const prevE20     = ema20_15[lastIdx - 1];
     const lostE20     = (prevE20 != null) && (prev.close < prevE20) && (close15 < e20_15!);
     const upperWick   = high15 - Math.max(open15, close15);
     const upperWickRatio = upperWick / Math.max(1e-9, body);
     const nearE50     = high15 >= e50_15! * (1 - slack * 1.2);
-    const reversalCandle = isBearCandle && nearE50 && (upperWickRatio >= 1.35);
-    const lowerHigh   = (high15 < prev.high) && (high15 <= e50_15! * (1 + slack)) && (close15 < e20_15!);
+    const reversalCandle = isBearCandle && nearE50 && (upperWickRatio >= 1.65); // was 1.35
+    const clearLowerHigh = (high15 < prev.high - (atr! * 0.2)); // ATR-weighted gap
     const prevCandleBear = prev.close < prev.open;
     const twoBarReversal = prevCandleBear && isBearCandle && (prev.high > e20_15!) && (close15 < e20_15!);
+
+    // Anti-Stabilization Check (Cluster Detection)
+    const last4Highs = highs15.slice(Math.max(0, lastIdx - 3), lastIdx + 1);
+    const last4Lows = lows15.slice(Math.max(0, lastIdx - 3), lastIdx + 1);
+    const clusterRange = Math.max(...last4Highs) - Math.min(...last4Lows);
+    if (clusterRange < atr! * 0.4) {
+      debugLog.push(`REJECT: Setup stabilized into tight cluster (range ${clusterRange.toFixed(6)} < 0.4x ATR)`);
+      return null;
+    }
 
     const wasAboveE50Recently = highs15.slice(lastIdx - 5, lastIdx).some(h => h > e50_15!);
     const shortEntryType: 'REVERSAL' | 'CONTINUATION' = wasAboveE50Recently && close15 < e20_15! ? 'REVERSAL' : 'CONTINUATION';
@@ -724,9 +741,9 @@ export function evaluateSniperSignal(
       score += reversalCandle || twoBarReversal ? 4 : 2;
       reasons.push('Bearish reversal confirmed');
     } else {
-      const confirmed = modeKey === 'AGGRESSIVE' || lostE20 || (lowerHigh && rsiNow! < 50) || twoBarReversal;
+      const confirmed = modeKey === 'AGGRESSIVE' || lostE20 || (clearLowerHigh && rsiNow! < 50) || twoBarReversal;
       if (!confirmed) {
-        debugLog.push('REJECT: Continuation not confirmed (lost EMA20 or lower-high with RSI<50 req)');
+        debugLog.push('REJECT: Continuation not confirmed (lost EMA20 or ATR-weighted lower-high with RSI<50 req)');
         return null;
       }
       const closedBelowPrevLow  = close15 < prev.low;

@@ -7,7 +7,7 @@ import {
   isAutoTradingEnabled, toggleAutoTrade, tradeLogs,
   RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED,
   TP1_ONLY, TP1_RR, TP2_RR, MIN_SCORE, BTC_GATE_ENABLED, TRAIL_TP_ENABLED,
-  updateTraderConfig
+  CIRCUIT_BREAKER_ENABLED, updateTraderConfig, backendSignalCache
 } from '../lib/autoTrader';
 
 export const tradeRouter = Router();
@@ -39,9 +39,15 @@ tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
       tp2Rr: TP2_RR,
       minScore: MIN_SCORE,
       btcGate: BTC_GATE_ENABLED,
-      trailTp: TRAIL_TP_ENABLED
-    }
+      trailTp: TRAIL_TP_ENABLED,
+      circuitBreaker: CIRCUIT_BREAKER_ENABLED
+    },
+    signals: backendSignalCache
   });
+});
+
+tradeRouter.get('/signals', requireAuth, (req: any, res: any) => {
+  res.json({ signals: backendSignalCache });
 });
 
 tradeRouter.get('/logs', requireAuth, (req: any, res: any) => {
@@ -67,7 +73,8 @@ tradeRouter.get('/config', requireAuth, (req: any, res: any) => {
     tp2RR: TP2_RR,
     minScore: MIN_SCORE,
     btcGateEnabled: BTC_GATE_ENABLED,
-    trailTpEnabled: TRAIL_TP_ENABLED
+    trailTpEnabled: TRAIL_TP_ENABLED,
+    circuitBreakerEnabled: CIRCUIT_BREAKER_ENABLED
   });
 });
 

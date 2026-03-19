@@ -25,6 +25,7 @@ export default function SystemStatus() {
     minScore: 13,
     btcGate: true,
     trailTp: false,
+    circuitBreaker: false,
   });
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -44,6 +45,7 @@ export default function SystemStatus() {
           minScore: res.minScore ?? 13,
           btcGate: res.btcGateEnabled ?? true,
           trailTp: res.trailTpEnabled ?? false,
+          circuitBreaker: res.circuitBreakerEnabled ?? false,
         };
         setConfig(newCfg);
         setIsLoaded(true);
@@ -72,6 +74,7 @@ export default function SystemStatus() {
       minScore: newConf.minScore,
       btcGateEnabled: newConf.btcGate,
       trailTpEnabled: newConf.trailTp,
+      circuitBreakerEnabled: newConf.circuitBreaker,
     }).catch(console.error);
   };
 
@@ -260,6 +263,22 @@ export default function SystemStatus() {
               />
               <span style={{ fontSize: 10, fontWeight: 900, color: config.trailTp ? '#3b82f6' : 'var(--text-muted)' }}>
                 {config.trailTp ? 'ON' : 'OFF'}
+              </span>
+            </div>
+          </div>
+
+          {/* CIRCUIT BREAKER TOGGLE */}
+          <div style={inputContainerStyle}>
+            <div style={{ ...labelStyle, color: config.circuitBreaker ? 'var(--red)' : 'var(--text-muted)' }}>CIRCUIT BRKR</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+              <input
+                type="checkbox"
+                checked={config.circuitBreaker}
+                onChange={e => handleConfigChange('circuitBreaker', e.target.checked)}
+                style={{ cursor: 'pointer', accentColor: 'var(--red)' }}
+              />
+              <span style={{ fontSize: 10, fontWeight: 900, color: config.circuitBreaker ? 'var(--red)' : 'var(--text-muted)' }}>
+                {config.circuitBreaker ? 'ON' : 'OFF'}
               </span>
             </div>
           </div>

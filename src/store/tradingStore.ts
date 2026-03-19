@@ -58,6 +58,7 @@ interface TradingState {
   // Market context
   marketRegime: MarketRegime;
   orderFlowSnapshots: Record<string, OrderFlowSnapshot>;
+  backendSignals: Record<string, any>;
 
   // Actions
   setBalance: (balance: number) => void;
@@ -89,6 +90,7 @@ interface TradingState {
   // Market context actions
   setMarketRegime: (regime: MarketRegime) => void;
   setOrderFlowSnapshot: (symbol: string, snapshot: OrderFlowSnapshot) => void;
+  setBackendSignals: (signals: Record<string, any>) => void;
   queueSignal: (id: string) => void;
   deploySignal: (signalId: string) => void; // Switched to ID-based deployment
   setExecutionMode: (mode: ExecutionMode) => void;
@@ -131,6 +133,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   ],
   marketRegime: 'RANGING' as MarketRegime,
   orderFlowSnapshots: {},
+  backendSignals: {},
 
   // Paper trading
   paperMode: false,
@@ -258,6 +261,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   setOrderFlowSnapshot: (symbol, snapshot) => set(state => ({
     orderFlowSnapshots: { ...state.orderFlowSnapshots, [symbol]: snapshot }
   })),
+  setBackendSignals: (signals) => set({ backendSignals: signals }),
 
   queueSignal: (id) => {
     const state = get();

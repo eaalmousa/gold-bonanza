@@ -83,115 +83,138 @@ export default function PaperAccountPanel() {
         )}
       </div>
 
-      {/* ── Paper Trading Sub-Header ── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.05)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <BookOpen size={13} color={paperMode ? '#818cf8' : 'var(--text-muted)'} />
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: '0.15em', color: paperMode ? '#818cf8' : 'var(--text-primary)' }}>
-              PAPER ACCOUNT
+      {/* ── Mode-Aware Active Routing Panels ── */}
+      {executionMode === 'PAPER' && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.05)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <BookOpen size={13} color={paperMode ? '#818cf8' : 'var(--text-muted)'} />
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: '0.15em', color: paperMode ? '#818cf8' : 'var(--text-primary)' }}>
+                PAPER SIMULATION
+              </div>
+              <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 1 }}>
+                {paperMode
+                  ? `${openPaper.length} open · $${paperSession.currentBalance.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : 'Inactive'}
+              </div>
             </div>
-            <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 1 }}>
-              {paperMode
-                ? `${openPaper.length} open · $${paperSession.currentBalance.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                : 'Inactive'}
-            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={() => resetPaperSession(10000)}
+              style={{
+                padding: '5px 10px', fontSize: 9, fontWeight: 800, cursor: 'pointer',
+                background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 6, color: 'var(--text-muted)',
+                display: 'flex', alignItems: 'center', gap: 4
+              }}
+            >
+              <RefreshCw size={10} /> RESET
+            </button>
+            <button
+              onClick={() => setPaperMode(!paperMode)}
+              style={{
+                padding: '5px 12px', fontSize: 9, fontWeight: 900, cursor: 'pointer',
+                background: paperMode ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.05)',
+                border: `1px solid ${paperMode ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                borderRadius: 6, color: paperMode ? '#818cf8' : 'var(--text-muted)', letterSpacing: '0.08em'
+              }}
+            >
+              {paperMode ? '■ STOP SIM' : '▶ START SIM'}
+            </button>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            onClick={() => resetPaperSession(10000)}
-            style={{
-              padding: '5px 10px', fontSize: 9, fontWeight: 800, cursor: 'pointer',
-              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 6, color: 'var(--text-muted)',
-              display: 'flex', alignItems: 'center', gap: 4
-            }}
-          >
-            <RefreshCw size={10} /> RESET
-          </button>
-          <button
-            onClick={() => setPaperMode(!paperMode)}
-            style={{
-              padding: '5px 12px', fontSize: 9, fontWeight: 900, cursor: 'pointer',
-              background: paperMode ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.05)',
-              border: `1px solid ${paperMode ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.1)'}`,
-              borderRadius: 6, color: paperMode ? '#818cf8' : 'var(--text-muted)', letterSpacing: '0.08em'
-            }}
-          >
-            {paperMode ? '■ STOP SIM' : '▶ START SIM'}
-          </button>
+      )}
+
+      {executionMode === 'BINANCE_TEST' && (
+        <div style={{ padding: '24px', textAlign: 'center', background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, marginBottom: 16 }}>
+          <ShieldAlert size={24} color="#f59e0b" style={{ margin: '0 auto 12px' }} />
+          <div style={{ fontWeight: 900, color: '#f59e0b', fontSize: 13, letterSpacing: '0.1em' }}>BINANCE TESTNET</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 8 }}>Orders deployed from this dashboard will route to Binance Testnet.<br/>No real capital is at risk. Test API keys are required in the server `.env` file.</div>
         </div>
-      </div>
+      )}
 
-      {/* ── Account Summary Grid ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
-        {[
-          {
-            label: 'BALANCE',
-            value: `$${paperSession.currentBalance.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-            color: 'var(--text-primary)', sub: `Start: $${paperSession.startBalance.toLocaleString()}`
-          },
-          {
-            label: 'SESSION PnL',
-            value: `${pnlPos ? '+' : ''}$${paperSession.totalPnl.toFixed(2)}`,
-            color: pnlPos ? 'var(--green)' : paperSession.totalPnl < 0 ? 'var(--red)' : 'var(--text-muted)',
-            sub: `${pnlPos ? '+' : ''}${paperSession.startBalance > 0 ? ((paperSession.totalPnl / paperSession.startBalance) * 100).toFixed(2) : '0.00'}%`
-          },
-          {
-            label: 'WIN RATE',
-            value: winRate === '--' ? '--' : `${winRate}%`,
-            color: 'var(--text-primary)', sub: `${paperSession.winCount}W / ${paperSession.lossCount}L / ${paperSession.breakevenCount}BE`
-          },
-          {
-            label: 'AVG R',
-            value: paperSession.avgRMultiple !== 0 ? `${paperSession.avgRMultiple >= 0 ? '+' : ''}${paperSession.avgRMultiple}R` : '--',
-            color: paperSession.avgRMultiple >= 0 ? 'var(--green)' : 'var(--red)',
-            sub: `${totalTrades} trade${totalTrades !== 1 ? 's' : ''}`
-          }
-        ].map(m => (
-          <div key={m.label} style={{
-            padding: '10px 12px', borderRadius: 8,
-            background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-subtle)'
-          }}>
-            <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.15em', marginBottom: 4 }}>{m.label}</div>
-            <div className="font-mono" style={{ fontSize: 14, fontWeight: 900, color: m.color }}>{m.value}</div>
-            <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 3 }}>{m.sub}</div>
-          </div>
-        ))}
-      </div>
+      {executionMode === 'BINANCE_LIVE' && (
+        <div style={{ padding: '24px', textAlign: 'center', background: 'rgba(244,63,94,0.05)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: 8, marginBottom: 16 }}>
+          <Zap size={24} color="var(--red)" style={{ margin: '0 auto 12px' }} />
+          <div style={{ fontWeight: 900, color: 'var(--red)', fontSize: 13, letterSpacing: '0.1em' }}>BINANCE LIVE</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 8 }}>Orders deployed from this dashboard will route to your live Binance account.<br/>REAL CAPITAL IS AT RISK.</div>
+        </div>
+      )}
 
-      {/* ── Open Exposure ── */}
-      {openPaper.length > 0 && (
-        <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.15)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <div style={{ fontSize: 10, fontWeight: 800, color: '#818cf8', letterSpacing: '0.1em' }}>OPEN EXPOSURE</div>
-            <div className="font-mono" style={{ fontSize: 12, fontWeight: 900, color: '#818cf8' }}>
-              ${openPaper.reduce((s, t) => s + (t.sizeUSDT ?? 0), 0).toFixed(2)}
-            </div>
+      {/* ── Paper Metrics Display (Only active in PAPER mode) ── */}
+      {executionMode === 'PAPER' && (
+        <>
+          {/* Account Summary Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
+            {[
+              {
+                label: 'BALANCE',
+                value: `$${paperSession.currentBalance.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                color: 'var(--text-primary)', sub: `Start: $${paperSession.startBalance.toLocaleString()}`
+              },
+              {
+                label: 'SESSION PnL',
+                value: `${pnlPos ? '+' : ''}$${paperSession.totalPnl.toFixed(2)}`,
+                color: pnlPos ? 'var(--green)' : paperSession.totalPnl < 0 ? 'var(--red)' : 'var(--text-muted)',
+                sub: `${pnlPos ? '+' : ''}${paperSession.startBalance > 0 ? ((paperSession.totalPnl / paperSession.startBalance) * 100).toFixed(2) : '0.00'}%`
+              },
+              {
+                label: 'WIN RATE',
+                value: winRate === '--' ? '--' : `${winRate}%`,
+                color: 'var(--text-primary)', sub: `${paperSession.winCount}W / ${paperSession.lossCount}L / ${paperSession.breakevenCount}BE`
+              },
+              {
+                label: 'AVG R',
+                value: paperSession.avgRMultiple !== 0 ? `${paperSession.avgRMultiple >= 0 ? '+' : ''}${paperSession.avgRMultiple}R` : '--',
+                color: paperSession.avgRMultiple >= 0 ? 'var(--green)' : 'var(--red)',
+                sub: `${totalTrades} trade${totalTrades !== 1 ? 's' : ''}`
+              }
+            ].map(m => (
+              <div key={m.label} style={{
+                padding: '10px 12px', borderRadius: 8,
+                background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-subtle)'
+              }}>
+                <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.15em', marginBottom: 4 }}>{m.label}</div>
+                <div className="font-mono" style={{ fontSize: 14, fontWeight: 900, color: m.color }}>{m.value}</div>
+                <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 3 }}>{m.sub}</div>
+              </div>
+            ))}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {openPaper.map(t => {
-              const pnl = t.unrealizedPnl ?? 0;
-              return (
-                <div key={t.symbol} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11 }}>
-                  <Activity size={11} color="var(--text-muted)" />
-                  <span className="font-mono" style={{ fontWeight: 900, minWidth: 80 }}>{t.symbol}</span>
-                  <span style={{ color: t.side === 'LONG' ? 'var(--green)' : 'var(--red)', fontWeight: 700 }}>{t.side}</span>
-                  <span style={{ marginLeft: 'auto', fontWeight: 800, color: pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                    {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} USDT
-                  </span>
-                  {t.rMultiple !== undefined && (
-                    <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>({t.rMultiple >= 0 ? '+' : ''}{t.rMultiple}R)</span>
-                  )}
+
+          {/* Open Exposure */}
+          {openPaper.length > 0 && (
+            <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.15)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: '#818cf8', letterSpacing: '0.1em' }}>OPEN EXPOSURE</div>
+                <div className="font-mono" style={{ fontSize: 12, fontWeight: 900, color: '#818cf8' }}>
+                  ${openPaper.reduce((s, t) => s + (t.sizeUSDT ?? 0), 0).toFixed(2)}
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {openPaper.map(t => {
+                  const pnl = t.unrealizedPnl ?? 0;
+                  return (
+                    <div key={t.symbol} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11 }}>
+                      <Activity size={11} color="var(--text-muted)" />
+                      <span className="font-mono" style={{ fontWeight: 900, minWidth: 80 }}>{t.symbol}</span>
+                      <span style={{ color: t.side === 'LONG' ? 'var(--green)' : 'var(--red)', fontWeight: 700 }}>{t.side}</span>
+                      <span style={{ marginLeft: 'auto', fontWeight: 800, color: pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                        {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} USDT
+                      </span>
+                      {t.rMultiple !== undefined && (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>({t.rMultiple >= 0 ? '+' : ''}{t.rMultiple}R)</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* ── Execution Result Log ── */}
@@ -229,8 +252,8 @@ export default function PaperAccountPanel() {
         </div>
       )}
 
-      {/* ── Closed Trade History ── */}
-      {paperSession.closedTrades.length > 0 && (
+      {/* ── Closed Trade History (Only in PAPER mode) ── */}
+      {executionMode === 'PAPER' && paperSession.closedTrades.length > 0 && (
         <div>
           <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.15em', marginBottom: 8 }}>
             CLOSED TRADES ({paperSession.closedTrades.length})
@@ -272,9 +295,9 @@ export default function PaperAccountPanel() {
         </div>
       )}
 
-      {paperSession.closedTrades.length === 0 && !openPaper.length && executionResults.length === 0 && (
+      {executionMode === 'PAPER' && paperSession.closedTrades.length === 0 && !openPaper.length && executionResults.length === 0 && (
         <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11, opacity: 0.5 }}>
-          {paperMode ? 'Deploy a signal to begin simulated trading.' : 'Select an execution mode above to begin.'}
+          Deploy a signal to begin simulated trading.
         </div>
       )}
     </section>

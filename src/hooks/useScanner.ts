@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useTradingStore } from '../store/tradingStore';
 import { initializeSymbolUniverse } from '../services/binanceApi';
 import { runBonanzaCore } from '../engines/scanner';
+import { api } from '../services/api';
 
 const SCAN_INTERVAL_MS = 90_000; // 90 seconds between full scans
 
@@ -13,7 +14,8 @@ export function useScanner() {
     setMarketRows, setDataLive, setScannerRunning,
     addSignalToHistory,
     setMarketRegime,
-    isScannerActive
+    isScannerActive,
+    setBackendSignals
   } = useTradingStore();
 
   const [scanProgress, setScanProgress] = useState(0);
@@ -54,6 +56,17 @@ export function useScanner() {
       setMarketRows(result.marketRows);
       setDataLive(result.marketRows.length > 0);
       setLastScanAt(Date.now());
+
+      // Fetch unified backend decision truth for these signals
+      try {
+        const sigRes = await api.getSignals();
+        if (sigRes && sigRes.signals) {
+          setBackendSignals(sigRes.signals);
+          console.log(`[Scanner] Unified ${Object.keys(sigRes.signals).length} backend signal states.`);
+        }
+      } catch (err) {
+        console.warn(`[Scanner] Could not fetch backend signals truth:`, err);
+      }
 
       console.log(
         `%c[SCAN DONE] Mode=${activeMode.key} | Tradeable=${result.pipelineSignals.length} | Traces=${result.pipelineTraces.length} | MarketRows=${result.marketRows.length}`,

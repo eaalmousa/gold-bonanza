@@ -1,16 +1,18 @@
 import crypto from 'crypto';
 
-const API_KEY = process.env.BINANCE_API_KEY || '';
-const API_SECRET = process.env.BINANCE_API_SECRET || '';
-const BASE_URL = process.env.BINANCE_BASE_URL || 'https://testnet.binancefuture.com';
+const getApiKey = () => process.env.BINANCE_API_KEY || '';
+const getApiSecret = () => process.env.BINANCE_API_SECRET || '';
+const getBaseUrl = () => process.env.BINANCE_BASE_URL || 'https://testnet.binancefuture.com';
 
 function sign(queryString: string): string {
-  if (!API_SECRET) throw new Error('BINANCE_API_SECRET is not set');
-  return crypto.createHmac('sha256', API_SECRET).update(queryString).digest('hex');
+  const secret = getApiSecret();
+  if (!secret) throw new Error('BINANCE_API_SECRET is not set');
+  return crypto.createHmac('sha256', secret).update(queryString).digest('hex');
 }
 
 export async function binanceRequest(method: string, endpoint: string, data: Record<string, any> = {}, overrideBaseUrl?: string) {
-  if (!API_KEY) throw new Error('BINANCE_API_KEY is not set');
+  const key = getApiKey();
+  if (!key) throw new Error('BINANCE_API_KEY is not set');
 
   const payload = { ...data, timestamp: Date.now() };
   const params = new URLSearchParams();
@@ -22,7 +24,7 @@ export async function binanceRequest(method: string, endpoint: string, data: Rec
   const queryString = params.toString();
   const signature = sign(queryString);
   
-  const targetBaseUrl = overrideBaseUrl || BASE_URL;
+  const targetBaseUrl = overrideBaseUrl || getBaseUrl();
   const url = `${targetBaseUrl}${endpoint}?${queryString}&signature=${signature}`;
   
   console.log(`[Binance:${method}] ${endpoint} via ${targetBaseUrl}`);
@@ -30,7 +32,7 @@ export async function binanceRequest(method: string, endpoint: string, data: Rec
   const res = await fetch(url, {
     method,
     headers: {
-      'X-MBX-APIKEY': API_KEY,
+      'X-MBX-APIKEY': key,
       'Content-Type': 'application/x-www-form-urlencoded'
     }
   });
@@ -78,7 +80,7 @@ let cachedExchangeInfo: any = null;
 export async function getExchangeInfo() {
   if (cachedExchangeInfo) return cachedExchangeInfo;
   try {
-    const res = await fetch(`${BASE_URL}/fapi/v1/exchangeInfo`);
+    const res = await fetch(`${getBaseUrl()}/fapi/v1/exchangeInfo`);
     cachedExchangeInfo = await res.json();
     return cachedExchangeInfo;
   } catch (e) {

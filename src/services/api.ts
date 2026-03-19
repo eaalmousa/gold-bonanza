@@ -74,6 +74,7 @@ export const api = {
   getAutoTradeStatus: () => apiRequest('/trade/status'),
   getLogs: () => apiRequest('/trade/logs'),
   getAutoTradeConfig: () => apiRequest('/trade/config'),
-  updateAutoTradeConfig: (config: { riskPerTrade?: number; maxConcurrent?: number; leverage?: number; slEnabled?: boolean; tpEnabled?: boolean; tp1Only?: boolean; tp1RR?: number; tp2RR?: number; minScore?: number; btcGateEnabled?: boolean; trailTpEnabled?: boolean }) => 
+  getSignals: () => apiRequest('/trade/signals'),
+  updateAutoTradeConfig: (config: { riskPerTrade?: number; maxConcurrent?: number; leverage?: number; slEnabled?: boolean; tpEnabled?: boolean; tp1Only?: boolean; tp1RR?: number; tp2RR?: number; minScore?: number; btcGateEnabled?: boolean; trailTpEnabled?: boolean; circuitBreakerEnabled?: boolean }) => 
     apiRequest('/trade/config', { method: 'POST', body: JSON.stringify(config) }),
 };

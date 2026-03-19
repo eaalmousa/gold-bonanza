@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { SignalRow } from '../types/trading';
-import { Crosshair, Zap, ShieldCheck, BarChart2, TrendingUp, Clock, AlertTriangle, XCircle } from 'lucide-react';
+import { AlertTriangle, XCircle, ShieldCheck, Crosshair, Zap, BarChart2, TrendingUp, Clock, ShieldAlert } from 'lucide-react';
 import ChartModal from './ChartModal';
+import { useTradingStore } from '../store/tradingStore';
 
 interface Props {
   signals: SignalRow[];
@@ -48,29 +49,41 @@ function SignalCard({ row, onDeploy, index }: { row: SignalRow; onDeploy?: (r: S
   const isSniper = sig.kind === 'SNIPER' || sig.kind === 'SUPER_SNIPER';
   const glowClass = isSniper ? 'sniper-glow' : 'breakout-glow';
   
+  const { backendSignals } = useTradingStore();
+  const backendState = backendSignals[row.id];
+  const finalStatus = backendState?.backendDecision || row.status;
+
   const StatusIcon = 
-    row.status === 'ACCEPTED' ? <TrendingUp size={16} /> :
-    row.status === 'PENDING' ? <Clock size={16} /> :
-    row.status === 'INVALIDATED' ? <AlertTriangle size={16} /> :
+    finalStatus === 'DEPLOYED_BACKEND' ? <ShieldCheck size={16} /> :
+    finalStatus === 'BLOCKED_BACKEND' ? <ShieldAlert size={16} /> :
+    finalStatus === 'ACCEPTED' ? <TrendingUp size={16} /> :
+    finalStatus === 'PENDING' ? <Clock size={16} /> :
+    finalStatus === 'INVALIDATED' ? <AlertTriangle size={16} /> :
     <XCircle size={16} />;
 
   const statusColors: any = {
     ACCEPTED: 'rgba(34, 197, 94, 0.1)',
     PENDING: 'rgba(245, 158, 11, 0.1)',
     INVALIDATED: 'rgba(239, 68, 68, 0.1)',
-    EXPIRED: 'rgba(100, 116, 139, 0.1)'
+    EXPIRED: 'rgba(100, 116, 139, 0.1)',
+    BLOCKED_BACKEND: 'rgba(239, 68, 68, 0.15)',
+    DEPLOYED_BACKEND: 'rgba(34, 197, 94, 0.2)'
   };
   const statusBorder: any = {
     ACCEPTED: 'rgba(34, 197, 94, 0.3)',
     PENDING: 'rgba(245, 158, 11, 0.3)',
     INVALIDATED: 'rgba(239, 68, 68, 0.3)',
-    EXPIRED: 'rgba(100, 116, 139, 0.3)'
+    EXPIRED: 'rgba(100, 116, 139, 0.3)',
+    BLOCKED_BACKEND: 'rgba(239, 68, 68, 0.5)',
+    DEPLOYED_BACKEND: 'rgba(34, 197, 94, 0.6)'
   };
   const statusText: any = {
     ACCEPTED: 'var(--green)',
     PENDING: 'var(--amber)',
     INVALIDATED: 'var(--red)',
-    EXPIRED: 'var(--text-muted)'
+    EXPIRED: 'var(--text-muted)',
+    BLOCKED_BACKEND: 'var(--red)',
+    DEPLOYED_BACKEND: 'var(--green)'
   };
 
   useEffect(() => {
@@ -87,8 +100,8 @@ function SignalCard({ row, onDeploy, index }: { row: SignalRow; onDeploy?: (r: S
 
   return (
     <div
-      className={`opportunity-card ${row.status === 'ACCEPTED' ? glowClass : ''} card-entry`}
-      style={{ padding: '24px 22px', animationDelay: `${index * 0.08}s`, opacity: row.status !== 'ACCEPTED' && row.status !== 'PENDING' ? 0.6 : 1 }}
+      className={`opportunity-card ${finalStatus === 'ACCEPTED' || finalStatus === 'DEPLOYED_BACKEND' ? glowClass : ''} card-entry`}
+      style={{ padding: '24px 22px', animationDelay: `${index * 0.08}s`, opacity: (finalStatus !== 'ACCEPTED' && finalStatus !== 'DEPLOYED_BACKEND' && finalStatus !== 'PENDING') ? 0.6 : 1 }}
     >
       {/* Header */}
       <div style={{
@@ -126,14 +139,21 @@ function SignalCard({ row, onDeploy, index }: { row: SignalRow; onDeploy?: (r: S
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
           <div style={{
             padding: '4px 10px', borderRadius: '4px',
-            background: statusColors[row.status] || 'rgba(255,255,255,0.1)',
-            border: `1px solid ${statusBorder[row.status] || 'rgba(255,255,255,0.2)'}`,
-            fontSize: 10, fontWeight: 900, color: statusText[row.status] || '#fff', letterSpacing: '0.1em',
+            background: statusColors[finalStatus] || 'rgba(255,255,255,0.1)',
+            border: `1px solid ${statusBorder[finalStatus] || 'rgba(255,255,255,0.2)'}`,
+            fontSize: 10, fontWeight: 900, color: statusText[finalStatus] || '#fff', letterSpacing: '0.1em',
             display: 'flex', alignItems: 'center', gap: 4
           }}>
             {StatusIcon}
-            {row.status}
+            {backendState ? finalStatus.replace('_BACKEND', '') : 'UI_ONLY'}
           </div>
+
+          {backendState?.blockerReason && (
+            <div style={{ fontSize: 9, color: 'var(--red)', fontWeight: 800, maxWidth: 120, textAlign: 'right',lineHeight: 1.2 }}>
+              {backendState.blockerReason}
+            </div>
+          )}
+
           <div style={{
             fontSize: 10, fontWeight: 900, color: isSniper ? 'var(--gold-light)' : 'var(--blue)', letterSpacing: '0.1em',
           }}>

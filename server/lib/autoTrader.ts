@@ -19,6 +19,7 @@ export let TP2_RR = 2.50;
 export let MIN_SCORE = parseInt(process.env.MIN_SCORE_TO_DEPLOY || '15', 10);
 export let BTC_GATE_ENABLED = true; // When true: block LONGs if BTC printing consecutive red candles
 export let TRAIL_TP_ENABLED = false; // When true: uses a tight trailing stop instead of fixed TP
+export let CIRCUIT_BREAKER_ENABLED = false; // When true: block trades if same-side trades are down >25%
 export let isAutoTradingEnabled = false;
 const BASE_CAPITAL = parseFloat(process.env.BASE_CAPITAL || '300');
 
@@ -37,8 +38,9 @@ try {
     MIN_SCORE = saved.MIN_SCORE ?? MIN_SCORE;
     BTC_GATE_ENABLED = saved.BTC_GATE_ENABLED ?? BTC_GATE_ENABLED;
     TRAIL_TP_ENABLED = saved.TRAIL_TP_ENABLED ?? TRAIL_TP_ENABLED;
+    CIRCUIT_BREAKER_ENABLED = saved.CIRCUIT_BREAKER_ENABLED ?? CIRCUIT_BREAKER_ENABLED;
     isAutoTradingEnabled = saved.isAutoTradingEnabled ?? isAutoTradingEnabled;
-    console.log(`[Persistence] Loaded state: AUTO=${isAutoTradingEnabled} MIN_SCORE=${MIN_SCORE} BTC_GATE=${BTC_GATE_ENABLED} TRAIL=${TRAIL_TP_ENABLED}`);
+    console.log(`[Persistence] Loaded state: AUTO=${isAutoTradingEnabled} MIN_SCORE=${MIN_SCORE} BTC_GATE=${BTC_GATE_ENABLED} TRAIL=${TRAIL_TP_ENABLED} CB=${CIRCUIT_BREAKER_ENABLED}`);
   }
 } catch (e) {
   console.warn('[Persistence] Failed to load state file');
@@ -46,7 +48,10 @@ try {
 
 function saveState() {
   try {
-    const data = { RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED, TP1_ONLY, TP1_RR, TP2_RR, MIN_SCORE, BTC_GATE_ENABLED, TRAIL_TP_ENABLED, isAutoTradingEnabled };
+    const data = { RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED, TP1_ONLY, TP1_RR, TP2_RR, MIN_SCORE, BTC_GATE_ENABLED,
+    TRAIL_TP_ENABLED,
+    CIRCUIT_BREAKER_ENABLED,
+    isAutoTradingEnabled };
     fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
   } catch (e) {
     console.warn('[Persistence] Failed to save state');
@@ -65,6 +70,7 @@ export function updateTraderConfig(config: {
   minScore?: number;
   btcGateEnabled?: boolean;
   trailTpEnabled?: boolean;
+  circuitBreakerEnabled?: boolean;
 }) {
   if (config.riskPerTrade !== undefined) RISK_PER_TRADE = config.riskPerTrade;
   if (config.maxConcurrent !== undefined) MAX_CONCURRENT_TRADES = config.maxConcurrent;
@@ -77,6 +83,7 @@ export function updateTraderConfig(config: {
   if (config.minScore !== undefined) MIN_SCORE = config.minScore;
   if (config.btcGateEnabled !== undefined) BTC_GATE_ENABLED = config.btcGateEnabled;
   if (config.trailTpEnabled !== undefined) TRAIL_TP_ENABLED = config.trailTpEnabled;
+  if (config.circuitBreakerEnabled !== undefined) CIRCUIT_BREAKER_ENABLED = config.circuitBreakerEnabled;
   
   saveState();
   logMsg(`Config Updated & Saved: MIN_SCORE=${MIN_SCORE} TRAIL=${TRAIL_TP_ENABLED} SL=${SL_ENABLED} TP=${TP_ENABLED}`);
@@ -89,6 +96,19 @@ export function toggleAutoTrade(enabled: boolean) {
 }
 
 export const tradeLogs: string[] = [];
+
+export interface BackendSignalState {
+  signalId: string;
+  symbol: string;
+  createdAt: number;
+  source: 'BACKEND';
+  backendDecision: 'BLOCKED_BACKEND' | 'DEPLOYED_BACKEND' | 'PENDING';
+  backendDecisionAt: number;
+  blockerReason?: string;
+  deployedOrderId?: string;
+}
+
+export const backendSignalCache: Record<string, BackendSignalState> = {};
 
 function logMsg(msg: string) {
   console.log(`[AutoTrader] ${msg}`);
@@ -226,55 +246,78 @@ export async function runTraderLoop() {
       const currentSideShorts = activePos.filter(p => parseFloat(p.positionAmt) < 0);
 
       const sym = row.symbol;
-      if (activePos.some(p => p.symbol === sym)) continue;
+      const sigId = row.id;
+      
+      if (!backendSignalCache[sigId]) {
+         backendSignalCache[sigId] = {
+            signalId: sigId,
+            symbol: sym,
+            createdAt: Date.now(),
+            source: 'BACKEND',
+            backendDecision: 'PENDING',
+            backendDecisionAt: 0
+         };
+      }
 
       const sig = row.signal;
 
+      if (activePos.some(p => p.symbol === sym)) {
+         backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
+         backendSignalCache[sigId].backendDecisionAt = Date.now();
+         backendSignalCache[sigId].blockerReason = `Already holding active position for ${sym}.`;
+         continue;
+      }
+
       // ─── WAVE DEPLOYMENT GATES — each logs the EXACT reason for blocking ───
+      let isBlocked = false;
+      let blockReason = '';
+
       if (sig.side === 'LONG') {
          if (currentSideLongs.length >= MAX_SAME_SIDE_POSITIONS) {
-            logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — Wave Cap: holding ${currentSideLongs.length}/${MAX_SAME_SIDE_POSITIONS} LONGs already.`);
-            continue;
-         }
-         if (longsInDeepRed >= 1) {
-            logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — Circuit Breaker: ${longsInDeepRed} LONG(s) in deep red (>25% loss). Not adding more risk.`);
-            continue;
-         }
-         if (deployedLongsThisScan >= MAX_DEPLOY_PER_SCAN) {
-            logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — Cluster Limit: already deployed ${MAX_DEPLOY_PER_SCAN} LONGs this scan cycle.`);
-            continue;
-         }
-         if (BTC_GATE_ENABLED) {
+            blockReason = `Wave Cap: holding ${currentSideLongs.length}/${MAX_SAME_SIDE_POSITIONS} LONGs already.`;
+            isBlocked = true;
+         } else if (CIRCUIT_BREAKER_ENABLED && longsInDeepRed >= 1) {
+            blockReason = `Circuit Breaker: ${longsInDeepRed} LONG(s) in deep red (>25% loss). Not adding more risk.`;
+            isBlocked = true;
+         } else if (deployedLongsThisScan >= MAX_DEPLOY_PER_SCAN) {
+            blockReason = `Cluster Limit: already deployed ${MAX_DEPLOY_PER_SCAN} LONGs this scan cycle.`;
+            isBlocked = true;
+         } else if (BTC_GATE_ENABLED) {
             const btcCheck = checkBtcConfirmation('LONG');
             if (!btcCheck.ok) {
-               logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — BTC Gate: ${btcCheck.reason}`);
-               continue;
+               blockReason = `BTC Gate: ${btcCheck.reason}`;
+               isBlocked = true;
             }
          } else {
             logMsg(`⚠️ NOTE [${sym}] BTC Gate is OFF — skipping BTC candle confirmation.`);
          }
       } else {
          if (currentSideShorts.length >= MAX_SAME_SIDE_POSITIONS) {
-            logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — Wave Cap: holding ${currentSideShorts.length}/${MAX_SAME_SIDE_POSITIONS} SHORTs already.`);
-            continue;
-         }
-         if (shortsInDeepRed >= 1) {
-            logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — Circuit Breaker: ${shortsInDeepRed} SHORT(s) in deep red (>25% loss). Not adding more risk.`);
-            continue;
-         }
-         if (deployedShortsThisScan >= MAX_DEPLOY_PER_SCAN) {
-            logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — Cluster Limit: already deployed ${MAX_DEPLOY_PER_SCAN} SHORTs this scan cycle.`);
-            continue;
-         }
-         if (BTC_GATE_ENABLED) {
+            blockReason = `Wave Cap: holding ${currentSideShorts.length}/${MAX_SAME_SIDE_POSITIONS} SHORTs already.`;
+            isBlocked = true;
+         } else if (CIRCUIT_BREAKER_ENABLED && shortsInDeepRed >= 1) {
+            blockReason = `Circuit Breaker: ${shortsInDeepRed} SHORT(s) in deep red (>25% loss). Not adding more risk.`;
+            isBlocked = true;
+         } else if (deployedShortsThisScan >= MAX_DEPLOY_PER_SCAN) {
+            blockReason = `Cluster Limit: already deployed ${MAX_DEPLOY_PER_SCAN} SHORTs this scan cycle.`;
+            isBlocked = true;
+         } else if (BTC_GATE_ENABLED) {
             const btcCheck = checkBtcConfirmation('SHORT');
             if (!btcCheck.ok) {
-               logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — BTC Gate: ${btcCheck.reason}`);
-               continue;
+               blockReason = `BTC Gate: ${btcCheck.reason}`;
+               isBlocked = true;
             }
          } else {
             logMsg(`⚠️ NOTE [${sym}] BTC Gate is OFF — skipping BTC candle confirmation.`);
          }
+      }
+
+      if (isBlocked) {
+         logMsg(`❌ BLOCKED [${sym}] Score:${sig.score} — ${blockReason}`);
+         backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
+         backendSignalCache[sigId].backendDecisionAt = Date.now();
+         backendSignalCache[sigId].blockerReason = blockReason;
+         continue;
       }
 
       const tradeSizeUSDT = balance * RISK_PER_TRADE; // e.g. 10% of base capital
@@ -385,14 +428,24 @@ export async function runTraderLoop() {
 
         logMsg(`✅ DEPLOYED: ${sym} ${sig.side} | SL: ${SL_ENABLED ? sig.stopLoss.toFixed(4) : 'OFF'} | TP: ${TP_ENABLED ? (TP1_ONLY ? 'TP1-ONLY' : 'TP1+TP2') : 'OFF'}`);
         
+        backendSignalCache[sigId].backendDecision = 'DEPLOYED_BACKEND';
+        backendSignalCache[sigId].backendDecisionAt = Date.now();
+        backendSignalCache[sigId].deployedOrderId = String(entryRes.orderId || 'PENDING');
+
         if (sig.side === 'LONG') deployedLongsThisScan++;
         if (sig.side === 'SHORT') deployedShortsThisScan++;
 
-      } catch(e: any) {
-        logMsg(`❌ ERR executing ${sym}: ${e.message}`);
-        console.error(`Full error for ${sym}:`, e);
+      } catch (err: any) {
+        logMsg(`❌ DEPLOY FAILED [${sym}]: ${err.message}`);
+        backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
+        backendSignalCache[sigId].backendDecisionAt = Date.now();
+        backendSignalCache[sigId].blockerReason = `Exchange execution rejected: ${err.message}`;
+        console.error(`Full error for ${sym}:`, err);
       }
     }
+
+    // Persist current cache truth for verification
+    fs.writeFileSync(path.join(process.cwd(), 'backend_signals.json'), JSON.stringify(backendSignalCache, null, 2));
 
   } catch (error: any) {
     logMsg(`CRITICAL ERROR inside runTraderLoop: ${error.message}`);

@@ -4,10 +4,8 @@ import {
   getPositions, getBalance, setLeverage, binanceRequest
 } from '../lib/binance';
 import {
-  isAutoTradingEnabled, toggleAutoTrade, tradeLogs,
-  RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED,
-  TP1_ONLY, TP1_RR, TP2_RR, MIN_SCORE, BTC_GATE_ENABLED, TRAIL_TP_ENABLED,
-  CIRCUIT_BREAKER_ENABLED, updateTraderConfig, backendSignalCache
+  TRADER_CONFIG, toggleAutoTrade, tradeLogs,
+  updateTraderConfig, backendSignalCache
 } from '../lib/autoTrader';
 
 export const tradeRouter = Router();
@@ -25,22 +23,22 @@ function resolveBaseUrl(mode?: string): string {
 
 tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
   res.json({
-    enabled: isAutoTradingEnabled,
-    autoTrading: isAutoTradingEnabled,
+    enabled: TRADER_CONFIG.isAutoTradingEnabled,
+    autoTrading: TRADER_CONFIG.isAutoTradingEnabled,
     logs: tradeLogs,
     config: {
-      riskPerTrade: RISK_PER_TRADE,
-      maxConcurrent: MAX_CONCURRENT_TRADES,
-      leverage: LEVERAGE,
-      slEnabled: SL_ENABLED,
-      tpEnabled: TP_ENABLED,
-      tp1Only: TP1_ONLY,
-      tp1Rr: TP1_RR,
-      tp2Rr: TP2_RR,
-      minScore: MIN_SCORE,
-      btcGate: BTC_GATE_ENABLED,
-      trailTp: TRAIL_TP_ENABLED,
-      circuitBreaker: CIRCUIT_BREAKER_ENABLED
+      riskPerTrade: TRADER_CONFIG.RISK_PER_TRADE,
+      maxConcurrent: TRADER_CONFIG.MAX_CONCURRENT_TRADES,
+      leverage: TRADER_CONFIG.LEVERAGE,
+      slEnabled: TRADER_CONFIG.SL_ENABLED,
+      tpEnabled: TRADER_CONFIG.TP_ENABLED,
+      tp1Only: TRADER_CONFIG.TP1_ONLY,
+      tp1Rr: TRADER_CONFIG.TP1_RR,
+      tp2Rr: TRADER_CONFIG.TP2_RR,
+      minScore: TRADER_CONFIG.MIN_SCORE,
+      btcGate: TRADER_CONFIG.BTC_GATE_ENABLED,
+      trailTp: TRADER_CONFIG.TRAIL_TP_ENABLED,
+      circuitBreaker: TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED
     },
     signals: backendSignalCache
   });
@@ -56,25 +54,25 @@ tradeRouter.get('/logs', requireAuth, (req: any, res: any) => {
 
 tradeRouter.post('/toggle', requireAuth, (req: any, res: any) => {
   // Use explicit value from body when provided; otherwise flip current state
-  const desired = req.body?.enabled !== undefined ? !!req.body.enabled : !isAutoTradingEnabled;
+  const desired = req.body?.enabled !== undefined ? !!req.body.enabled : !TRADER_CONFIG.isAutoTradingEnabled;
   toggleAutoTrade(desired);
-  res.json({ enabled: isAutoTradingEnabled });
+  res.json({ enabled: TRADER_CONFIG.isAutoTradingEnabled });
 });
 
 tradeRouter.get('/config', requireAuth, (req: any, res: any) => {
   res.json({
-    riskPerTrade: RISK_PER_TRADE,
-    maxConcurrent: MAX_CONCURRENT_TRADES,
-    leverage: LEVERAGE,
-    slEnabled: SL_ENABLED,
-    tpEnabled: TP_ENABLED,
-    tp1Only: TP1_ONLY,
-    tp1RR: TP1_RR,
-    tp2RR: TP2_RR,
-    minScore: MIN_SCORE,
-    btcGateEnabled: BTC_GATE_ENABLED,
-    trailTpEnabled: TRAIL_TP_ENABLED,
-    circuitBreakerEnabled: CIRCUIT_BREAKER_ENABLED
+    riskPerTrade: TRADER_CONFIG.RISK_PER_TRADE,
+    maxConcurrent: TRADER_CONFIG.MAX_CONCURRENT_TRADES,
+    leverage: TRADER_CONFIG.LEVERAGE,
+    slEnabled: TRADER_CONFIG.SL_ENABLED,
+    tpEnabled: TRADER_CONFIG.TP_ENABLED,
+    tp1Only: TRADER_CONFIG.TP1_ONLY,
+    tp1RR: TRADER_CONFIG.TP1_RR,
+    tp2RR: TRADER_CONFIG.TP2_RR,
+    minScore: TRADER_CONFIG.MIN_SCORE,
+    btcGateEnabled: TRADER_CONFIG.BTC_GATE_ENABLED,
+    trailTpEnabled: TRADER_CONFIG.TRAIL_TP_ENABLED,
+    circuitBreakerEnabled: TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED
   });
 });
 

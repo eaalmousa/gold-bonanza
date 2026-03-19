@@ -1,0 +1,393 @@
+{
+  "QNTUSDT-BREAKOUT-1773889924817": {
+    "signalId": "QNTUSDT-BREAKOUT-1773889924817",
+    "symbol": "QNTUSDT",
+    "createdAt": 1773889924817,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773889976607
+  },
+  "ENAUSDT-SNIPER-1773889926757": {
+    "signalId": "ENAUSDT-SNIPER-1773889926757",
+    "symbol": "ENAUSDT",
+    "createdAt": 1773889926757,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889977385,
+    "blockerReason": "Already holding active position for ENAUSDT."
+  },
+  "ICPUSDT-SNIPER-1773889959088": {
+    "signalId": "ICPUSDT-SNIPER-1773889959088",
+    "symbol": "ICPUSDT",
+    "createdAt": 1773889959088,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889984525,
+    "blockerReason": "Already holding active position for ICPUSDT."
+  },
+  "ASTERUSDT-SNIPER-1773889959066": {
+    "signalId": "ASTERUSDT-SNIPER-1773889959066",
+    "symbol": "ASTERUSDT",
+    "createdAt": 1773889959066,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889985124,
+    "blockerReason": "Already holding active position for ASTERUSDT."
+  },
+  "QNTUSDT-BREAKOUT-1773889965205": {
+    "signalId": "QNTUSDT-BREAKOUT-1773889965205",
+    "symbol": "QNTUSDT",
+    "createdAt": 1773889965205,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773889982266
+  },
+  "XTZUSDT-BREAKOUT-1773889973369": {
+    "signalId": "XTZUSDT-BREAKOUT-1773889973369",
+    "symbol": "XTZUSDT",
+    "createdAt": 1773889973369,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773889982266
+  },
+  "DOTUSDT-SNIPER-1773889953138": {
+    "signalId": "DOTUSDT-SNIPER-1773889953138",
+    "symbol": "DOTUSDT",
+    "createdAt": 1773889953138,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889985477,
+    "blockerReason": "Already holding active position for DOTUSDT."
+  },
+  "SKYUSDT-SNIPER-1773889959138": {
+    "signalId": "SKYUSDT-SNIPER-1773889959138",
+    "symbol": "SKYUSDT",
+    "createdAt": 1773889959138,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889985837,
+    "blockerReason": "Already holding active position for SKYUSDT."
+  },
+  "ENAUSDT-SNIPER-1773889965208": {
+    "signalId": "ENAUSDT-SNIPER-1773889965208",
+    "symbol": "ENAUSDT",
+    "createdAt": 1773889965208,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889986079,
+    "blockerReason": "Already holding active position for ENAUSDT."
+  },
+  "ENAUSDT-SNIPER-1773890049694": {
+    "signalId": "ENAUSDT-SNIPER-1773890049694",
+    "symbol": "ENAUSDT",
+    "createdAt": 1773890049694,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890127985,
+    "blockerReason": "Already holding active position for ENAUSDT."
+  },
+  "DOTUSDT-SNIPER-1773890071195": {
+    "signalId": "DOTUSDT-SNIPER-1773890071195",
+    "symbol": "DOTUSDT",
+    "createdAt": 1773890071195,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890148407,
+    "blockerReason": "Already holding active position for DOTUSDT."
+  },
+  "SKYUSDT-SNIPER-1773890077485": {
+    "signalId": "SKYUSDT-SNIPER-1773890077485",
+    "symbol": "SKYUSDT",
+    "createdAt": 1773890077485,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890148647,
+    "blockerReason": "Already holding active position for SKYUSDT."
+  },
+  "XTZUSDT-SNIPER-1773890151708": {
+    "signalId": "XTZUSDT-SNIPER-1773890151708",
+    "symbol": "XTZUSDT",
+    "createdAt": 1773890151708,
+    "source": "BACKEND",
+    "backendDecision": "DEPLOYED_BACKEND",
+    "backendDecisionAt": 1773890166117,
+    "deployedOrderId": "12743494483"
+  },
+  "QNTUSDT-BREAKOUT-1773890580635": {
+    "signalId": "QNTUSDT-BREAKOUT-1773890580635",
+    "symbol": "QNTUSDT",
+    "createdAt": 1773890580635,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773890655501
+  },
+  "QNTUSDT-BREAKOUT-1773890809752": {
+    "signalId": "QNTUSDT-BREAKOUT-1773890809752",
+    "symbol": "QNTUSDT",
+    "createdAt": 1773890809752,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773890870129
+  },
+  "QNTUSDT-BREAKOUT-1773890858920": {
+    "signalId": "QNTUSDT-BREAKOUT-1773890858920",
+    "symbol": "QNTUSDT",
+    "createdAt": 1773890858920,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773890878178
+  },
+  "XTZUSDT-SNIPER-1773890871422": {
+    "signalId": "XTZUSDT-SNIPER-1773890871422",
+    "symbol": "XTZUSDT",
+    "createdAt": 1773890871422,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890879178,
+    "blockerReason": "Already holding active position for XTZUSDT."
+  },
+  "QNTUSDT-BREAKOUT-1773890976496": {
+    "signalId": "QNTUSDT-BREAKOUT-1773890976496",
+    "symbol": "QNTUSDT",
+    "createdAt": 1773890976496,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773891015675
+  },
+  "QNTUSDT-BREAKOUT-1773891031509": {
+    "signalId": "QNTUSDT-BREAKOUT-1773891031509",
+    "symbol": "QNTUSDT",
+    "createdAt": 1773891031509,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773891052634
+  },
+  "QNTUSDT-BREAKOUT-1773891094063": {
+    "signalId": "QNTUSDT-BREAKOUT-1773891094063",
+    "symbol": "QNTUSDT",
+    "createdAt": 1773891094063,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773891146552
+  },
+  "QNTUSDT-BREAKOUT-1773891202561": {
+    "signalId": "QNTUSDT-BREAKOUT-1773891202561",
+    "symbol": "QNTUSDT",
+    "createdAt": 1773891202561,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773891214439
+  },
+  "QNTUSDT-BREAKOUT-1773891286908": {
+    "signalId": "QNTUSDT-BREAKOUT-1773891286908",
+    "symbol": "QNTUSDT",
+    "createdAt": 1773891286908,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773891356006
+  },
+  "QNTUSDT-BREAKOUT-1773891356481": {
+    "signalId": "QNTUSDT-BREAKOUT-1773891356481",
+    "symbol": "QNTUSDT",
+    "createdAt": 1773891356481,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773891395130
+  },
+  "QNTUSDT-BREAKOUT-1773891398705": {
+    "signalId": "QNTUSDT-BREAKOUT-1773891398705",
+    "symbol": "QNTUSDT",
+    "createdAt": 1773891398705,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773891409177
+  },
+  "SOLUSDT-SNIPER-1773892213710": {
+    "signalId": "SOLUSDT-SNIPER-1773892213710",
+    "symbol": "SOLUSDT",
+    "createdAt": 1773892213710,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773892229268,
+    "blockerReason": "Exchange execution rejected: Binance API 418: Way too many requests; IP(2.48.203.144) banned until 1773892439989. Please use the websocket for live updates to avoid bans."
+  },
+  "BNBUSDT-SNIPER-1773892275574": {
+    "signalId": "BNBUSDT-SNIPER-1773892275574",
+    "symbol": "BNBUSDT",
+    "createdAt": 1773892275574,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773892306984
+  },
+  "SOLUSDT-SNIPER-1773892275695": {
+    "signalId": "SOLUSDT-SNIPER-1773892275695",
+    "symbol": "SOLUSDT",
+    "createdAt": 1773892275695,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773892306984
+  },
+  "SYRUPUSDT-SNIPER-1773892293872": {
+    "signalId": "SYRUPUSDT-SNIPER-1773892293872",
+    "symbol": "SYRUPUSDT",
+    "createdAt": 1773892293872,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773892306984
+  },
+  "ETHUSDT-SNIPER-1773892339972": {
+    "signalId": "ETHUSDT-SNIPER-1773892339972",
+    "symbol": "ETHUSDT",
+    "createdAt": 1773892339972,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773892378262
+  },
+  "SEIUSDT-SNIPER-1773892361247": {
+    "signalId": "SEIUSDT-SNIPER-1773892361247",
+    "symbol": "SEIUSDT",
+    "createdAt": 1773892361247,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773892378262
+  },
+  "SYRUPUSDT-SNIPER-1773892367724": {
+    "signalId": "SYRUPUSDT-SNIPER-1773892367724",
+    "symbol": "SYRUPUSDT",
+    "createdAt": 1773892367724,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773892378262
+  },
+  "SOLUSDT-SNIPER-1773893774233": {
+    "signalId": "SOLUSDT-SNIPER-1773893774233",
+    "symbol": "SOLUSDT",
+    "createdAt": 1773893774233,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773893784057
+  },
+  "XLMUSDT-SNIPER-1773894014122": {
+    "signalId": "XLMUSDT-SNIPER-1773894014122",
+    "symbol": "XLMUSDT",
+    "createdAt": 1773894014122,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773894026209,
+    "blockerReason": "Exchange execution rejected: Binance API 418: Way too many requests; IP(2.48.203.144) banned until 1773894419448. Please use the websocket for live updates to avoid bans."
+  },
+  "SOLUSDT-SNIPER-1773894194360": {
+    "signalId": "SOLUSDT-SNIPER-1773894194360",
+    "symbol": "SOLUSDT",
+    "createdAt": 1773894194360,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773894214146,
+    "blockerReason": "Exchange execution rejected: Binance API 418: Way too many requests; IP(2.48.203.144) banned until 1773894419448. Please use the websocket for live updates to avoid bans."
+  },
+  "LINKUSDT-SNIPER-1773894195937": {
+    "signalId": "LINKUSDT-SNIPER-1773894195937",
+    "symbol": "LINKUSDT",
+    "createdAt": 1773894195937,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773894214717,
+    "blockerReason": "Exchange execution rejected: Binance API 418: Way too many requests; IP(2.48.203.144) banned until 1773894419448. Please use the websocket for live updates to avoid bans."
+  },
+  "ATOMUSDT-SNIPER-1773894200844": {
+    "signalId": "ATOMUSDT-SNIPER-1773894200844",
+    "symbol": "ATOMUSDT",
+    "createdAt": 1773894200844,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773894213218
+  },
+  "ATOMUSDT-SNIPER-1773894258873": {
+    "signalId": "ATOMUSDT-SNIPER-1773894258873",
+    "symbol": "ATOMUSDT",
+    "createdAt": 1773894258873,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773894273053
+  },
+  "SOLUSDT-SNIPER-1773894315390": {
+    "signalId": "SOLUSDT-SNIPER-1773894315390",
+    "symbol": "SOLUSDT",
+    "createdAt": 1773894315390,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773894338330
+  },
+  "LINKUSDT-SNIPER-1773894317827": {
+    "signalId": "LINKUSDT-SNIPER-1773894317827",
+    "symbol": "LINKUSDT",
+    "createdAt": 1773894317827,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773894338330
+  },
+  "XLMUSDT-SNIPER-1773894318980": {
+    "signalId": "XLMUSDT-SNIPER-1773894318980",
+    "symbol": "XLMUSDT",
+    "createdAt": 1773894318980,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773894338330
+  },
+  "WUSDT-SNIPER-1773894337508": {
+    "signalId": "WUSDT-SNIPER-1773894337508",
+    "symbol": "WUSDT",
+    "createdAt": 1773894337508,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773894338330
+  },
+  "SOLUSDT-SNIPER-1773894434487": {
+    "signalId": "SOLUSDT-SNIPER-1773894434487",
+    "symbol": "SOLUSDT",
+    "createdAt": 1773894434487,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773894457336
+  },
+  "LINKUSDT-SNIPER-1773894435526": {
+    "signalId": "LINKUSDT-SNIPER-1773894435526",
+    "symbol": "LINKUSDT",
+    "createdAt": 1773894435526,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773894457336
+  },
+  "ATOMUSDT-SNIPER-1773894439118": {
+    "signalId": "ATOMUSDT-SNIPER-1773894439118",
+    "symbol": "ATOMUSDT",
+    "createdAt": 1773894439118,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773894457336
+  },
+  "XLMUSDT-SNIPER-1773894435572": {
+    "signalId": "XLMUSDT-SNIPER-1773894435572",
+    "symbol": "XLMUSDT",
+    "createdAt": 1773894435572,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773894457336
+  },
+  "INJUSDT-SNIPER-1773894451244": {
+    "signalId": "INJUSDT-SNIPER-1773894451244",
+    "symbol": "INJUSDT",
+    "createdAt": 1773894451244,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773894457336
+  },
+  "WUSDT-SNIPER-1773894456673": {
+    "signalId": "WUSDT-SNIPER-1773894456673",
+    "symbol": "WUSDT",
+    "createdAt": 1773894456673,
+    "source": "BACKEND",
+    "backendDecision": "PENDING",
+    "backendDecisionAt": 1773894457336
+  }
+}

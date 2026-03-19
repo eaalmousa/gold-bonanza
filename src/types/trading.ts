@@ -71,6 +71,14 @@ export interface SignalRow {
   timestamp?: number;
   id: string; // Required for state tracking
   status: 'ACCEPTED' | 'REJECTED' | 'PENDING' | 'INVALIDATED' | 'EXPIRED' | 'DEPLOYED' | 'QUEUED' | 'CANCELLED';
+  
+  // Truth-Aligned Model
+  source?: 'FRONTEND' | 'BACKEND';
+  backendSeen?: boolean;
+  backendDecision?: 'UI_ONLY' | 'BLOCKED_BACKEND' | 'DEPLOYED_BACKEND' | 'ACCEPTED_BACKEND';
+  backendDecisionAt?: number;
+  blockerReason?: string;
+  deployedOrderId?: string;
 }
 
 export interface UnifiedTrace {

@@ -10,37 +10,118 @@ interface Props {
 }
 
 export default function PipelineSignals({ signals, onDeploy }: Props) {
+  const { backendSignals } = useTradingStore();
+  
+  // DRIVER: Calculate Cycle Summary based on backend state
+  const backendListAll = Object.values(backendSignals);
+  const deployedCount = backendListAll.filter(s => s.backendDecision === 'DEPLOYED_BACKEND').length;
+  const blockedCount = backendListAll.filter(s => s.backendDecision === 'BLOCKED_BACKEND').length;
+  const foundCount = backendListAll.length;
+
   const signalList = Array.isArray(signals) ? signals : [];
-  // Only display signals that are actively tradeable or pending/tracking
-  const displaySignals = signalList.filter(s => 
+
+
+  // Filter signals to keep only active/relevant ones
+  const filtered = signalList.filter(s => 
     s.status === 'ACCEPTED' || 
     s.status === 'PENDING' || 
     s.status === 'INVALIDATED' || 
     s.status === 'EXPIRED'
   );
 
-  if (!displaySignals.length) {
+  const backendList = filtered.filter(s => !!backendSignals[s.id]);
+  const frontendList = filtered.filter(s => !backendSignals[s.id]);
+
+  if (!filtered.length) {
     return (
       <section>
-        <SectionHeader count={0} />
+        <SectionHeader count={0} label="PIPELINE STATUS" />
         <EmptyState label="No active signals detected. Scanner is actively monitoring..." />
       </section>
     );
   }
 
   return (
-    <section>
-      <SectionHeader count={displaySignals.length} />
-      <div className="signal-grid">
-        {displaySignals.map((s, i) => (
-          <SignalCard key={s.id || `${s.symbol}-${i}`} row={s} onDeploy={onDeploy} index={i} />
-        ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
+      {/* CYCLE SUMMARY HEADER */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 24, padding: '16px 24px',
+        background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)',
+        marginBottom: -10
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: '0.1em', color: 'var(--text-muted)' }}>CYCLE SUMMARY:</div>
+        <div style={{ display: 'flex', gap: 16 }}>
+          <SummaryBadge label="SEEN" count={foundCount} color="var(--blue)" />
+          <SummaryBadge label="BLOCKED" count={blockedCount} color="var(--red)" />
+          <SummaryBadge label="DEPLOYED" count={deployedCount} color="var(--green)" />
+        </div>
       </div>
-    </section>
+
+      {/* SECTION A: BACKEND EXECUTION TRUTH */}
+      {backendList.length > 0 && (
+        <section>
+          <SectionHeader 
+            count={backendList.length} 
+            label="BACKEND EXECUTION TRUTH" 
+            sub="Authenticated server decisions only"
+            color="var(--gold)"
+          />
+          <div className="signal-grid">
+            {backendList.map((s, i) => (
+              <SignalCard key={s.id} row={s} onDeploy={onDeploy} index={i} isTruth={true} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* SECTION B: LOCAL SCANNER TELEMETRY */}
+      {frontendList.length > 0 && (
+        <section>
+          <SectionHeader 
+            count={frontendList.length} 
+            label="LOCAL SCANNER TELEMETRY" 
+            sub="Client-side only. Not yet verified by backend."
+            color="var(--blue)"
+          />
+          <div className="signal-grid" style={{ opacity: 0.8 }}>
+            {frontendList.map((s, i) => (
+              <SignalCard key={s.id} row={s} onDeploy={onDeploy} index={i} isTruth={false} />
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
   );
 }
 
-function SignalCard({ row, onDeploy, index }: { row: SignalRow; onDeploy?: (r: SignalRow) => void; index: number }) {
+function SummaryBadge({ label, count, color }: { label: string; count: number; color: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-secondary)' }}>{label}</div>
+      <div style={{
+        padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.03)',
+        border: `1px solid ${color}`, color: color, fontSize: 11, fontWeight: 900
+      }}>
+        {count}
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({ count, label, sub, color }: { count: number; label: string; sub?: string; color?: string }) {
+  return (
+    <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 12 }}>
+      <div>
+        <h2 style={{ fontSize: 13, fontWeight: 900, color: color || 'var(--text-primary)', letterSpacing: '0.15em', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+          {label} <span style={{ opacity: 0.5 }}>[{count}]</span>
+        </h2>
+        {sub && <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>{sub.toUpperCase()}</div>}
+      </div>
+    </div>
+  );
+}
+
+function SignalCard({ row, onDeploy, index, isTruth }: { row: SignalRow; onDeploy?: (r: SignalRow) => void; index: number; isTruth: boolean }) {
   const sig = row.signal;
   const sym = row.symbol.replace('USDT', '');
   const changePct = row.change24h ?? 0;
@@ -63,27 +144,33 @@ function SignalCard({ row, onDeploy, index }: { row: SignalRow; onDeploy?: (r: S
 
   const statusColors: any = {
     ACCEPTED: 'rgba(34, 197, 94, 0.1)',
+    ACCEPTED_BACKEND: 'rgba(34, 197, 94, 0.15)',
     PENDING: 'rgba(245, 158, 11, 0.1)',
     INVALIDATED: 'rgba(239, 68, 68, 0.1)',
     EXPIRED: 'rgba(100, 116, 139, 0.1)',
     BLOCKED_BACKEND: 'rgba(239, 68, 68, 0.15)',
-    DEPLOYED_BACKEND: 'rgba(34, 197, 94, 0.2)'
+    DEPLOYED_BACKEND: 'rgba(34, 197, 94, 0.2)',
+    UI_ONLY: 'rgba(59, 130, 246, 0.1)'
   };
   const statusBorder: any = {
     ACCEPTED: 'rgba(34, 197, 94, 0.3)',
+    ACCEPTED_BACKEND: 'rgba(34, 197, 94, 0.5)',
     PENDING: 'rgba(245, 158, 11, 0.3)',
     INVALIDATED: 'rgba(239, 68, 68, 0.3)',
     EXPIRED: 'rgba(100, 116, 139, 0.3)',
     BLOCKED_BACKEND: 'rgba(239, 68, 68, 0.5)',
-    DEPLOYED_BACKEND: 'rgba(34, 197, 94, 0.6)'
+    DEPLOYED_BACKEND: 'rgba(34, 197, 94, 0.6)',
+    UI_ONLY: 'rgba(59, 130, 246, 0.3)'
   };
   const statusText: any = {
     ACCEPTED: 'var(--green)',
+    ACCEPTED_BACKEND: 'var(--green)',
     PENDING: 'var(--amber)',
     INVALIDATED: 'var(--red)',
     EXPIRED: 'var(--text-muted)',
     BLOCKED_BACKEND: 'var(--red)',
-    DEPLOYED_BACKEND: 'var(--green)'
+    DEPLOYED_BACKEND: 'var(--green)',
+    UI_ONLY: 'var(--blue)'
   };
 
   useEffect(() => {
@@ -145,12 +232,18 @@ function SignalCard({ row, onDeploy, index }: { row: SignalRow; onDeploy?: (r: S
             display: 'flex', alignItems: 'center', gap: 4
           }}>
             {StatusIcon}
-            {backendState ? finalStatus.replace('_BACKEND', '') : 'UI_ONLY'}
+            {isTruth ? finalStatus.replace('_BACKEND', '') : 'UI_TELEMETRY'}
           </div>
 
           {backendState?.blockerReason && (
-            <div style={{ fontSize: 9, color: 'var(--red)', fontWeight: 800, maxWidth: 120, textAlign: 'right',lineHeight: 1.2 }}>
+            <div style={{ fontSize: 9, color: 'var(--red)', fontWeight: 800, maxWidth: 120, textAlign: 'right', lineHeight: 1.2 }}>
               {backendState.blockerReason}
+            </div>
+          )}
+          
+          {backendState?.deployedOrderId && (
+            <div style={{ fontSize: 9, color: 'var(--green)', fontWeight: 800, maxWidth: 120, textAlign: 'right', lineHeight: 1.2 }}>
+              ORDER: {backendState.deployedOrderId}
             </div>
           )}
 
@@ -223,34 +316,40 @@ function SignalCard({ row, onDeploy, index }: { row: SignalRow; onDeploy?: (r: S
             ${(sig.sizeUSDT || 0).toFixed(2)}
           </span>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            style={{
-              padding: '10px 14px', fontSize: 11, cursor: 'pointer',
-              background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)',
-              borderRadius: 'var(--radius-sm)', color: '#818cf8',
-              display: 'flex', alignItems: 'center', gap: 5, fontWeight: 800,
-              transition: 'all 0.2s',
-            }}
-            onClick={() => setChartOpen(true)}
-          >
-            <BarChart2 size={14} />
-            CHART
-          </button>
-          
-          {row.status === 'ACCEPTED' && (
+          <div style={{ display: 'flex', gap: 8 }}>
             <button
-              className="premium-btn"
-              style={{ padding: '10px 22px', fontSize: 11 }}
-              onClick={() => onDeploy?.(row)}
+              style={{
+                padding: '10px 14px', fontSize: 11, cursor: 'pointer',
+                background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)',
+                borderRadius: 'var(--radius-sm)', color: '#818cf8',
+                display: 'flex', alignItems: 'center', gap: 5, fontWeight: 800,
+                transition: 'all 0.2s',
+              }}
+              onClick={() => setChartOpen(true)}
             >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Zap size={14} />
-                DEPLOY
-              </span>
+              <BarChart2 size={14} />
+              CHART
             </button>
-          )}
-        </div>
+            
+            {(isTruth && row.status === 'ACCEPTED') && (
+              <button
+                className="premium-btn"
+                style={{ padding: '10px 22px', fontSize: 11 }}
+                onClick={() => onDeploy?.(row)}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Zap size={14} />
+                  DEPLOY
+                </span>
+              </button>
+            )}
+
+            {(!isTruth) && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)', padding: '0 12px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.05)' }}>
+                WAITING FOR BACKEND...
+              </div>
+            )}
+          </div>
       </div>
 
       {chartOpen && (
@@ -265,47 +364,9 @@ function SignalCard({ row, onDeploy, index }: { row: SignalRow; onDeploy?: (r: S
   );
 }
 
-function SectionHeader({ count }: { count: number }) {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      marginBottom: 20, paddingBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.05)'
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <ActivityIcon />
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.2em', color: 'var(--text-primary)' }}>
-            PIPELINE SIGNALS
-          </div>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
-            Unified live scanner opportunities
-          </div>
-        </div>
-      </div>
-      {count > 0 && (
-        <div className="animate-pulse-gold" style={{
-          padding: '8px 16px', borderRadius: 'var(--radius-full)',
-          background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)',
-          fontSize: 12, fontWeight: 900, color: 'var(--green)'
-        }}>
-          {count} ACTIVE
-        </div>
-      )}
-    </div>
-  );
-}
 
-function ActivityIcon() {
-  return (
-    <div style={{
-      width: 32, height: 32, borderRadius: 8,
-      background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center'
-    }}>
-      <TrendingUp size={16} color="var(--text-secondary)" />
-    </div>
-  );
-}
+
+
 
 function EmptyState({ label }: { label: string }) {
   return (

@@ -67,7 +67,7 @@ global.fetch = async () => ({
 
 async function runTest() {
     console.log(`--- RUNNING CIRCUIT BREAKER TEST ---`);
-    console.log(`Initial Config -> Circuit Breaker: ${autoTrader.CIRCUIT_BREAKER_ENABLED}, Max Concurrent: ${autoTrader.MAX_CONCURRENT_TRADES}`);
+    console.log(`Initial Config -> Circuit Breaker: ${autoTrader.TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED}, Max Concurrent: ${autoTrader.TRADER_CONFIG.MAX_CONCURRENT_TRADES}`);
     
     // Hack the toggle to ON so the engine runs its internal iteration
     autoTrader.toggleAutoTrade(true);

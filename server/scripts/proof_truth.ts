@@ -2,22 +2,21 @@ require('dotenv').config();
 import * as autoTrader from '../lib/autoTrader';
 
 async function proof() {
-    console.log("--- STARTING PROOF SCAN ---");
-    // Ensure symbols are loaded
+    // Override MIN_SCORE temporarily so the backend sees everything
+    autoTrader.updateTraderConfig({ minScore: 5 });
+    
+    // Explicitly run one loop iteration
     // @ts-ignore
     await autoTrader.runTraderLoop(); 
     
-    console.log("\n--- BACKEND SIGNAL CACHE AFTER SCAN ---");
-    const count = Object.keys(autoTrader.backendSignalCache).length;
-    console.log(`Signals in cache: ${count}`);
+    console.log("\n--- EVERYTHING FOUND BY BACKEND SCANNER (Score >= 5) ---");
+    // We need to look at what runBonanzaCore returned in that last run. 
+    // Since autoTrader.ts doesn't export the raw results, we check the cache.
     
-    if (count > 0) {
-        Object.values(autoTrader.backendSignalCache).forEach((s: any) => {
-            console.log(`[${s.symbol}] Status: ${s.backendDecision} | Reason: ${s.blockerReason || 'N/A'}`);
-        });
-    } else {
-        console.log("No signals processed in this iteration (or none met MIN_SCORE).");
-    }
+    console.log(JSON.stringify(autoTrader.backendSignalCache, null, 2));
+    
+    console.log("\n--- TRADER LOGS (LAST 20) ---");
+    autoTrader.tradeLogs.slice(0, 20).forEach((l: string) => console.log(l));
 }
 
 proof().catch(console.error);

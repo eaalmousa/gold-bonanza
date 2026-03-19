@@ -6,41 +6,44 @@ import { DEFAULT_SYMBOLS } from '../../src/types/trading';
 import fs from 'fs';
 import path from 'path';
 
-const STATE_FILE = path.join(process.cwd(), 'trader_state.json');
+const STATE_FILE = path.resolve(__dirname, '../../trader_state.json');
 
-export let RISK_PER_TRADE = parseFloat(process.env.RISK_PER_TRADE || '0.10');
-export let MAX_CONCURRENT_TRADES = parseInt(process.env.MAX_CONCURRENT_TRADES || '8', 10);
-export let LEVERAGE = parseInt(process.env.LEVERAGE || '10', 10);
-export let SL_ENABLED = true;
-export let TP_ENABLED = true;
-export let TP1_ONLY = false;   // When true: 100% exit at TP1 only, no TP2
-export let TP1_RR = 1.25;
-export let TP2_RR = 2.50;
-export let MIN_SCORE = parseInt(process.env.MIN_SCORE_TO_DEPLOY || '15', 10);
-export let BTC_GATE_ENABLED = true; // When true: block LONGs if BTC printing consecutive red candles
-export let TRAIL_TP_ENABLED = false; // When true: uses a tight trailing stop instead of fixed TP
-export let CIRCUIT_BREAKER_ENABLED = false; // When true: block trades if same-side trades are down >25%
-export let isAutoTradingEnabled = false;
+export const TRADER_CONFIG = {
+  RISK_PER_TRADE: parseFloat(process.env.RISK_PER_TRADE || '0.10'),
+  MAX_CONCURRENT_TRADES: parseInt(process.env.MAX_CONCURRENT_TRADES || '8', 10),
+  LEVERAGE: parseInt(process.env.LEVERAGE || '10', 10),
+  SL_ENABLED: true,
+  TP_ENABLED: true,
+  TP1_ONLY: false,
+  TP1_RR: 1.25,
+  TP2_RR: 2.50,
+  MIN_SCORE: parseInt(process.env.MIN_SCORE_TO_DEPLOY || '15', 10),
+  BTC_GATE_ENABLED: true,
+  TRAIL_TP_ENABLED: false,
+  CIRCUIT_BREAKER_ENABLED: false,
+  isAutoTradingEnabled: false
+};
+
 const BASE_CAPITAL = parseFloat(process.env.BASE_CAPITAL || '300');
 
 // Load persisted state on startup
 try {
   if (fs.existsSync(STATE_FILE)) {
     const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    RISK_PER_TRADE = saved.RISK_PER_TRADE ?? RISK_PER_TRADE;
-    MAX_CONCURRENT_TRADES = saved.MAX_CONCURRENT_TRADES ?? MAX_CONCURRENT_TRADES;
-    LEVERAGE = saved.LEVERAGE ?? LEVERAGE;
-    SL_ENABLED = saved.SL_ENABLED ?? SL_ENABLED;
-    TP_ENABLED = saved.TP_ENABLED ?? TP_ENABLED;
-    TP1_ONLY = saved.TP1_ONLY ?? TP1_ONLY;
-    TP1_RR = saved.TP1_RR ?? TP1_RR;
-    TP2_RR = saved.TP2_RR ?? TP2_RR;
-    MIN_SCORE = saved.MIN_SCORE ?? MIN_SCORE;
-    BTC_GATE_ENABLED = saved.BTC_GATE_ENABLED ?? BTC_GATE_ENABLED;
-    TRAIL_TP_ENABLED = saved.TRAIL_TP_ENABLED ?? TRAIL_TP_ENABLED;
-    CIRCUIT_BREAKER_ENABLED = saved.CIRCUIT_BREAKER_ENABLED ?? CIRCUIT_BREAKER_ENABLED;
-    isAutoTradingEnabled = saved.isAutoTradingEnabled ?? isAutoTradingEnabled;
-    console.log(`[Persistence] Loaded state: AUTO=${isAutoTradingEnabled} MIN_SCORE=${MIN_SCORE} BTC_GATE=${BTC_GATE_ENABLED} TRAIL=${TRAIL_TP_ENABLED} CB=${CIRCUIT_BREAKER_ENABLED}`);
+    TRADER_CONFIG.RISK_PER_TRADE = saved.RISK_PER_TRADE ?? TRADER_CONFIG.RISK_PER_TRADE;
+    TRADER_CONFIG.MAX_CONCURRENT_TRADES = saved.MAX_CONCURRENT_TRADES ?? TRADER_CONFIG.MAX_CONCURRENT_TRADES;
+    TRADER_CONFIG.LEVERAGE = saved.LEVERAGE ?? TRADER_CONFIG.LEVERAGE;
+    TRADER_CONFIG.SL_ENABLED = saved.SL_ENABLED ?? TRADER_CONFIG.SL_ENABLED;
+    TRADER_CONFIG.TP_ENABLED = saved.TP_ENABLED ?? TRADER_CONFIG.TP_ENABLED;
+    TRADER_CONFIG.TP1_ONLY = saved.TP1_ONLY ?? TRADER_CONFIG.TP1_ONLY;
+    TRADER_CONFIG.TP1_RR = saved.TP1_RR ?? TRADER_CONFIG.TP1_RR;
+    TRADER_CONFIG.TP2_RR = saved.TP2_RR ?? TRADER_CONFIG.TP2_RR;
+    TRADER_CONFIG.MIN_SCORE = saved.MIN_SCORE ?? TRADER_CONFIG.MIN_SCORE;
+    TRADER_CONFIG.BTC_GATE_ENABLED = saved.BTC_GATE_ENABLED ?? TRADER_CONFIG.BTC_GATE_ENABLED;
+    TRADER_CONFIG.TRAIL_TP_ENABLED = saved.TRAIL_TP_ENABLED ?? TRADER_CONFIG.TRAIL_TP_ENABLED;
+    TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED = saved.CIRCUIT_BREAKER_ENABLED ?? TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED;
+    TRADER_CONFIG.isAutoTradingEnabled = saved.isAutoTradingEnabled ?? TRADER_CONFIG.isAutoTradingEnabled;
+    console.log(`[Persistence] Loaded state: AUTO=${TRADER_CONFIG.isAutoTradingEnabled} MIN_SCORE=${TRADER_CONFIG.MIN_SCORE} BTC_GATE=${TRADER_CONFIG.BTC_GATE_ENABLED} TRAIL=${TRADER_CONFIG.TRAIL_TP_ENABLED} CB=${TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED}`);
   }
 } catch (e) {
   console.warn('[Persistence] Failed to load state file');
@@ -48,11 +51,7 @@ try {
 
 function saveState() {
   try {
-    const data = { RISK_PER_TRADE, MAX_CONCURRENT_TRADES, LEVERAGE, SL_ENABLED, TP_ENABLED, TP1_ONLY, TP1_RR, TP2_RR, MIN_SCORE, BTC_GATE_ENABLED,
-    TRAIL_TP_ENABLED,
-    CIRCUIT_BREAKER_ENABLED,
-    isAutoTradingEnabled };
-    fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
+    fs.writeFileSync(STATE_FILE, JSON.stringify(TRADER_CONFIG, null, 2));
   } catch (e) {
     console.warn('[Persistence] Failed to save state');
   }
@@ -72,25 +71,25 @@ export function updateTraderConfig(config: {
   trailTpEnabled?: boolean;
   circuitBreakerEnabled?: boolean;
 }) {
-  if (config.riskPerTrade !== undefined) RISK_PER_TRADE = config.riskPerTrade;
-  if (config.maxConcurrent !== undefined) MAX_CONCURRENT_TRADES = config.maxConcurrent;
-  if (config.leverage !== undefined) LEVERAGE = config.leverage;
-  if (config.slEnabled !== undefined) SL_ENABLED = config.slEnabled;
-  if (config.tpEnabled !== undefined) TP_ENABLED = config.tpEnabled;
-  if (config.tp1Only !== undefined) TP1_ONLY = config.tp1Only;
-  if (config.tp1RR !== undefined) TP1_RR = config.tp1RR;
-  if (config.tp2RR !== undefined) TP2_RR = config.tp2RR;
-  if (config.minScore !== undefined) MIN_SCORE = config.minScore;
-  if (config.btcGateEnabled !== undefined) BTC_GATE_ENABLED = config.btcGateEnabled;
-  if (config.trailTpEnabled !== undefined) TRAIL_TP_ENABLED = config.trailTpEnabled;
-  if (config.circuitBreakerEnabled !== undefined) CIRCUIT_BREAKER_ENABLED = config.circuitBreakerEnabled;
+  if (config.riskPerTrade !== undefined) TRADER_CONFIG.RISK_PER_TRADE = config.riskPerTrade;
+  if (config.maxConcurrent !== undefined) TRADER_CONFIG.MAX_CONCURRENT_TRADES = config.maxConcurrent;
+  if (config.leverage !== undefined) TRADER_CONFIG.LEVERAGE = config.leverage;
+  if (config.slEnabled !== undefined) TRADER_CONFIG.SL_ENABLED = config.slEnabled;
+  if (config.tpEnabled !== undefined) TRADER_CONFIG.TP_ENABLED = config.tpEnabled;
+  if (config.tp1Only !== undefined) TRADER_CONFIG.TP1_ONLY = config.tp1Only;
+  if (config.tp1RR !== undefined) TRADER_CONFIG.TP1_RR = config.tp1RR;
+  if (config.tp2RR !== undefined) TRADER_CONFIG.TP2_RR = config.tp2RR;
+  if (config.minScore !== undefined) TRADER_CONFIG.MIN_SCORE = config.minScore;
+  if (config.btcGateEnabled !== undefined) TRADER_CONFIG.BTC_GATE_ENABLED = config.btcGateEnabled;
+  if (config.trailTpEnabled !== undefined) TRADER_CONFIG.TRAIL_TP_ENABLED = config.trailTpEnabled;
+  if (config.circuitBreakerEnabled !== undefined) TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED = config.circuitBreakerEnabled;
   
   saveState();
-  logMsg(`Config Updated & Saved: MIN_SCORE=${MIN_SCORE} TRAIL=${TRAIL_TP_ENABLED} SL=${SL_ENABLED} TP=${TP_ENABLED}`);
+  logMsg(`Config Updated & Saved: MIN_SCORE=${TRADER_CONFIG.MIN_SCORE} TRAIL=${TRADER_CONFIG.TRAIL_TP_ENABLED} SL=${TRADER_CONFIG.SL_ENABLED} TP=${TRADER_CONFIG.TP_ENABLED}`);
 }
 
 export function toggleAutoTrade(enabled: boolean) {
-  isAutoTradingEnabled = enabled;
+  TRADER_CONFIG.isAutoTradingEnabled = enabled;
   saveState();
   logMsg(`State changed and saved to: ${enabled ? 'ON' : 'OFF'}`);
 }
@@ -102,7 +101,7 @@ export interface BackendSignalState {
   symbol: string;
   createdAt: number;
   source: 'BACKEND';
-  backendDecision: 'BLOCKED_BACKEND' | 'DEPLOYED_BACKEND' | 'PENDING';
+  backendDecision: 'BLOCKED_BACKEND' | 'DEPLOYED_BACKEND' | 'PENDING' | 'ACCEPTED_BACKEND';
   backendDecisionAt: number;
   blockerReason?: string;
   deployedOrderId?: string;
@@ -116,18 +115,19 @@ function logMsg(msg: string) {
   if (tradeLogs.length > 200) tradeLogs.pop();
 }
 
-let activeSymbols: string[] = [];
-
 export async function runTraderLoop() {
-  if (!isAutoTradingEnabled) return;
+  if (!TRADER_CONFIG.isAutoTradingEnabled) return;
   
+  logMsg('--- STARTING AUTO-TRADER SCAN ---');
   try {
     const positions = await getPositions();
-    if (positions.length >= MAX_CONCURRENT_TRADES) {
-      logMsg(`Max capacity reached (${positions.length}/${MAX_CONCURRENT_TRADES}). Skipping scan.`);
+    if (positions.length >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
+      logMsg(`Max capacity reached (${positions.length}/${TRADER_CONFIG.MAX_CONCURRENT_TRADES}). Skipping scan.`);
       return;
     }
 
+    // Symbols to scan: Dynamic if Binance connected, else default list
+    let activeSymbols: string[] = [];
     if (!activeSymbols.length) {
       try {
         logMsg(`Fetching latest Top-200 dynamic universe...`);
@@ -141,7 +141,7 @@ export async function runTraderLoop() {
     }
     logMsg(`Scanning ${activeSymbols.length} dynamic symbols...`);
     // Use AGGRESSIVE mode mathematically, but we'll enforce the score threshold ourselves.
-    const mode = MODES.AGGRESSIVE;
+    const mode = TRADER_CONFIG.MAX_CONCURRENT_TRADES > 5 ? MODES.AGGRESSIVE : TRADER_CONFIG.MAX_CONCURRENT_TRADES > 2 ? MODES.BALANCED : MODES.CONSERVATIVE;
     let balance = BASE_CAPITAL;
     try {
       const actualBalance = await getBalance();
@@ -154,11 +154,32 @@ export async function runTraderLoop() {
     // NOTE: runBonanzaCore returns { pipelineSignals, pipelineTraces, marketRows, regimeLabel }
     const results = await runBonanzaCore(activeSymbols, mode, balance, undefined, {}, undefined);
     const allSignals = results.pipelineSignals || [];
+
+    // --- TRUTH SYNCHRONIZATION: Cache everything seen by core scan ---
+    allSignals.forEach(s => {
+      const sigId = s.id;
+      if (!backendSignalCache[sigId]) {
+        backendSignalCache[sigId] = {
+          signalId: sigId,
+          symbol: s.symbol,
+          createdAt: s.timestamp || Date.now(),
+          source: 'BACKEND',
+          backendDecision: 'PENDING',
+          backendDecisionAt: Date.now()
+        };
+      }
+      
+      // If score is too low, mark as blocked immediately
+      if (s.signal.score < TRADER_CONFIG.MIN_SCORE) {
+        backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
+        backendSignalCache[sigId].blockerReason = `Score ${s.signal.score.toFixed(1)} below required ${TRADER_CONFIG.MIN_SCORE}.`;
+      }
+    });
     
     // Sort combined by score desc, but EXCLUDE pending/invalidated breakouts
     const combined = allSignals
       .filter(s => {
-        if (!s.signal || s.signal.score < MIN_SCORE) return false;
+        if (!s.signal || s.signal.score < TRADER_CONFIG.MIN_SCORE) return false;
         const et = s.signal.entryType;
         // Only trade ACCEPTED sniper signals and RETEST_CONFIRMED breakouts
         if (s.status !== 'ACCEPTED') return false;
@@ -170,10 +191,10 @@ export async function runTraderLoop() {
       .sort((a, b) => b.signal.score - a.signal.score);
 
     if (combined.length === 0) {
-      logMsg(`Scan done. No signals >= ${MIN_SCORE} found.`);
+      logMsg(`Scan done. No signals >= ${TRADER_CONFIG.MIN_SCORE} found.`);
       return;
     }
-    logMsg(`Found ${combined.length} valid signals (Score >= ${MIN_SCORE}). Portfolio Wave Analysis running...`);
+    logMsg(`Found ${combined.length} valid signals (Score >= ${TRADER_CONFIG.MIN_SCORE}). Portfolio Wave Analysis running...`);
 
     // ─── PORTFOLIO WAVE & CIRCUIT BREAKER LOGIC ───
     const currentActivePos = await getPositions();
@@ -232,7 +253,7 @@ export async function runTraderLoop() {
         }
     }
 
-    const MAX_SAME_SIDE_POSITIONS = MAX_CONCURRENT_TRADES; // Match user's MAX TRADES — no arbitrary side cap
+    const MAX_SAME_SIDE_POSITIONS = TRADER_CONFIG.MAX_CONCURRENT_TRADES; // Match user's MAX TRADES — no arbitrary side cap
     const MAX_DEPLOY_PER_SCAN = 2;     // Allow 2 best signals per scan cycle (was 1)
 
     let deployedLongsThisScan = 0;
@@ -240,7 +261,7 @@ export async function runTraderLoop() {
 
     for (const row of combined) {
       const activePos = await getPositions();
-      if (activePos.length >= MAX_CONCURRENT_TRADES) break;
+      if (activePos.length >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) break;
 
       const currentSideLongs = activePos.filter(p => parseFloat(p.positionAmt) > 0);
       const currentSideShorts = activePos.filter(p => parseFloat(p.positionAmt) < 0);
@@ -248,15 +269,10 @@ export async function runTraderLoop() {
       const sym = row.symbol;
       const sigId = row.id;
       
-      if (!backendSignalCache[sigId]) {
-         backendSignalCache[sigId] = {
-            signalId: sigId,
-            symbol: sym,
-            createdAt: Date.now(),
-            source: 'BACKEND',
-            backendDecision: 'PENDING',
-            backendDecisionAt: 0
-         };
+      // Update from PENDING to ACCEPTED_BACKEND as it enters the gated loop
+      if (backendSignalCache[sigId]) {
+        backendSignalCache[sigId].backendDecision = 'ACCEPTED_BACKEND';
+        backendSignalCache[sigId].backendDecisionAt = Date.now();
       }
 
       const sig = row.signal;
@@ -276,13 +292,13 @@ export async function runTraderLoop() {
          if (currentSideLongs.length >= MAX_SAME_SIDE_POSITIONS) {
             blockReason = `Wave Cap: holding ${currentSideLongs.length}/${MAX_SAME_SIDE_POSITIONS} LONGs already.`;
             isBlocked = true;
-         } else if (CIRCUIT_BREAKER_ENABLED && longsInDeepRed >= 1) {
+         } else if (TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED && longsInDeepRed >= 1) {
             blockReason = `Circuit Breaker: ${longsInDeepRed} LONG(s) in deep red (>25% loss). Not adding more risk.`;
             isBlocked = true;
          } else if (deployedLongsThisScan >= MAX_DEPLOY_PER_SCAN) {
             blockReason = `Cluster Limit: already deployed ${MAX_DEPLOY_PER_SCAN} LONGs this scan cycle.`;
             isBlocked = true;
-         } else if (BTC_GATE_ENABLED) {
+         } else if (TRADER_CONFIG.BTC_GATE_ENABLED) {
             const btcCheck = checkBtcConfirmation('LONG');
             if (!btcCheck.ok) {
                blockReason = `BTC Gate: ${btcCheck.reason}`;
@@ -295,13 +311,13 @@ export async function runTraderLoop() {
          if (currentSideShorts.length >= MAX_SAME_SIDE_POSITIONS) {
             blockReason = `Wave Cap: holding ${currentSideShorts.length}/${MAX_SAME_SIDE_POSITIONS} SHORTs already.`;
             isBlocked = true;
-         } else if (CIRCUIT_BREAKER_ENABLED && shortsInDeepRed >= 1) {
+         } else if (TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED && shortsInDeepRed >= 1) {
             blockReason = `Circuit Breaker: ${shortsInDeepRed} SHORT(s) in deep red (>25% loss). Not adding more risk.`;
             isBlocked = true;
          } else if (deployedShortsThisScan >= MAX_DEPLOY_PER_SCAN) {
             blockReason = `Cluster Limit: already deployed ${MAX_DEPLOY_PER_SCAN} SHORTs this scan cycle.`;
             isBlocked = true;
-         } else if (BTC_GATE_ENABLED) {
+         } else if (TRADER_CONFIG.BTC_GATE_ENABLED) {
             const btcCheck = checkBtcConfirmation('SHORT');
             if (!btcCheck.ok) {
                blockReason = `BTC Gate: ${btcCheck.reason}`;
@@ -320,15 +336,15 @@ export async function runTraderLoop() {
          continue;
       }
 
-      const tradeSizeUSDT = balance * RISK_PER_TRADE; // e.g. 10% of base capital
-      const leverageQty = tradeSizeUSDT * LEVERAGE;
+      const tradeSizeUSDT = balance * TRADER_CONFIG.RISK_PER_TRADE; // e.g. 10% of base capital
+      const leverageQty = tradeSizeUSDT * TRADER_CONFIG.LEVERAGE;
       const qty = Math.max(0.001, leverageQty / sig.entryPrice); // Note: proper step-size rounding needed per coin ideally
 
-      logMsg(`🚀 EXECUTING: ${sym} ${sig.side} (Score: ${sig.score}) | Risk Size: $${tradeSizeUSDT.toFixed(2)} at ${LEVERAGE}x leverage`);
+      logMsg(`🚀 EXECUTING: ${sym} ${sig.side} (Score: ${sig.score}) | Risk Size: $${tradeSizeUSDT.toFixed(2)} at ${TRADER_CONFIG.LEVERAGE}x leverage`);
 
       try {
-        logMsg(`[${sym}] Setting leverage to ${LEVERAGE}x...`);
-        await setLeverage(sym, LEVERAGE);
+        logMsg(`[${sym}] Setting leverage to ${TRADER_CONFIG.LEVERAGE}x...`);
+        await setLeverage(sym, TRADER_CONFIG.LEVERAGE);
         
         logMsg(`[${sym}] Placing entry MARKET ${sig.side} order...`);
         const entryRes = await placeMarketOrder(sym, sig.side === 'LONG' ? 'BUY' : 'SELL', qty);
@@ -340,7 +356,7 @@ export async function runTraderLoop() {
         const closeSide = sig.side === 'LONG' ? 'SELL' : 'BUY';
 
         // 🛡️ Place STOP LOSS (Technical - recalculated based on RR if needed, but here we use engine's stopLoss)
-        if (SL_ENABLED) {
+        if (TRADER_CONFIG.SL_ENABLED) {
           logMsg(`[${sym}] Setting technical SL at ${sig.stopLoss.toFixed(4)}...`);
           await placeStopMarket(sym, closeSide, sig.stopLoss);
         } else {
@@ -348,15 +364,15 @@ export async function runTraderLoop() {
         }
         
         // 💰 Place TAKE PROFIT orders — ENFORCED. If TP fails, we abort and log loudly.
-        if (TP_ENABLED) {
+        if (TRADER_CONFIG.TP_ENABLED) {
           const stopPrice = sig.entryPrice;
           const stopDist = Math.abs(stopPrice - sig.stopLoss);
           
           const tp1Price = sig.side === 'LONG'
-            ? stopPrice + (stopDist * TP1_RR)
-            : stopPrice - (stopDist * TP1_RR);
+            ? stopPrice + (stopDist * TRADER_CONFIG.TP1_RR)
+            : stopPrice - (stopDist * TRADER_CONFIG.TP1_RR);
 
-          if (TRAIL_TP_ENABLED) {
+          if (TRADER_CONFIG.TRAIL_TP_ENABLED) {
             logMsg(`[${sym}] TRAIL TP ON: Setting trailing stop (0.5% callback) activating at TP1 (${tp1Price.toFixed(4)})...`);
             try {
               await placeTrailingStopMarket(sym, closeSide, 0.5, tp1Price, qty);
@@ -375,9 +391,9 @@ export async function runTraderLoop() {
                 } catch (e) { /* silent fail on emergency */ }
               }
             }
-          } else if (TP1_ONLY) {
+          } else if (TRADER_CONFIG.TP1_ONLY) {
             // TP1 ONLY mode: close 100% of position at TP1
-            logMsg(`[${sym}] TP1-ONLY mode: Setting TP1 (100%) at ${tp1Price.toFixed(4)} (${TP1_RR}R)...`);
+            logMsg(`[${sym}] TP1-ONLY mode: Setting TP1 (100%) at ${tp1Price.toFixed(4)} (${TRADER_CONFIG.TP1_RR}R)...`);
             try {
               await placeTakeProfitMarket(sym, closeSide, tp1Price); // closePosition=true → full close
               logMsg(`[${sym}] ✅ TP1 placed successfully (full position).`);
@@ -394,12 +410,12 @@ export async function runTraderLoop() {
           } else {
             // TP1 + TP2 mode: 50/50 split
             const tp2Price = sig.side === 'LONG'
-              ? stopPrice + (stopDist * TP2_RR)
-              : stopPrice - (stopDist * TP2_RR);
+              ? stopPrice + (stopDist * TRADER_CONFIG.TP2_RR)
+              : stopPrice - (stopDist * TRADER_CONFIG.TP2_RR);
             const tp1Qty = qty * 0.5;
             const tp2Qty = qty * 0.5;
 
-            logMsg(`[${sym}] Setting TP1 (50%) at ${tp1Price.toFixed(4)} (${TP1_RR}R)...`);
+            logMsg(`[${sym}] Setting TP1 (50%) at ${tp1Price.toFixed(4)} (${TRADER_CONFIG.TP1_RR}R)...`);
             try {
               await placeTakeProfitMarket(sym, closeSide, tp1Price, tp1Qty);
               logMsg(`[${sym}] ✅ TP1 placed successfully.`);
@@ -414,7 +430,7 @@ export async function runTraderLoop() {
               continue; // Skip TP2
             }
 
-            logMsg(`[${sym}] Setting TP2 (50%) at ${tp2Price.toFixed(4)} (${TP2_RR}R)...`);
+            logMsg(`[${sym}] Setting TP2 (50%) at ${tp2Price.toFixed(4)} (${TRADER_CONFIG.TP2_RR}R)...`);
             try {
               await placeTakeProfitMarket(sym, closeSide, tp2Price, tp2Qty);
               logMsg(`[${sym}] ✅ TP2 placed successfully.`);
@@ -426,7 +442,7 @@ export async function runTraderLoop() {
           logMsg(`[${sym}] TP disabled in config. Skipping.`);
         }
 
-        logMsg(`✅ DEPLOYED: ${sym} ${sig.side} | SL: ${SL_ENABLED ? sig.stopLoss.toFixed(4) : 'OFF'} | TP: ${TP_ENABLED ? (TP1_ONLY ? 'TP1-ONLY' : 'TP1+TP2') : 'OFF'}`);
+        logMsg(`✅ DEPLOYED: ${sym} ${sig.side} | SL: ${TRADER_CONFIG.SL_ENABLED ? sig.stopLoss.toFixed(4) : 'OFF'} | TP: ${TRADER_CONFIG.TP_ENABLED ? (TRADER_CONFIG.TP1_ONLY ? 'TP1-ONLY' : 'TP1+TP2') : 'OFF'}`);
         
         backendSignalCache[sigId].backendDecision = 'DEPLOYED_BACKEND';
         backendSignalCache[sigId].backendDecisionAt = Date.now();
@@ -445,7 +461,7 @@ export async function runTraderLoop() {
     }
 
     // Persist current cache truth for verification
-    fs.writeFileSync(path.join(process.cwd(), 'backend_signals.json'), JSON.stringify(backendSignalCache, null, 2));
+    fs.writeFileSync(path.resolve(__dirname, '../../backend_signals.json'), JSON.stringify(backendSignalCache, null, 2));
 
   } catch (error: any) {
     logMsg(`CRITICAL ERROR inside runTraderLoop: ${error.message}`);

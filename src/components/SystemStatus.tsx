@@ -7,11 +7,21 @@ import { api } from '../services/api';
 export default function SystemStatus() {
   const { 
     activeMode, setMode, activeTrades: rawTrades, symbols: rawSymbols, 
-    isScannerActive, setScannerActive
+    isScannerActive, setScannerActive, binancePositions: rawPositions,
+    pipelineSignals: rawSignals
   } = useTradingStore();
 
   const activeTrades = Array.isArray(rawTrades) ? rawTrades : [];
   const symbols = Array.isArray(rawSymbols) ? rawSymbols : [];
+  const binancePositions = Array.isArray(rawPositions) ? rawPositions : [];
+  const pipelineSignals = Array.isArray(rawSignals) ? rawSignals : [];
+
+  // TRUTH RECONCILIATION: Match Header logic
+  const binanceSymbolsSet = new Set(binancePositions.map(p => p.symbol.toUpperCase()));
+  const localOnlyCount = activeTrades.filter(t => !binanceSymbolsSet.has(t.symbol.toUpperCase())).length;
+  const pendingCount = pipelineSignals.filter(s => s.status === 'QUEUED').length;
+  const totalOpen = binancePositions.length + localOnlyCount + pendingCount;
+
 
   const [config, setConfig] = useState({
     riskPct: 0.04,
@@ -78,7 +88,7 @@ export default function SystemStatus() {
     }).catch(console.error);
   };
 
-  const capacity = activeTrades.length / config.maxTrades;
+  const capacity = totalOpen / config.maxTrades;
   const capacityPct = Math.min(100, Math.round((isNaN(capacity) ? 0 : capacity) * 100));
 
   const modes = [
@@ -109,7 +119,7 @@ export default function SystemStatus() {
             {!isLoaded ? 'SYNCING WITH CLOUD...' : 'SYSTEM STATUS'}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
-            {symbols.length} Pairs Monitored · {activeTrades.length}/{config.maxTrades} Positions Open
+            {symbols.length} Pairs Monitored · {totalOpen}/{config.maxTrades} Positions Open
           </div>
         </div>
 

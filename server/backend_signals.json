@@ -1,0 +1,452 @@
+{
+  "ICPUSDT-SNIPER-1773889256224": {
+    "signalId": "ICPUSDT-SNIPER-1773889256224",
+    "symbol": "ICPUSDT",
+    "createdAt": 1773889276169,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889276169,
+    "blockerReason": "Already holding active position for ICPUSDT."
+  },
+  "ASTERUSDT-SNIPER-1773889256231": {
+    "signalId": "ASTERUSDT-SNIPER-1773889256231",
+    "symbol": "ASTERUSDT",
+    "createdAt": 1773889276406,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889276406,
+    "blockerReason": "Already holding active position for ASTERUSDT."
+  },
+  "DOTUSDT-SNIPER-1773889255564": {
+    "signalId": "DOTUSDT-SNIPER-1773889255564",
+    "symbol": "DOTUSDT",
+    "createdAt": 1773889276638,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889276638,
+    "blockerReason": "Already holding active position for DOTUSDT."
+  },
+  "SKYUSDT-SNIPER-1773889256232": {
+    "signalId": "SKYUSDT-SNIPER-1773889256232",
+    "symbol": "SKYUSDT",
+    "createdAt": 1773889276872,
+    "source": "BACKEND",
+    "backendDecision": "DEPLOYED_BACKEND",
+    "backendDecisionAt": 1773889279786,
+    "deployedOrderId": "351200025"
+  },
+  "ENAUSDT-SNIPER-1773889256896": {
+    "signalId": "ENAUSDT-SNIPER-1773889256896",
+    "symbol": "ENAUSDT",
+    "createdAt": 1773889280015,
+    "source": "BACKEND",
+    "backendDecision": "DEPLOYED_BACKEND",
+    "backendDecisionAt": 1773889282646,
+    "deployedOrderId": "13892852493"
+  },
+  "ICPUSDT-SNIPER-1773889332214": {
+    "signalId": "ICPUSDT-SNIPER-1773889332214",
+    "symbol": "ICPUSDT",
+    "createdAt": 1773889376242,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889376242,
+    "blockerReason": "Already holding active position for ICPUSDT."
+  },
+  "ASTERUSDT-SNIPER-1773889331991": {
+    "signalId": "ASTERUSDT-SNIPER-1773889331991",
+    "symbol": "ASTERUSDT",
+    "createdAt": 1773889377153,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889377153,
+    "blockerReason": "Already holding active position for ASTERUSDT."
+  },
+  "DOTUSDT-SNIPER-1773889330718": {
+    "signalId": "DOTUSDT-SNIPER-1773889330718",
+    "symbol": "DOTUSDT",
+    "createdAt": 1773889377478,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889377478,
+    "blockerReason": "Already holding active position for DOTUSDT."
+  },
+  "SKYUSDT-SNIPER-1773889332182": {
+    "signalId": "SKYUSDT-SNIPER-1773889332182",
+    "symbol": "SKYUSDT",
+    "createdAt": 1773889378656,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889378656,
+    "blockerReason": "Already holding active position for SKYUSDT."
+  },
+  "ENAUSDT-SNIPER-1773889335162": {
+    "signalId": "ENAUSDT-SNIPER-1773889335162",
+    "symbol": "ENAUSDT",
+    "createdAt": 1773889378971,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889378971,
+    "blockerReason": "Already holding active position for ENAUSDT."
+  },
+  "ICPUSDT-SNIPER-1773889391661": {
+    "signalId": "ICPUSDT-SNIPER-1773889391661",
+    "symbol": "ICPUSDT",
+    "createdAt": 1773889483663,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889483663,
+    "blockerReason": "Already holding active position for ICPUSDT."
+  },
+  "ASTERUSDT-SNIPER-1773889391084": {
+    "signalId": "ASTERUSDT-SNIPER-1773889391084",
+    "symbol": "ASTERUSDT",
+    "createdAt": 1773889484889,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889484889,
+    "blockerReason": "Already holding active position for ASTERUSDT."
+  },
+  "DOTUSDT-SNIPER-1773889385913": {
+    "signalId": "DOTUSDT-SNIPER-1773889385913",
+    "symbol": "DOTUSDT",
+    "createdAt": 1773889485307,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889485307,
+    "blockerReason": "Already holding active position for DOTUSDT."
+  },
+  "SKYUSDT-SNIPER-1773889390113": {
+    "signalId": "SKYUSDT-SNIPER-1773889390113",
+    "symbol": "SKYUSDT",
+    "createdAt": 1773889486521,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889486521,
+    "blockerReason": "Already holding active position for SKYUSDT."
+  },
+  "ENAUSDT-SNIPER-1773889393236": {
+    "signalId": "ENAUSDT-SNIPER-1773889393236",
+    "symbol": "ENAUSDT",
+    "createdAt": 1773889486855,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889486855,
+    "blockerReason": "Already holding active position for ENAUSDT."
+  },
+  "ICPUSDT-SNIPER-1773889513640": {
+    "signalId": "ICPUSDT-SNIPER-1773889513640",
+    "symbol": "ICPUSDT",
+    "createdAt": 1773889555291,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889555291,
+    "blockerReason": "Already holding active position for ICPUSDT."
+  },
+  "ASTERUSDT-SNIPER-1773889513189": {
+    "signalId": "ASTERUSDT-SNIPER-1773889513189",
+    "symbol": "ASTERUSDT",
+    "createdAt": 1773889555570,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889555570,
+    "blockerReason": "Already holding active position for ASTERUSDT."
+  },
+  "SKYUSDT-SNIPER-1773889513742": {
+    "signalId": "SKYUSDT-SNIPER-1773889513742",
+    "symbol": "SKYUSDT",
+    "createdAt": 1773889555837,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889555838,
+    "blockerReason": "Already holding active position for SKYUSDT."
+  },
+  "ENAUSDT-SNIPER-1773889516767": {
+    "signalId": "ENAUSDT-SNIPER-1773889516767",
+    "symbol": "ENAUSDT",
+    "createdAt": 1773889556107,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889556107,
+    "blockerReason": "Already holding active position for ENAUSDT."
+  },
+  "DOTUSDT-SNIPER-1773889569725": {
+    "signalId": "DOTUSDT-SNIPER-1773889569725",
+    "symbol": "DOTUSDT",
+    "createdAt": 1773889663740,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889663740,
+    "blockerReason": "Already holding active position for DOTUSDT."
+  },
+  "ENAUSDT-SNIPER-1773889583063": {
+    "signalId": "ENAUSDT-SNIPER-1773889583063",
+    "symbol": "ENAUSDT",
+    "createdAt": 1773889663993,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889663993,
+    "blockerReason": "Already holding active position for ENAUSDT."
+  },
+  "ENAUSDT-SNIPER-1773889699879": {
+    "signalId": "ENAUSDT-SNIPER-1773889699879",
+    "symbol": "ENAUSDT",
+    "createdAt": 1773889775370,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889775370,
+    "blockerReason": "Already holding active position for ENAUSDT."
+  },
+  "ASTERUSDT-SNIPER-1773889757578": {
+    "signalId": "ASTERUSDT-SNIPER-1773889757578",
+    "symbol": "ASTERUSDT",
+    "createdAt": 1773889834680,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889834680,
+    "blockerReason": "Already holding active position for ASTERUSDT."
+  },
+  "DOTUSDT-SNIPER-1773889751049": {
+    "signalId": "DOTUSDT-SNIPER-1773889751049",
+    "symbol": "DOTUSDT",
+    "createdAt": 1773889835341,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889835341,
+    "blockerReason": "Already holding active position for DOTUSDT."
+  },
+  "ICPUSDT-SNIPER-1773889810952": {
+    "signalId": "ICPUSDT-SNIPER-1773889810952",
+    "symbol": "ICPUSDT",
+    "createdAt": 1773889867190,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889867190,
+    "blockerReason": "Already holding active position for ICPUSDT."
+  },
+  "ASTERUSDT-SNIPER-1773889810919": {
+    "signalId": "ASTERUSDT-SNIPER-1773889810919",
+    "symbol": "ASTERUSDT",
+    "createdAt": 1773889867424,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889867424,
+    "blockerReason": "Already holding active position for ASTERUSDT."
+  },
+  "SKYUSDT-SNIPER-1773889811153": {
+    "signalId": "SKYUSDT-SNIPER-1773889811153",
+    "symbol": "SKYUSDT",
+    "createdAt": 1773889867943,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889867943,
+    "blockerReason": "Already holding active position for SKYUSDT."
+  },
+  "ENAUSDT-SNIPER-1773889819013": {
+    "signalId": "ENAUSDT-SNIPER-1773889819013",
+    "symbol": "ENAUSDT",
+    "createdAt": 1773889868178,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889868178,
+    "blockerReason": "Already holding active position for ENAUSDT."
+  },
+  "ICPUSDT-SNIPER-1773889869656": {
+    "signalId": "ICPUSDT-SNIPER-1773889869656",
+    "symbol": "ICPUSDT",
+    "createdAt": 1773889892636,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889892636,
+    "blockerReason": "Already holding active position for ICPUSDT."
+  },
+  "ASTERUSDT-SNIPER-1773889869658": {
+    "signalId": "ASTERUSDT-SNIPER-1773889869658",
+    "symbol": "ASTERUSDT",
+    "createdAt": 1773889892880,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889892880,
+    "blockerReason": "Already holding active position for ASTERUSDT."
+  },
+  "DOTUSDT-SNIPER-1773889867597": {
+    "signalId": "DOTUSDT-SNIPER-1773889867597",
+    "symbol": "DOTUSDT",
+    "createdAt": 1773889893645,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889893645,
+    "blockerReason": "Already holding active position for DOTUSDT."
+  },
+  "SKYUSDT-SNIPER-1773889869655": {
+    "signalId": "SKYUSDT-SNIPER-1773889869655",
+    "symbol": "SKYUSDT",
+    "createdAt": 1773889893955,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889893955,
+    "blockerReason": "Already holding active position for SKYUSDT."
+  },
+  "ENAUSDT-SNIPER-1773889870551": {
+    "signalId": "ENAUSDT-SNIPER-1773889870551",
+    "symbol": "ENAUSDT",
+    "createdAt": 1773889894560,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773889894560,
+    "blockerReason": "Already holding active position for ENAUSDT."
+  },
+  "ICPUSDT-SNIPER-1773889938718": {
+    "signalId": "ICPUSDT-SNIPER-1773889938718",
+    "symbol": "ICPUSDT",
+    "createdAt": 1773890029014,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890029014,
+    "blockerReason": "Already holding active position for ICPUSDT."
+  },
+  "ASTERUSDT-SNIPER-1773889938726": {
+    "signalId": "ASTERUSDT-SNIPER-1773889938726",
+    "symbol": "ASTERUSDT",
+    "createdAt": 1773890029351,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890029351,
+    "blockerReason": "Already holding active position for ASTERUSDT."
+  },
+  "DOTUSDT-SNIPER-1773889931040": {
+    "signalId": "DOTUSDT-SNIPER-1773889931040",
+    "symbol": "DOTUSDT",
+    "createdAt": 1773890029662,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890029662,
+    "blockerReason": "Already holding active position for DOTUSDT."
+  },
+  "SKYUSDT-SNIPER-1773889941664": {
+    "signalId": "SKYUSDT-SNIPER-1773889941664",
+    "symbol": "SKYUSDT",
+    "createdAt": 1773890029908,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890029908,
+    "blockerReason": "Already holding active position for SKYUSDT."
+  },
+  "ASTERUSDT-SNIPER-1773890058031": {
+    "signalId": "ASTERUSDT-SNIPER-1773890058031",
+    "symbol": "ASTERUSDT",
+    "createdAt": 1773890129918,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890129918,
+    "blockerReason": "Already holding active position for ASTERUSDT."
+  },
+  "SKYUSDT-SNIPER-1773890056463": {
+    "signalId": "SKYUSDT-SNIPER-1773890056463",
+    "symbol": "SKYUSDT",
+    "createdAt": 1773890130154,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890130154,
+    "blockerReason": "Already holding active position for SKYUSDT."
+  },
+  "ENAUSDT-SNIPER-1773890060156": {
+    "signalId": "ENAUSDT-SNIPER-1773890060156",
+    "symbol": "ENAUSDT",
+    "createdAt": 1773890131424,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890131424,
+    "blockerReason": "Already holding active position for ENAUSDT."
+  },
+  "XTZUSDT-SNIPER-1773890509633": {
+    "signalId": "XTZUSDT-SNIPER-1773890509633",
+    "symbol": "XTZUSDT",
+    "createdAt": 1773890555947,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890555947,
+    "blockerReason": "Already holding active position for XTZUSDT."
+  },
+  "XTZUSDT-SNIPER-1773890524143": {
+    "signalId": "XTZUSDT-SNIPER-1773890524143",
+    "symbol": "XTZUSDT",
+    "createdAt": 1773890586522,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890586522,
+    "blockerReason": "Already holding active position for XTZUSDT."
+  },
+  "XTZUSDT-SNIPER-1773890641226": {
+    "signalId": "XTZUSDT-SNIPER-1773890641226",
+    "symbol": "XTZUSDT",
+    "createdAt": 1773890702230,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773890702230,
+    "blockerReason": "Already holding active position for XTZUSDT."
+  },
+  "SOLUSDT-SNIPER-1773894291698": {
+    "signalId": "SOLUSDT-SNIPER-1773894291698",
+    "symbol": "SOLUSDT",
+    "createdAt": 1773894312401,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773894312618,
+    "blockerReason": "Exchange execution rejected: Binance API 418: Way too many requests; IP(2.48.203.144) banned until 1773894419448. Please use the websocket for live updates to avoid bans."
+  },
+  "LINKUSDT-SNIPER-1773894292399": {
+    "signalId": "LINKUSDT-SNIPER-1773894292399",
+    "symbol": "LINKUSDT",
+    "createdAt": 1773894312855,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773894313081,
+    "blockerReason": "Exchange execution rejected: Binance API 418: Way too many requests; IP(2.48.203.144) banned until 1773894419448. Please use the websocket for live updates to avoid bans."
+  },
+  "XLMUSDT-SNIPER-1773894292398": {
+    "signalId": "XLMUSDT-SNIPER-1773894292398",
+    "symbol": "XLMUSDT",
+    "createdAt": 1773894313620,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773894313834,
+    "blockerReason": "Exchange execution rejected: Binance API 418: Way too many requests; IP(2.48.203.144) banned until 1773894419448. Please use the websocket for live updates to avoid bans."
+  },
+  "INJUSDT-SNIPER-1773894302416": {
+    "signalId": "INJUSDT-SNIPER-1773894302416",
+    "symbol": "INJUSDT",
+    "createdAt": 1773894314090,
+    "source": "BACKEND",
+    "backendDecision": "DEPLOYED_BACKEND",
+    "backendDecisionAt": 1773894317896,
+    "deployedOrderId": "12636245352"
+  },
+  "WUSDT-SNIPER-1773894310717": {
+    "signalId": "WUSDT-SNIPER-1773894310717",
+    "symbol": "WUSDT",
+    "createdAt": 1773894318316,
+    "source": "BACKEND",
+    "backendDecision": "BLOCKED_BACKEND",
+    "backendDecisionAt": 1773894318548,
+    "blockerReason": "Exchange execution rejected: Binance API 418: Way too many requests; IP(2.48.203.144) banned until 1773894419448. Please use the websocket for live updates to avoid bans."
+  },
+  "SOLUSDT-SNIPER-1773894411444": {
+    "signalId": "SOLUSDT-SNIPER-1773894411444",
+    "symbol": "SOLUSDT",
+    "createdAt": 1773894429495,
+    "source": "BACKEND",
+    "backendDecision": "DEPLOYED_BACKEND",
+    "backendDecisionAt": 1773894432129,
+    "deployedOrderId": "204005904582"
+  },
+  "ATOMUSDT-SNIPER-1773894413999": {
+    "signalId": "ATOMUSDT-SNIPER-1773894413999",
+    "symbol": "ATOMUSDT",
+    "createdAt": 1773894432369,
+    "source": "BACKEND",
+    "backendDecision": "DEPLOYED_BACKEND",
+    "backendDecisionAt": 1773894435031,
+    "deployedOrderId": "24221437364"
+  }
+}

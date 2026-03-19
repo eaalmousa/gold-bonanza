@@ -6,9 +6,12 @@ import { api } from '../services/api';
 
 export default function SystemStatus() {
   const { 
-    activeMode, setMode, activeTrades, symbols, 
-    isScannerActive, setScannerActive 
+    activeMode, setMode, activeTrades: rawTrades, symbols: rawSymbols, 
+    isScannerActive, setScannerActive
   } = useTradingStore();
+
+  const activeTrades = Array.isArray(rawTrades) ? rawTrades : [];
+  const symbols = Array.isArray(rawSymbols) ? rawSymbols : [];
 
   const [config, setConfig] = useState({
     riskPct: 0.04,

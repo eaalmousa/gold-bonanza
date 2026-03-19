@@ -11,10 +11,14 @@ export default function CommandSyncHub() {
 
   // Pull from local store (manually-deployed trades and queued signals)
   const { 
-    activeTrades, pipelineSignals, 
+    activeTrades: rawTrades, pipelineSignals: rawSignals, 
     removeActiveTrade, deploySignal,
-    binancePositions, setBinancePositions
+    binancePositions: rawPositions, setBinancePositions
   } = useTradingStore();
+
+  const activeTrades = Array.isArray(rawTrades) ? rawTrades : [];
+  const pipelineSignals = Array.isArray(rawSignals) ? rawSignals : [];
+  const binancePositions = Array.isArray(rawPositions) ? rawPositions : [];
 
   useEffect(() => {
     let mounted = true;

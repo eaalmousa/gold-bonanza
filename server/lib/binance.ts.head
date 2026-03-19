@@ -1,0 +1,24 @@
+import crypto from 'crypto';
+
+const getApiKey = (url?: string) => {
+  const isTest = url?.includes('testnet') || url?.includes('demo-fapi') || process.env.BINANCE_BASE_URL?.includes('testnet');
+  if (isTest) {
+    if (process.env.BINANCE_TEST_API_KEY) return process.env.BINANCE_TEST_API_KEY;
+    console.warn('[Binance] WARNING: Mode is TESTNET/DEMO but BINANCE_TEST_API_KEY is missing. Falling back to BINANCE_API_KEY.');
+  }
+  return process.env.BINANCE_API_KEY || '';
+};
+
+const getApiSecret = (url?: string) => {
+  const isTest = url?.includes('testnet') || url?.includes('demo-fapi') || process.env.BINANCE_BASE_URL?.includes('testnet');
+  if (isTest && process.env.BINANCE_TEST_API_SECRET) return process.env.BINANCE_TEST_API_SECRET;
+  return process.env.BINANCE_API_SECRET || '';
+};
+
+const getBaseUrl = () => process.env.BINANCE_BASE_URL || 'https://demo-fapi.binance.com';
+
+function sign(queryString: string, url?: string): string {
+  const secret = getApiSecret(url);
+  if (!secret) throw new Error('BINANCE_API_SECRET is not set');
+  return crypto.createHmac('sha256', secret).update(queryString).digest('hex');
+}

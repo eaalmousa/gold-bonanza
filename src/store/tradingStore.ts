@@ -11,6 +11,7 @@ import type {
   MarketRegime, OrderFlowSnapshot
 } from '../types/trading';
 import { MODES } from '../types/trading';
+import { api } from '../services/api';
 import { executeOrder, toExecutionPayload } from '../services/executionAdapter';
 
 interface TradingState {
@@ -359,11 +360,17 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     });
   },
 
-  setExecutionMode: (mode) => set(state => ({
-    executionMode: mode,
-    // Keep paperMode flag in sync so lifecycle hooks see consistent state
-    paperMode: mode === 'PAPER' ? true : state.paperMode
-  })),
+  setExecutionMode: (mode) => {
+    set(state => ({
+      executionMode: mode,
+      paperMode: mode === 'PAPER' ? true : state.paperMode
+    }));
+    
+    // BACKEND SYNC: Push the execution mode truth to the server
+    api.updateAutoTradeConfig({ executionMode: mode }).catch((err: any) => {
+      console.error(`[Backend Sync] Failed to update execution mode:`, err);
+    });
+  },
 
   addExecutionResult: (result) => set(state => ({
     executionResults: [result, ...state.executionResults].slice(0, 100)

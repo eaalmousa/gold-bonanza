@@ -21,7 +21,7 @@ export const TRADER_CONFIG = {
   TRAIL_TP_ENABLED: false,
   CIRCUIT_BREAKER_ENABLED: false,
   isAutoTradingEnabled: false,
-  executionMode: 'BINANCE_TEST' as 'BINANCE_TEST' | 'BINANCE_LIVE'
+  executionMode: 'DEMO' as 'PAPER' | 'DEMO' | 'LIVE'
 };
 
 const BASE_CAPITAL = parseFloat(process.env.BASE_CAPITAL || '300');
@@ -71,7 +71,7 @@ export function updateTraderConfig(config: {
   btcGateEnabled?: boolean;
   trailTpEnabled?: boolean;
   circuitBreakerEnabled?: boolean;
-  executionMode?: 'BINANCE_TEST' | 'BINANCE_LIVE';
+  executionMode?: 'PAPER' | 'DEMO' | 'LIVE';
 }) {
   if (config.riskPerTrade !== undefined) TRADER_CONFIG.RISK_PER_TRADE = config.riskPerTrade;
   if (config.maxConcurrent !== undefined) TRADER_CONFIG.MAX_CONCURRENT_TRADES = config.maxConcurrent;
@@ -118,11 +118,10 @@ function logMsg(msg: string) {
   if (tradeLogs.length > 200) tradeLogs.pop();
 }
 
-function resolveBaseUrl(mode: string): string {
-  // If user has set a hard BASE_URL, we should respect it, 
-  // but for TEST vs LIVE separation we enforce standard endpoints.
-  if (mode === 'BINANCE_LIVE') return 'https://fapi.binance.com';
-  return 'https://testnet.binancefuture.com';
+function resolveBaseUrl(mode: string): string | null {
+  if (mode === 'LIVE') return 'https://fapi.binance.com';
+  if (mode === 'DEMO') return 'https://demo-fapi.binance.com';
+  return null; // PAPER mode
 }
 
 export async function evaluateFrontendSignals(allSignals: any[]) {
@@ -133,7 +132,7 @@ export async function evaluateFrontendSignals(allSignals: any[]) {
 
   logMsg(`--- STARTING EVALUATION [${mode}] ---`);
   
-  // 1. TRUTH SYNCHRONIZATION: Always update cache first so UI sees "Backend Reached"
+  // 1. TRUTH SYNCHRONIZATION: Always update cache first
   allSignals.forEach(s => {
     const sigId = s.id;
     if (!backendSignalCache[sigId]) {
@@ -149,27 +148,30 @@ export async function evaluateFrontendSignals(allSignals: any[]) {
   });
 
   try {
-    // 2. Fetch Account State (with isolation for the chosen mode)
     let activePos: any[] = [];
     let balance = BASE_CAPITAL;
     
-    try {
-      activePos = await getPositions(baseUrl);
-      const actualBalance = await getBalance(baseUrl);
-      if (actualBalance > 0) balance = actualBalance;
-    } catch (e: any) {
-      const is401 = e.message.includes('401');
-      const errorLabel = is401 ? 'Identity (401)' : 'Network';
-      logMsg(`CRITICAL ${errorLabel} ERROR fetch state: ${e.message}`);
-      
-      // If we can't talk to the exchange, we MUST mark all signals as blocked
-      allSignals.forEach(s => {
-        const sigId = s.id;
-        backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
-        backendSignalCache[sigId].blockerReason = `Exchange unreachable: ${e.message}`;
-        backendSignalCache[sigId].backendDecisionAt = Date.now();
-      });
-      return backendSignalCache;
+    // 2. Resolve Environment Capacity (Skip network if PAPER)
+    if (mode === 'PAPER' || !baseUrl) {
+      logMsg(`Mode is PAPER. Using simulated risk capacity.`);
+      activePos = []; // In paper mode we let the frontend handle tracking for now, or use a local log
+    } else {
+      try {
+        activePos = await getPositions(baseUrl);
+        const actualBalance = await getBalance(baseUrl);
+        if (actualBalance > 0) balance = actualBalance;
+      } catch (e: any) {
+        const is401 = e.message.includes('401');
+        logMsg(`CRITICAL ${is401 ? 'Identity (401)' : 'Network'} error fetch state: ${e.message}`);
+        
+        allSignals.forEach(s => {
+          const sigId = s.id;
+          backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
+          backendSignalCache[sigId].blockerReason = `Exchange unreachable (${mode}): ${e.message}`;
+          backendSignalCache[sigId].backendDecisionAt = Date.now();
+        });
+        return backendSignalCache;
+      }
     }
 
     if (activePos.length >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
@@ -278,37 +280,43 @@ export async function evaluateFrontendSignals(allSignals: any[]) {
       const qty = Math.max(0.001, (tradeSizeUSDT * TRADER_CONFIG.LEVERAGE) / sig.entryPrice); 
 
       try {
-        logMsg(`🚀 EXECUTING: ${sym} ${sig.side} | Qty: ${qty.toFixed(3)} | Mode: ${mode}`);
-        await setLeverage(sym, TRADER_CONFIG.LEVERAGE, baseUrl);
-        const entryRes = await placeMarketOrder(sym, sig.side === 'LONG' ? 'BUY' : 'SELL', qty, baseUrl);
-        
-        await new Promise(r => setTimeout(r, 1000));
-        const closeSide = sig.side === 'LONG' ? 'SELL' : 'BUY';
+        if (mode === 'PAPER' || !baseUrl) {
+          logMsg(`📝 PAPER DEPLOY: ${sym} ${sig.side} | Qty: ${qty.toFixed(3)}`);
+          backendSignalCache[sigId].backendDecision = 'DEPLOYED_BACKEND';
+          backendSignalCache[sigId].deployedOrderId = `PAPER_${Date.now()}`;
+        } else {
+          logMsg(`🚀 EXECUTING: ${sym} ${sig.side} | Qty: ${qty.toFixed(3)} | Mode: ${mode}`);
+          await setLeverage(sym, TRADER_CONFIG.LEVERAGE, baseUrl);
+          const entryRes = await placeMarketOrder(sym, sig.side === 'LONG' ? 'BUY' : 'SELL', qty, baseUrl);
+          
+          await new Promise(r => setTimeout(r, 1000));
+          const closeSide = sig.side === 'LONG' ? 'SELL' : 'BUY';
 
-        if (TRADER_CONFIG.SL_ENABLED) {
-          await placeStopMarket(sym, closeSide, sig.stopLoss, baseUrl);
-        }
-        
-        if (TRADER_CONFIG.TP_ENABLED) {
-          const tp1Price = sig.side === 'LONG'
-            ? sig.entryPrice + (Math.abs(sig.entryPrice - sig.stopLoss) * TRADER_CONFIG.TP1_RR)
-            : sig.entryPrice - (Math.abs(sig.entryPrice - sig.stopLoss) * TRADER_CONFIG.TP1_RR);
-
-          if (TRADER_CONFIG.TRAIL_TP_ENABLED) {
-            await placeTrailingStopMarket(sym, closeSide, 0.5, tp1Price, qty, baseUrl);
-          } else if (TRADER_CONFIG.TP1_ONLY) {
-            await placeTakeProfitMarket(sym, closeSide, tp1Price, undefined, baseUrl); 
-          } else {
-            const tp2Price = sig.side === 'LONG'
-              ? sig.entryPrice + (Math.abs(sig.entryPrice - sig.stopLoss) * TRADER_CONFIG.TP2_RR)
-              : sig.entryPrice - (Math.abs(sig.entryPrice - sig.stopLoss) * TRADER_CONFIG.TP2_RR);
-            await placeTakeProfitMarket(sym, closeSide, tp1Price, qty * 0.5, baseUrl);
-            await placeTakeProfitMarket(sym, closeSide, tp2Price, qty * 0.5, baseUrl);
+          if (TRADER_CONFIG.SL_ENABLED) {
+            await placeStopMarket(sym, closeSide, sig.stopLoss, baseUrl);
           }
-        }
+          
+          if (TRADER_CONFIG.TP_ENABLED) {
+            const tp1Price = sig.side === 'LONG'
+              ? sig.entryPrice + (Math.abs(sig.entryPrice - sig.stopLoss) * TRADER_CONFIG.TP1_RR)
+              : sig.entryPrice - (Math.abs(sig.entryPrice - sig.stopLoss) * TRADER_CONFIG.TP1_RR);
 
-        backendSignalCache[sigId].backendDecision = 'DEPLOYED_BACKEND';
-        backendSignalCache[sigId].deployedOrderId = String(entryRes.orderId || 'SUCCESS');
+            if (TRADER_CONFIG.TRAIL_TP_ENABLED) {
+              await placeTrailingStopMarket(sym, closeSide, 0.5, tp1Price, qty, baseUrl);
+            } else if (TRADER_CONFIG.TP1_ONLY) {
+              await placeTakeProfitMarket(sym, closeSide, tp1Price, undefined, baseUrl); 
+            } else {
+              const tp2Price = sig.side === 'LONG'
+                ? sig.entryPrice + (Math.abs(sig.entryPrice - sig.stopLoss) * TRADER_CONFIG.TP2_RR)
+                : sig.entryPrice - (Math.abs(sig.entryPrice - sig.stopLoss) * TRADER_CONFIG.TP2_RR);
+              await placeTakeProfitMarket(sym, closeSide, tp1Price, qty * 0.5, baseUrl);
+              await placeTakeProfitMarket(sym, closeSide, tp2Price, qty * 0.5, baseUrl);
+            }
+          }
+
+          backendSignalCache[sigId].backendDecision = 'DEPLOYED_BACKEND';
+          backendSignalCache[sigId].deployedOrderId = String(entryRes.orderId || 'SUCCESS');
+        }
         currentCapacity++;
         if (sig.side === 'LONG') deployedLongsThisScan++; else deployedShortsThisScan++;
 

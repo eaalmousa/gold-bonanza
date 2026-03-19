@@ -180,7 +180,7 @@ export interface PaperSession {
 
 // ─── Execution Adapter ────────────────────────────────────────────────────────
 
-export type ExecutionMode = 'PAPER' | 'BINANCE_TEST' | 'BINANCE_LIVE';
+export type ExecutionMode = 'PAPER' | 'DEMO' | 'LIVE';
 
 /** Canonical order payload passed to every execution path */
 export interface ExecutionPayload {

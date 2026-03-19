@@ -76,6 +76,20 @@ export const api = {
   getAutoTradeConfig: () => apiRequest('/trade/config'),
   getSignals: () => apiRequest('/trade/signals'),
   syncSignals: (signals: any[]) => apiRequest('/trade/sync', { method: 'POST', body: JSON.stringify({ signals }) }),
-  updateAutoTradeConfig: (config: { riskPerTrade?: number; maxConcurrent?: number; leverage?: number; slEnabled?: boolean; tpEnabled?: boolean; tp1Only?: boolean; tp1RR?: number; tp2RR?: number; minScore?: number; btcGateEnabled?: boolean; trailTpEnabled?: boolean; circuitBreakerEnabled?: boolean }) => 
+  updateAutoTradeConfig: (config: { 
+    riskPerTrade?: number; 
+    maxConcurrent?: number; 
+    leverage?: number; 
+    slEnabled?: boolean; 
+    tpEnabled?: boolean; 
+    tp1Only?: boolean; 
+    tp1RR?: number; 
+    tp2RR?: number; 
+    minScore?: number; 
+    btcGateEnabled?: boolean; 
+    trailTpEnabled?: boolean; 
+    circuitBreakerEnabled?: boolean;
+    executionMode?: 'PAPER' | 'DEMO' | 'LIVE';
+  }) => 
     apiRequest('/trade/config', { method: 'POST', body: JSON.stringify(config) }),
 };

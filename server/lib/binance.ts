@@ -1,21 +1,28 @@
 import crypto from 'crypto';
 
 const getApiKey = (url?: string) => {
-  const isTest = url?.includes('testnet') || process.env.BINANCE_BASE_URL?.includes('testnet');
+  const isTest = url?.includes('testnet') || url?.includes('demo-fapi') || process.env.BINANCE_BASE_URL?.includes('testnet');
   if (isTest) {
     if (process.env.BINANCE_TEST_API_KEY) return process.env.BINANCE_TEST_API_KEY;
-    console.warn('[Binance] WARNING: Mode is TESTNET but BINANCE_TEST_API_KEY is missing. Falling back to BINANCE_API_KEY (this will cause a 401 if it stays a Live Key)');
+    throw new Error('BINANCE_TEST_API_KEY is not set. Cannot execute in DEMO/TESTNET mode.');
   }
-  return process.env.BINANCE_API_KEY || '';
+  const liveKey = process.env.BINANCE_API_KEY;
+  if (!liveKey) throw new Error('BINANCE_API_KEY is not set. Cannot execute in LIVE mode.');
+  return liveKey;
 };
 
 const getApiSecret = (url?: string) => {
-  const isTest = url?.includes('testnet') || process.env.BINANCE_BASE_URL?.includes('testnet');
-  if (isTest && process.env.BINANCE_TEST_API_SECRET) return process.env.BINANCE_TEST_API_SECRET;
-  return process.env.BINANCE_API_SECRET || '';
+  const isTest = url?.includes('testnet') || url?.includes('demo-fapi') || process.env.BINANCE_BASE_URL?.includes('testnet');
+  if (isTest) {
+    if (process.env.BINANCE_TEST_API_SECRET) return process.env.BINANCE_TEST_API_SECRET;
+    throw new Error('BINANCE_TEST_API_SECRET is not set.');
+  }
+  const liveSecret = process.env.BINANCE_API_SECRET;
+  if (!liveSecret) throw new Error('BINANCE_API_SECRET is not set.');
+  return liveSecret;
 };
 
-const getBaseUrl = () => process.env.BINANCE_BASE_URL || 'https://testnet.binancefuture.com';
+const getBaseUrl = () => process.env.BINANCE_BASE_URL || 'https://demo-fapi.binance.com';
 
 function sign(queryString: string, url?: string): string {
   const secret = getApiSecret(url);

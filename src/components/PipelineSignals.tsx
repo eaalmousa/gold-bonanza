@@ -10,7 +10,7 @@ interface Props {
 }
 
 export default function PipelineSignals({ signals, onDeploy }: Props) {
-  const { backendSignals } = useTradingStore();
+  const { backendSignals, executionMode } = useTradingStore();
   
   // DRIVER: Calculate Cycle Summary based on backend state
   const backendListAll = Object.values(backendSignals);
@@ -63,7 +63,7 @@ export default function PipelineSignals({ signals, onDeploy }: Props) {
           <SectionHeader 
             count={backendList.length} 
             label="BACKEND EXECUTION TRUTH" 
-            sub="Authenticated server decisions only"
+            sub={`Authenticated server decisions [${executionMode}]`}
             color="var(--gold)"
           />
           <div className="signal-grid">

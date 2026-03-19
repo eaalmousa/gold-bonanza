@@ -14,7 +14,8 @@ export default function CommandSyncHub() {
   const { 
     activeTrades: rawTrades, pipelineSignals: rawSignals, 
     removeActiveTrade, deploySignal,
-    binancePositions: rawPositions, setBinancePositions
+    binancePositions: rawPositions, setBinancePositions,
+    executionMode, setExecutionMode
   } = useTradingStore();
 
   const activeTrades = Array.isArray(rawTrades) ? rawTrades : [];
@@ -77,6 +78,14 @@ export default function CommandSyncHub() {
     if (idx >= 0) removeActiveTrade(idx);
   };
 
+  const handleModeSwitch = (mode: 'PAPER' | 'DEMO' | 'LIVE') => {
+    if (mode === 'LIVE') {
+      const ok = window.confirm('⚠️ WARNING: You are switching to LIVE REAL-MONEY TRADING. Every trade deployed from this point will be executed on your real Binance account. Proceed?');
+      if (!ok) return;
+    }
+    setExecutionMode(mode);
+  };
+
   // CANONICAL count — same formula as Header.tsx and SystemStatus.tsx
   const { total: totalCount } = getCanonicalPositionCount(binancePositions, activeTrades, pipelineSignals);
 
@@ -103,13 +112,42 @@ export default function CommandSyncHub() {
             </div>
           </div>
         </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          fontSize: 10, fontWeight: 700,
-          color: binanceConnected ? 'var(--green)' : 'var(--text-muted)'
-        }}>
-          {binanceConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
-          {binanceConnected ? 'BINANCE LIVE' : 'LOCAL ONLY'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* Execution Mode Toggle */}
+          <div style={{ 
+            display: 'flex', background: 'rgba(0,0,0,0.3)', borderRadius: 'var(--radius-full)', 
+            padding: 4, border: '1px solid rgba(255,255,255,0.05)', marginRight: 12 
+          }}>
+            {(['PAPER', 'DEMO', 'LIVE'] as const).map(m => (
+              <button
+                key={m}
+                onClick={() => handleModeSwitch(m)}
+                style={{
+                  padding: '6px 14px', borderRadius: 'var(--radius-full)', border: 'none',
+                  fontSize: 9, fontWeight: 900, cursor: 'pointer',
+                  background: executionMode === m 
+                    ? (m === 'LIVE' ? 'rgba(239,68,68,0.2)' : m === 'DEMO' ? 'rgba(59,130,246,0.2)' : 'rgba(168,85,247,0.2)') 
+                    : 'transparent',
+                  color: executionMode === m 
+                    ? (m === 'LIVE' ? '#f87171' : m === 'DEMO' ? '#60a5fa' : '#c084fc') 
+                    : 'var(--text-muted)',
+                  transition: 'all 0.2s',
+                  letterSpacing: '0.1em'
+                }}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            fontSize: 10, fontWeight: 700,
+            color: binanceConnected ? 'var(--green)' : 'var(--text-muted)'
+          }}>
+            {binanceConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
+            {binanceConnected ? 'BINANCE API OK' : 'LOCAL ONLY'}
+          </div>
         </div>
       </div>
 

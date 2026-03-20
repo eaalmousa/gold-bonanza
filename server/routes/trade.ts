@@ -11,14 +11,17 @@ import {
 export const tradeRouter = Router();
 
 // BASE_URLS mapping for mode resolution
+// The frontend sends 'DEMO' | 'LIVE' — these are the canonical mode strings across the whole stack.
 const BASE_URLS: Record<string, string> = {
+  DEMO: 'https://demo-fapi.binance.com',
+  LIVE: 'https://fapi.binance.com',
+  // Legacy aliases (kept for safety)
   BINANCE_TEST: 'https://testnet.binancefuture.com',
   BINANCE_LIVE: 'https://fapi.binance.com',
 };
 
 function resolveBaseUrl(mode?: string): string {
-  if (mode === 'BINANCE_LIVE') return BASE_URLS.BINANCE_LIVE;
-  return BASE_URLS.BINANCE_TEST;
+  return BASE_URLS[mode ?? ''] ?? BASE_URLS.DEMO;
 }
 
 tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
@@ -118,16 +121,18 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
   } = req.body;
 
   // ── Guard: mode must be explicit ────────────────────────────────────────────
-  if (!mode || !['BINANCE_TEST', 'BINANCE_LIVE'].includes(mode)) {
+  const VALID_MODES = ['DEMO', 'LIVE', 'BINANCE_TEST', 'BINANCE_LIVE'];
+  if (!mode || !VALID_MODES.includes(mode)) {
     return res.status(400).json({
-      error: `Invalid or missing execution mode: "${mode}". Must be BINANCE_TEST or BINANCE_LIVE.`
+      error: `Invalid or missing execution mode: "${mode}". Must be one of: ${VALID_MODES.join(', ')}.`
     });
   }
 
-  // ── Guard: block BINANCE_LIVE via env flag ───────────────────────────────────
-  if (mode === 'BINANCE_LIVE' && process.env.ENABLE_LIVE_TRADING !== 'true') {
+  // ── Guard: block LIVE/BINANCE_LIVE via env flag ───────────────────────────────────
+  const isLive = mode === 'LIVE' || mode === 'BINANCE_LIVE';
+  if (isLive && process.env.ENABLE_LIVE_TRADING !== 'true') {
     return res.status(403).json({
-      error: 'BINANCE_LIVE mode is not enabled. Set ENABLE_LIVE_TRADING=true in server .env to unlock.'
+      error: 'LIVE mode is not enabled. Set ENABLE_LIVE_TRADING=true in server .env to unlock.'
     });
   }
 

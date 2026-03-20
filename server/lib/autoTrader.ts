@@ -286,7 +286,21 @@ export async function evaluateFrontendSignals(allSignals: any[]) {
           backendSignalCache[sigId].deployedOrderId = `PAPER_${Date.now()}`;
         } else {
           logMsg(`🚀 EXECUTING: ${sym} ${sig.side} | Qty: ${qty.toFixed(3)} | Mode: ${mode}`);
-          await setLeverage(sym, TRADER_CONFIG.LEVERAGE, baseUrl);
+          
+          // ── FORENSIC TRACE (remove after verification) ────────────────────
+          console.warn(`[FORENSIC:AutoTrader] ========= EXECUTION TRACE =========`);
+          console.warn(`[FORENSIC:AutoTrader] Symbol:       ${sym}`);
+          console.warn(`[FORENSIC:AutoTrader] Signal.side:  ${sig.side}`);
+          console.warn(`[FORENSIC:AutoTrader] entry:        ${sig.entryPrice}`);
+          console.warn(`[FORENSIC:AutoTrader] stopLoss:     ${sig.stopLoss}`);
+          console.warn(`[FORENSIC:AutoTrader] takeProfit:   ${sig.takeProfit}`);
+          console.warn(`[FORENSIC:AutoTrader] Geometry OK?: TP ${sig.side === 'LONG' ? '>' : '<'} entry = ${sig.side === 'LONG' ? sig.takeProfit > sig.entryPrice : sig.takeProfit < sig.entryPrice}`);
+          console.warn(`[FORENSIC:AutoTrader] SL geom OK?:  SL ${sig.side === 'LONG' ? '<' : '>'} entry = ${sig.side === 'LONG' ? sig.stopLoss < sig.entryPrice : sig.stopLoss > sig.entryPrice}`);
+          console.warn(`[FORENSIC:AutoTrader] orderSide:    ${sig.side === 'LONG' ? 'BUY' : 'SELL'}`);
+          console.warn(`[FORENSIC:AutoTrader] mode:         ${mode}`);
+          console.warn(`[FORENSIC:AutoTrader] baseUrl:      ${baseUrl}`);
+          console.warn(`[FORENSIC:AutoTrader] ==========================================`);
+          // ── END FORENSIC TRACE ────────────────────────────────────────────
           const entryRes = await placeMarketOrder(sym, sig.side === 'LONG' ? 'BUY' : 'SELL', qty, baseUrl);
           
           await new Promise(r => setTimeout(r, 1000));

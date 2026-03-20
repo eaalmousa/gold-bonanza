@@ -37,7 +37,9 @@ export async function runBonanzaCore(
   const pipelineSignals: SignalRow[]   = [];
   const pipelineTraces: UnifiedTrace[] = [];
   const marketRows: MarketRow[]      = [];
+  const signalsThisCycle = new Set<string>();
   let processed = 0;
+  let newSignalsThisScan = 0;
 
   // ─── STEP 1: Detect Market Regime using BTC ──────────────────
   let regime: MarketRegime = 'RANGING';
@@ -61,12 +63,8 @@ export async function runBonanzaCore(
     console.warn('[Scanner] Regime detection failed:', e?.message);
   }
 
-  // ─── STEP 2: Market-Correlation Limiter (User Request 3) ─────
   const openCount = currentOpenPositionCount ?? 0;
   const corrLimit = getCorrelationPositionLimit(regime, btc4hTrend, openCount);
-  // We do NOT return early here anymore because the UI needs the 24h tickers (Step 3) 
-  // to populate `marketRows` and keep the WebSockets alive. We enforce the block inside the loop.
-  // const corrLimit = getCorrelationPositionLimit(regime, btc4hTrend, openCount);
   console.log(`[Correlation Limiter] ${corrLimit.reason} | Max new: ${corrLimit.maxNewPositions}`);
 
   // ─── STEP 3: Fetch 24h tickers ───────────────────────────────
@@ -107,37 +105,17 @@ export async function runBonanzaCore(
     return { pipelineSignals: [], pipelineTraces: [], marketRows: [], regimeLabel };
   }
 
-  // ─── REGIME GATE ─────────────────────────────────────────────
-  // ─── STEP 3b: Populate Market Rows for UI Data Feed ─────────
-  // We populate marketRows universally from tickers so the UI stays alive 
-  // perfectly connecting websockets EVEN if signal generation gets blocked below.
   for (const sym of symbols) {
     if (tickers[sym] !== undefined) {
-      marketRows.push({ symbol: sym, lastPrice: 0, changePct: tickers[sym] }); // WebSocket will update lastPrice immediately
+      marketRows.push({ symbol: sym, lastPrice: 0, changePct: tickers[sym] }); 
     }
   }
 
-  // ─── REGIME GATE ─────────────────────────────────────────────
   if (regime === 'CRASH' && activeMode.key !== 'AGGRESSIVE') {
     console.log('[Scanner] CRASH regime — scan blocked (non-aggressive mode)');
     return { pipelineSignals: [], pipelineTraces: [], marketRows, regimeLabel };
   }
 
-  if (false && !corrLimit.allowNew) { // TEMP BYPASS FOR TRACE CAPTURE
-    console.log(`[Scanner] Correlation limiter (${corrLimit.reason}) — signal scanning bypassed, but UI feed active.`);
-    return { pipelineSignals: [], pipelineTraces: [], marketRows, regimeLabel };
-  }
-
-  // ─── STEP 4: Scan symbols in batches ─────────────────────────
-  // IMPORTANT: Promise.allSettled runs all batch items in parallel.
-  // signalsThisCycle and newSignalsThisScan CANNOT be checked reliably
-  // inside the parallel callbacks — doing so creates a race condition where
-  // multiple signals pass before any counter is updated.
-  //
-  // FIX: Each batch callback collects a "candidate" result. After the batch
-  // settles, we evaluate candidates sequentially to enforce caps correctly.
-  let newSignalsThisScan = 0;
-  const signalsThisCycle = new Set<string>();
   const defaultPortfolio: PortfolioSnapshot = portfolio ?? {
     openPositions: [],
     currentScanCycleStart: Date.now()
@@ -177,16 +155,8 @@ export async function runBonanzaCore(
     };
   }
 
-  type BatchCandidate = {
-    symbol: string;
-    sniperTrace: UnifiedTrace;
-    breakoutTrace: UnifiedTrace;
-    sniper?: { signal: any; price: number; change24h: number };
-    breakout?: { signal: any; price: number; change24h: number };
-  };
-
+  // ─── STEP 4: Scan symbols in batches ─────────────────────────
   for (let batch = 0; batch < symbols.length; batch += BATCH_SIZE) {
-    // Check cap BEFORE starting each batch
     if (newSignalsThisScan >= corrLimit.maxNewPositions) {
       console.log(`[Scanner] Correlation cap reached (${corrLimit.maxNewPositions}) — stopping early`);
       break;
@@ -194,41 +164,47 @@ export async function runBonanzaCore(
 
     const chunk = symbols.slice(batch, batch + BATCH_SIZE);
 
-    // ── Collect candidates in parallel (no counters touched here) ──
     const candidateResults = await Promise.allSettled(
-      chunk.map(async (symbol): Promise<BatchCandidate> => {
-        const [tf1h, tf15m] = await Promise.all([
-          fetchKlines(symbol, '1h', 220),
-          fetchKlines(symbol, '15m', 110)
-        ]);
-        const lastClose = tf15m?.length ? tf15m[tf15m.length - 1].close : 0;
-        const change24h = tickers[symbol] ?? 0;
-        // marketRows is already populated pre-loop, just update the lastPrice if we have it
-        const rowIdx = marketRows.findIndex(r => r.symbol === symbol);
-        if (rowIdx >= 0 && lastClose > 0) marketRows[rowIdx].lastPrice = lastClose;
-        const symbolFlow = orderFlowSnapshots?.[symbol];
-        const sniperLogStart = sniperLogs.length;
-        const sniper  = evaluateSniperSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, symbolFlow, btc4hTrend, regimeLabel, symbol);
-        const currentSniperLogs = sniperLogs.slice(sniperLogStart).find(l => l[0]?.includes(symbol)) || (sniper?.debugLog || []);
-        
-        const breakout = evaluateBreakoutSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, symbolFlow, btc4hTrend, regimeLabel, symbol);
-        const currentBreakoutLogs = breakout?.debugLog || []; // Only exports on accept unless we mod it.
-
+      chunk.map(async (symbol) => {
         const now = Date.now();
-        const sniperTrace = createTrace(symbol, 'SNIPER', currentSniperLogs, sniper, now);
-        const breakoutTrace = createTrace(symbol, 'BREAKOUT', currentBreakoutLogs, breakout, now);
+        try {
+          const [tf1h, tf15m] = await Promise.all([
+            fetchKlines(symbol, '1h', 220),
+            fetchKlines(symbol, '15m', 110)
+          ]);
+          const lastClose = tf15m?.length ? tf15m[tf15m.length - 1].close : 0;
+          const change24h = tickers[symbol] ?? 0;
+          
+          const rowIdx = marketRows.findIndex(r => r.symbol === symbol);
+          if (rowIdx >= 0 && lastClose > 0) marketRows[rowIdx].lastPrice = lastClose;
 
-        return {
-          symbol,
-          sniperTrace,
-          breakoutTrace,
-          sniper:  sniper  ? { signal: sniper,  price: lastClose, change24h } : undefined,
-          breakout: breakout ? { signal: breakout, price: lastClose, change24h } : undefined
-        };
+          const symbolFlow = orderFlowSnapshots?.[symbol];
+          const sniperLogStart = sniperLogs.length;
+          const sniper  = evaluateSniperSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, symbolFlow, btc4hTrend, regimeLabel, symbol);
+          const currentSniperLogs = sniperLogs.slice(sniperLogStart).find(l => l[0]?.includes(symbol)) || (sniper?.debugLog || []);
+          
+          const breakout = evaluateBreakoutSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, symbolFlow, btc4hTrend, regimeLabel, symbol);
+          const currentBreakoutLogs = breakout?.debugLog || [];
+
+          return {
+            symbol,
+            sniperTrace: createTrace(symbol, 'SNIPER', currentSniperLogs, sniper, now),
+            breakoutTrace: createTrace(symbol, 'BREAKOUT', currentBreakoutLogs, breakout, now),
+            sniper: sniper ? { signal: sniper, price: lastClose, change24h } : undefined,
+            breakout: breakout ? { signal: breakout, price: lastClose, change24h } : undefined
+          };
+        } catch (e: any) {
+          return {
+            symbol,
+            sniperTrace: { id: `${symbol}-SNIPER-FAIL-${now}`, symbol, engine: 'SNIPER', status: 'INVALIDATED' as const, lastRejectReason: `KLINE_FETCH_FAILED: ${e.message}`, timestamp: now },
+            breakoutTrace: { id: `${symbol}-BRAK-FAIL-${now}`, symbol, engine: 'BREAKOUT', status: 'INVALIDATED' as const, lastRejectReason: `KLINE_FETCH_FAILED: ${e.message}`, timestamp: now },
+            sniper: undefined,
+            breakout: undefined
+          };
+        }
       })
     );
 
-    // ── Evaluate candidates SEQUENTIALLY to enforce caps accurately ──
     for (const result of candidateResults) {
       if (result.status !== 'fulfilled') continue;
       const { symbol, sniper, breakout, sniperTrace, breakoutTrace } = result.value;
@@ -241,11 +217,10 @@ export async function runBonanzaCore(
       if (sniper?.signal && newSignalsThisScan < corrLimit.maxNewPositions) {
         const check = checkPortfolioExposure(symbol, sniper.signal.side, regime as any, btc4hTrend, defaultPortfolio, signalsThisCycle);
         if (check.allowed) {
-          const id = sniperTrace.id; // use unified ID
           pipelineSignals.push({ 
             symbol, signal: sniper.signal, price: sniper.price, 
             change24h: sniper.change24h, timestamp: sniperTrace.timestamp,
-            id, status: 'ACCEPTED'
+            id: sniperTrace.id, status: 'ACCEPTED'
           });
           signalsThisCycle.add(symbol);
           newSignalsThisScan++;
@@ -253,40 +228,35 @@ export async function runBonanzaCore(
       }
 
       if (breakout?.signal && newSignalsThisScan < corrLimit.maxNewPositions) {
-        const id = breakoutTrace.id;
         if (breakout.signal.entryType === 'RETEST_CONFIRMED') {
           const check = checkPortfolioExposure(symbol, breakout.signal.side, regime as any, btc4hTrend, defaultPortfolio, signalsThisCycle);
           if (check.allowed) {
              pipelineSignals.push({ 
               symbol, signal: breakout.signal, price: breakout.price, 
               change24h: breakout.change24h, timestamp: breakoutTrace.timestamp,
-              id, status: 'ACCEPTED'
+              id: breakoutTrace.id, status: 'ACCEPTED'
             });
             signalsThisCycle.add(symbol);
             newSignalsThisScan++;
           }
         } else if (breakout.signal.entryType === 'PENDING_BREAKOUT' || breakout.signal.entryType === 'INVALIDATED' || breakout.signal.entryType === 'EXPIRED_NO_RETEST') {
-          // Push meaningful non-active states
           pipelineSignals.push({ 
             symbol, signal: breakout.signal, price: breakout.price, 
             change24h: breakout.change24h, timestamp: breakoutTrace.timestamp,
-            id, status: breakoutTrace.status as any
+            id: breakoutTrace.id, status: breakoutTrace.status as any
           });
         }
       }
     }
 
-
-
     processed += chunk.length;
     onProgress?.(Math.round((processed / symbols.length) * 100));
-
     if (batch + BATCH_SIZE < symbols.length) await sleep(BATCH_DELAY);
   }
 
   pipelineSignals.sort((a, b) => b.signal.score - a.signal.score);
   marketRows.sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
-
   console.log(`[Scanner] Complete — Traces: ${pipelineTraces.length} | Tradeable: ${pipelineSignals.length} | Regime: ${regime}`);
+  
   return { pipelineSignals, pipelineTraces, marketRows, regimeLabel };
 }

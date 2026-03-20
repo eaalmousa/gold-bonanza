@@ -17,7 +17,9 @@ export async function fetchKlines(symbol: string, interval: string, limit: numbe
   try {
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
-    if (!res.ok) throw new Error(`Klines fetch failed for ${symbol} [${interval}]`);
+    if (!res.ok) {
+        throw new Error(`Klines fetch failed for ${symbol} [${interval}] — Status: ${res.status}`);
+    }
     const raw = await res.json();
   return raw.map((k: any) => ({
     openTime: k[0],

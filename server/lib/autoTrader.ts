@@ -251,7 +251,15 @@ export async function evaluateFrontendSignals(allSignals: any[]) {
     }
 
     const riskUSDT = balance * TRADER_CONFIG.RISK_PER_TRADE;
-    const qty      = Math.max(0.001, (riskUSDT * TRADER_CONFIG.LEVERAGE) / sig.entryPrice);
+    let   qty      = Math.max(0.001, (riskUSDT * TRADER_CONFIG.LEVERAGE) / sig.entryPrice);
+
+    // ─── MINIMUM NOTIONAL ENFORCEMENT ──────────────────────────
+    const MIN_NOTIONAL = 5.50;
+    const currentNotional = qty * sig.entryPrice;
+    if (currentNotional < MIN_NOTIONAL) {
+      qty = MIN_NOTIONAL / sig.entryPrice;
+      logMsg(`NOTE: Auto-sizing raised for ${sym} to meet exchange minimum notional (${MIN_NOTIONAL} USDT).`);
+    }
 
     try {
       logMsg(`🚀 LIVE: ${sym} ${sig.side} | qty=${qty.toFixed(3)} | entry=${sig.entryPrice}`);

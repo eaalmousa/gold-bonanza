@@ -253,12 +253,13 @@ export async function evaluateFrontendSignals(allSignals: any[]) {
     const riskUSDT = balance * TRADER_CONFIG.RISK_PER_TRADE;
     let   qty      = Math.max(0.001, (riskUSDT * TRADER_CONFIG.LEVERAGE) / sig.entryPrice);
 
-    // ─── MINIMUM NOTIONAL ENFORCEMENT ──────────────────────────
-    const MIN_NOTIONAL = 5.50;
+    // ─── MINIMUM NOTIONAL GUARD (Security Enforcement) ─────────────
+    // Binance minimum is 5.00 USDT. Signals from the sniper engine 
+    // should already satisfy this before reaching this stage.
     const currentNotional = qty * sig.entryPrice;
-    if (currentNotional < MIN_NOTIONAL) {
-      qty = MIN_NOTIONAL / sig.entryPrice;
-      logMsg(`NOTE: Auto-sizing raised for ${sym} to meet exchange minimum notional (${MIN_NOTIONAL} USDT).`);
+    if (currentNotional < 5.00) {
+      logMsg(`REJECT: ${sym} order notional ${currentNotional.toFixed(2)} USDT < 5.00 floor. Skipping.`);
+      continue;
     }
 
     try {

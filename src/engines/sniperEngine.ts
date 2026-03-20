@@ -1,12 +1,11 @@
 // ============================================
 // Sniper Engine v3 — Precision Pullback Engine
 // Updated: 2026-03-20
-// Fix: Minimum Notional Enforcement (5.50 USDT)
+// Fix: Safe Minimum Notional Enforcement & Sizing Forensics
 // ============================================
 
 import type { Kline, Signal, ModeConfig, MarketRegime, OrderFlowSnapshot } from '../types/trading';
 import { calcEMA, calcRSI, calcATR, calcSMA, calcZLSMA, calcSessionVolumeProfile, calcChandelierExit } from './indicators';
-import { validateOrderFlow } from './regimeFilter';
 
 // ─── DEBUG LOGGER ─────────────────────────────────────────────────
 export const globalDebugLogs: string[][] = [];
@@ -144,11 +143,11 @@ function evaluateSniperSignalInner(
 
   // ─── GATE 1: REGIME ───────────────────────────────────
   if (regime === 'CRASH') {
-    debugLog.push('REJECT: CRASH regime — no new entries');
+    debugLog.push('REJECT: CRASH regime');
     return null;
   }
   if (regime === 'CHOP' && modeKey !== 'AGGRESSIVE') {
-    debugLog.push('REJECT: CHOP regime — skip entries');
+    debugLog.push('REJECT: CHOP regime');
     return null;
   }
 
@@ -162,7 +161,7 @@ function evaluateSniperSignalInner(
   const e200_1h   = ema200_1h[idx1h];
 
   if ([e50_1h, e200_1h].some(v => v == null)) {
-    debugLog.push('REJECT: Missing 1h EMA values');
+    debugLog.push('REJECT: Missing 1h indicators');
     return null;
   }
 
@@ -207,8 +206,8 @@ function evaluateSniperSignalInner(
     diag.trend1H = 'RECOVERING';
     diag.slopePass = true;
   } else {
-    diag.trend1H = 'DRIFT/FLAT';
-    debugLog.push(`REJECT: Weak ZLSMA slope (${zlsmaPctChange.toFixed(3)}%)`);
+    diag.trend1H = 'NO_SLOPE';
+    debugLog.push('REJECT: Weak ZLSMA slope');
     return null;
   }
 
@@ -216,13 +215,13 @@ function evaluateSniperSignalInner(
   diag.zlsmaValue = zlsmaNow.toFixed(5);
   diag.zlsmaSlopePct = zlsmaPctChange.toFixed(3);
 
-  // BTC Macro Trend
+  // BTC
   if (modeKey !== 'AGGRESSIVE' && btc4hTrend && !isBreakingDown) {
     if (side === 'LONG' && btc4hTrend === 'DOWN') { debugLog.push('REJECT: BTC 4H DOWN'); return null; }
     if (side === 'SHORT' && btc4hTrend === 'UP') { debugLog.push('REJECT: BTC 4H UP'); return null; }
   }
 
-  // 15m Setup
+  // 15m
   const closes15      = tf15m.map(c => c.close);
   const highs15       = tf15m.map(c => c.high);
   const lows15        = tf15m.map(c => c.low);
@@ -253,7 +252,7 @@ function evaluateSniperSignalInner(
   const svp5d = calcSessionVolumeProfile(tf1h.map(c => c.high), tf1h.map(c => c.low), closes1h, tf1h.map(c => c.volume), 120, 50);
 
   if (!zl15 || !rsiNow || !atr || !svp5d) {
-    debugLog.push('REJECT: Indicators not ready');
+    debugLog.push('REJECT: Missing 15m data');
     return null;
   }
 
@@ -265,145 +264,153 @@ function evaluateSniperSignalInner(
   let score = 0;
   const reasons: string[] = [];
 
+  // ===========================================================================
+  //  CANONICAL SIZING ARCHITECTURE
+  // ===========================================================================
+  function calculateSafeSizing(
+    side: 'LONG' | 'SHORT',
+    entryPrice: number,
+    stopLoss: number,
+    balance: number,
+    riskPct: number,
+    debugLog: string[]
+  ): { qty: number; sizeUSDT: number; intendedRisk: number; actualRisk: number } | null {
+    const intendedRisk = balance * riskPct;
+    const stopDistance = Math.abs(entryPrice - stopLoss);
+    const minStopDist  = entryPrice * 0.0035; 
+    const effectiveStopDist = Math.max(stopDistance, minStopDist);
+    
+    // 1. Raw Sizing
+    let qty = intendedRisk / effectiveStopDist;
+    let sizeUSDT = qty * entryPrice;
+    
+    const rawNotional = sizeUSDT;
+
+    // 2. Minimum Notional Enforcement
+    // Binance floor is 5.00 USDT. We target 5.50 USDT.
+    const MIN_NOTIONAL = 5.50;
+    const RISK_MULT_CAP = 2.0;
+
+    if (sizeUSDT < MIN_NOTIONAL) {
+      const adjQty = MIN_NOTIONAL / entryPrice;
+      const adjRisk = adjQty * effectiveStopDist;
+      const riskMultiplier = adjRisk / intendedRisk;
+
+      if (riskMultiplier > RISK_MULT_CAP) {
+        debugLog.push(`REJECT: Risk inflation safety cap triggered (${riskMultiplier.toFixed(2)}x > ${RISK_MULT_CAP}x) to meet 5.50 USDT notional.`);
+        return null;
+      }
+
+      // Adjustment accepted
+      qty = adjQty;
+      sizeUSDT = MIN_NOTIONAL;
+      debugLog.push(`NOTE: Sizing auto-raised. Multiplier: ${riskMultiplier.toFixed(2)}x. Forensics: IntendedRisk=${intendedRisk.toFixed(2)} RawSize=${rawNotional.toFixed(2)} → AdjSize=${MIN_NOTIONAL.toFixed(2)}`);
+    }
+
+    const actualRisk = qty * effectiveStopDist;
+
+    // Verbose sizing forensics
+    console.log(`[SIZING:${symbol}] side=${side} | intendedRisk=${intendedRisk.toFixed(2)} | rawNotional=${rawNotional.toFixed(2)} | adjNotional=${sizeUSDT.toFixed(2)} | actualRisk=${actualRisk.toFixed(2)}`);
+
+    return { qty, sizeUSDT, intendedRisk, actualRisk };
+  }
+
   if (side === 'LONG') {
     // LONG VALUE ZONE
-    const zoneTop    = zl15! * (1 + slack);
-    const zoneBottom = svp5d!.poc * (1 - slack);
-    const inZone = low15 <= zoneTop && high15 >= zoneBottom;
-    if (!inZone) { debugLog.push('REJECT: Not in value zone'); return null; }
-
-    // LOCATION
+    if (low15 > zl15! * (1 + slack)) { debugLog.push('REJECT: Above zone'); return null; }
     if (close15 < svp5d!.val) { debugLog.push('REJECT: Below VAL'); return null; }
-    diag.svpContext = close15 > svp5d!.poc ? 'Above POC' : 'Above VAL';
     score += close15 > svp5d!.poc ? 4 : 2;
 
     // RSI
-    if (rsiNow! < cfg.rsiMin || rsiNow! > cfg.rsiMax || rsiNow! <= rsiPrev!) {
-       debugLog.push(`REJECT: RSI ${rsiNow!.toFixed(1)}`);
-       return null;
-    }
+    if (rsiNow! < cfg.rsiMin || rsiNow! > cfg.rsiMax || rsiNow! <= rsiPrev!) { debugLog.push('REJECT: RSI'); return null; }
     score += 2;
 
     // VOLUME
     const volRatio = vol / volAvg!;
-    if (volRatio < cfg.volMult) { debugLog.push('REJECT: Low volume'); return null; }
-    score += volRatio > 2 ? 4 : 2;
-
-    // CANDLE ANATOMY
-    const isBullCandle = close15 > open15;
-    const bodyPct    = (body / range) * 100;
-    const closePos   = (close15 - low15) / range;
-    const prevTop    = Math.max(prev.open, prev.close);
-    const hasDisplacement = close15 > prevTop;
-
-    if (!isBullCandle || bodyPct < 55 || closePos < 0.70) { debugLog.push('REJECT: Weak candle'); return null; }
-    if (!hasDisplacement && modeKey !== 'AGGRESSIVE') { debugLog.push('REJECT: No displacement'); return null; }
-    diag.displacementPass = true;
+    if (volRatio < cfg.volMult) { debugLog.push('REJECT: Low vol'); return null; }
     score += 2;
 
-    // REGIME
+    // ANATOMY
+    const isBull = close15 > open15;
+    const isStrong = (body / range) > 0.55 && (close15 - low15) / range > 0.70;
+    const hasDisplacement = close15 > Math.max(prev.open, prev.close);
+
+    if (!isBull || !isStrong) { debugLog.push('REJECT: Weak bull'); return null; }
+    if (!hasDisplacement && modeKey !== 'AGGRESSIVE') { debugLog.push('REJECT: No displacement'); return null; }
+    diag.displacementPass = true; score += 2;
+
     score += (regimeScoreBonus || 0);
 
-    // FINAL SCORE
-    if (score < cfg.scoreMin) { debugLog.push(`REJECT: Score ${score}`); return null; }
+    if (score < cfg.scoreMin) { debugLog.push('REJECT: Low score'); return null; }
 
-    // RISK
+    // CANONICAL SIZING CALL
     const triggerPrice = high15 * (1 + 0.0012);
-    const stopLoss     = Math.min(low15, svp5d!.poc, ceLong[lastIdx]!) * (1 - 0.0012);
-    const stopDistance = Math.max(triggerPrice - stopLoss, triggerPrice * 0.0035);
+    const stopLoss = Math.min(low15, svp5d!.poc, ceLong[lastIdx]!) * (1 - 0.0012);
     
-    let qty      = (balance * activeMode.riskPct) / stopDistance;
-    let sizeUSDT = qty * triggerPrice;
-    if (sizeUSDT < 5.50) {
-      debugLog.push(`NOTE: Sizing raised to 5.50 USDT`);
-      sizeUSDT = 5.50;
-      qty = sizeUSDT / triggerPrice;
-    }
+    const sizing = calculateSafeSizing('LONG', triggerPrice, stopLoss, balance, activeMode.riskPct, debugLog);
+    if (!sizing) return null;
 
-    const takeProfit = triggerPrice + 1.5 * stopDistance;
-    const netRR = (takeProfit - triggerPrice) / stopDistance;
-
+    const takeProfit = triggerPrice + (triggerPrice - stopLoss) * 1.5;
     diag.entryPrice = triggerPrice.toFixed(5);
     diag.targetPrice = takeProfit.toFixed(5);
     diag.ceStopValue = stopLoss.toFixed(5);
-    diag.netRR = netRR.toFixed(2);
     diag.score = score;
+    diag.netRR = ((takeProfit - triggerPrice) / (triggerPrice - stopLoss)).toFixed(2);
 
     return {
       kind: 'SNIPER', side: 'LONG', score, reasons,
-      entryPrice: triggerPrice, stopLoss, takeProfit, takeProfit2: triggerPrice + 2.5 * stopDistance,
-      qty, sizeUSDT, atr15: atr, volRatio,
-      entryType: 'CONTINUATION',
-      zoneDistancePct: 0, btcRegimeAtEntry: 'UNKNOWN', entryTiming: 'OPTIMAL', debugLog
+      entryPrice: triggerPrice, stopLoss, takeProfit, takeProfit2: takeProfit + (takeProfit - triggerPrice),
+      qty: sizing.qty, sizeUSDT: sizing.sizeUSDT, atr15: atr, volRatio: vol / volAvg!,
+      entryType: 'CONTINUATION', zoneDistancePct: 0, btcRegimeAtEntry: 'UNKNOWN', entryTiming: 'OPTIMAL', debugLog
     };
 
   } else {
     // SHORT BRANCH
-    const zoneTop    = svp5d!.poc * (1 + slack);
-    const zoneBottom = zl15! * (1 - slack);
-    const inZone     = high15 >= zoneBottom && low15 <= zoneTop;
-    if (!inZone && !isBreakingDown) { debugLog.push('REJECT: Not in short zone'); return null; }
-
-    // LOCATION
+    if (high15 < zl15! * (1 - slack) && !isBreakingDown) { debugLog.push('REJECT: Below zone'); return null; }
     if (close15 > svp5d!.vah) { debugLog.push('REJECT: Above VAH'); return null; }
-    diag.svpContext = close15 < svp5d!.poc ? 'Below POC' : 'Below VAH';
     score += close15 < svp5d!.poc ? 4 : 2;
 
     // RSI
-    if (rsiNow! > (100 - cfg.rsiMin) || rsiNow! >= rsiPrev!) {
-       debugLog.push(`REJECT: RSI Short ${rsiNow!.toFixed(1)}`);
-       return null;
-    }
+    if (rsiNow! > (100 - cfg.rsiMin) || rsiNow! >= rsiPrev!) { debugLog.push('REJECT: RSI Short'); return null; }
     score += 2;
 
     // VOLUME
     const volRatio = vol / volAvg!;
-    if (volRatio < cfg.volMult) { debugLog.push('REJECT: Low volume short'); return null; }
+    if (volRatio < cfg.volMult) { debugLog.push('REJECT: Low vol short'); return null; }
     score += 2;
 
-    // CANDLE ANATOMY
-    const isBearCandle = close15 < open15;
-    const bodyPct    = (body / range) * 100;
-    const closePos   = (high15 - close15) / range;
-    const prevBottom = Math.min(prev.open, prev.close);
-    const hasDisplacement = close15 < prevBottom;
+    // ANATOMY
+    const isBear = close15 < open15;
+    const isStrongBear = (body / range) > 0.55 && (high15 - close15) / range > 0.70;
+    const hasDisplaceShort = close15 < Math.min(prev.open, prev.close);
 
-    if (!isBearCandle || bodyPct < 55 || closePos < 0.70) { debugLog.push('REJECT: Weak bear candle'); return null; }
-    if (!hasDisplacement && modeKey !== 'AGGRESSIVE') { debugLog.push('REJECT: No short displacement'); return null; }
-    diag.displacementPass = true;
-    score += 2;
+    if (!isBear || !isStrongBear) { debugLog.push('REJECT: Weak bear'); return null; }
+    if (!hasDisplaceShort && modeKey !== 'AGGRESSIVE') { debugLog.push('REJECT: No short displacement'); return null; }
+    diag.displacementPass = true; score += 2;
 
-    // FINAL SCORE
-    if (score < cfg.scoreMin) { debugLog.push(`REJECT: Score ${score}`); return null; }
+    score += (regimeScoreBonus || 0);
 
-    // RISK
+    if (score < cfg.scoreMin) { debugLog.push('REJECT: Low score short'); return null; }
+
+    // CANONICAL SIZING CALL
     const triggerPrice = low15 * (1 - 0.0012);
-    const stopLoss     = Math.max(high15, svp5d!.poc, ceShort[lastIdx]!) * (1 + 0.0012);
-    const stopDistance = Math.max(stopLoss - triggerPrice, triggerPrice * 0.0035);
+    const stopLoss = Math.max(high15, svp5d!.poc, ceShort[lastIdx]!) * (1 + 0.0012);
 
-    let qty      = (balance * activeMode.riskPct) / stopDistance;
-    let sizeUSDT = qty * triggerPrice;
-    if (sizeUSDT < 5.50) {
-      debugLog.push(`NOTE: SHORT sizing raised to 5.50 USDT`);
-      sizeUSDT = 5.50;
-      qty = sizeUSDT / triggerPrice;
-    }
+    const sizing = calculateSafeSizing('SHORT', triggerPrice, stopLoss, balance, activeMode.riskPct, debugLog);
+    if (!sizing) return null;
 
-    const takeProfit = triggerPrice - 1.5 * stopDistance;
-    const netRR = (triggerPrice - takeProfit) / stopDistance;
-
+    const takeProfit = triggerPrice - (stopLoss - triggerPrice) * 1.5;
     diag.entryPrice = triggerPrice.toFixed(5);
     diag.targetPrice = takeProfit.toFixed(5);
     diag.ceStopValue = stopLoss.toFixed(5);
-    diag.netRR = netRR.toFixed(2);
     diag.score = score;
+    diag.netRR = ((triggerPrice - takeProfit) / (stopLoss - triggerPrice)).toFixed(2);
 
     return {
       kind: 'SNIPER', side: 'SHORT', score, reasons,
-      entryPrice: triggerPrice, stopLoss, takeProfit, takeProfit2: triggerPrice - 2.5 * stopDistance,
-      qty, sizeUSDT, atr15: atr, volRatio,
-      entryType: 'CONTINUATION',
-      zoneDistancePct: 0, btcRegimeAtEntry: 'UNKNOWN', entryTiming: 'OPTIMAL', debugLog
+      entryPrice: triggerPrice, stopLoss, takeProfit, takeProfit2: takeProfit - (triggerPrice - takeProfit),
+      qty: sizing.qty, sizeUSDT: sizing.sizeUSDT, atr15: atr, volRatio: vol / volAvg!,
+      entryType: 'CONTINUATION', zoneDistancePct: 0, btcRegimeAtEntry: 'UNKNOWN', entryTiming: 'OPTIMAL', debugLog
     };
   }
 }

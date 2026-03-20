@@ -135,14 +135,12 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
     qty          = Math.max(0.001, (bal * risk * lev) / entryPrice);
   }
 
-  // ── Minimum Notional Enforcement (Safety Net) ──────────────────────────
-  // Binance minimum is 5 USDT. We target 5.50 USDT for buffer.
-  const MIN_NOTIONAL = 5.50;
+  // ── Minimum Notional Guard (Exchange Compliance) ───────────────────────────
+  // Binance minimum is 5.00 USDT.
   const currentNotional = qty * entryPrice;
-  if (currentNotional < MIN_NOTIONAL) {
-    const oldQty = qty;
-    qty = MIN_NOTIONAL / entryPrice;
-    console.log(`[Trade:open] Sizing raised: ${oldQty.toFixed(4)} → ${qty.toFixed(4)} to satisfy ${MIN_NOTIONAL} USDT min notional.`);
+  if (currentNotional < 5.00) {
+    console.warn(`[Trade:open] REJECT: Order for ${symbol} has notional ${currentNotional.toFixed(2)} USDT < 5.00. (Check sizing logic).`);
+    return res.status(400).json({ error: `Notional Too Small: ${currentNotional.toFixed(2)} USDT < 5.00 min.` });
   }
 
   // ── Precision: fetch from exchange info at the correct base URL ──────────────

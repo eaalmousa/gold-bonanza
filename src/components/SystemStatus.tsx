@@ -13,8 +13,7 @@ export default function SystemStatus() {
     symbols: rawSymbols,
     isScannerActive, setScannerActive,
     binancePositions: rawPositions,
-    pipelineSignals: rawSignals,
-    executionMode, setExecutionMode
+    pipelineSignals: rawSignals
   } = useTradingStore();
 
   const activeTrades    = Array.isArray(rawTrades)    ? rawTrades    : [];
@@ -45,11 +44,7 @@ export default function SystemStatus() {
   useEffect(() => {
     api.getAutoTradeConfig()
       .then(res => {
-        // Hydrate the store if the backend has different settings
-        if (res.executionMode && res.executionMode !== executionMode) {
-          setExecutionMode(res.executionMode as any);
-        }
-        
+        // Hydrate the store
         setConfig({
           riskPct:        res.riskPerTrade      ?? CANONICAL_DEFAULTS.riskPct,
           maxTrades:      res.maxConcurrent     ?? CANONICAL_DEFAULTS.maxTrades,

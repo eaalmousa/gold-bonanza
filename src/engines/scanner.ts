@@ -64,10 +64,9 @@ export async function runBonanzaCore(
   // ─── STEP 2: Market-Correlation Limiter (User Request 3) ─────
   const openCount = currentOpenPositionCount ?? 0;
   const corrLimit = getCorrelationPositionLimit(regime, btc4hTrend, openCount);
-  if (!corrLimit.allowNew) {
-    console.log(`[Correlation Limiter] ${corrLimit.reason} — scan skipped`);
-    return { pipelineSignals: [], pipelineTraces: [], marketRows: [], regimeLabel };
-  }
+  // We do NOT return early here anymore because the UI needs the 24h tickers (Step 3) 
+  // to populate `marketRows` and keep the WebSockets alive. We enforce the block inside the loop.
+  // const corrLimit = getCorrelationPositionLimit(regime, btc4hTrend, openCount);
   console.log(`[Correlation Limiter] ${corrLimit.reason} | Max new: ${corrLimit.maxNewPositions}`);
 
   // ─── STEP 3: Fetch 24h tickers ───────────────────────────────
@@ -109,9 +108,24 @@ export async function runBonanzaCore(
   }
 
   // ─── REGIME GATE ─────────────────────────────────────────────
+  // ─── STEP 3b: Populate Market Rows for UI Data Feed ─────────
+  // We populate marketRows universally from tickers so the UI stays alive 
+  // perfectly connecting websockets EVEN if signal generation gets blocked below.
+  for (const sym of symbols) {
+    if (tickers[sym] !== undefined) {
+      marketRows.push({ symbol: sym, lastPrice: 0, changePct: tickers[sym] }); // WebSocket will update lastPrice immediately
+    }
+  }
+
+  // ─── REGIME GATE ─────────────────────────────────────────────
   if (regime === 'CRASH' && activeMode.key !== 'AGGRESSIVE') {
     console.log('[Scanner] CRASH regime — scan blocked (non-aggressive mode)');
-    return { pipelineSignals: [], pipelineTraces: [], marketRows: [], regimeLabel };
+    return { pipelineSignals: [], pipelineTraces: [], marketRows, regimeLabel };
+  }
+
+  if (!corrLimit.allowNew) {
+    console.log(`[Scanner] Correlation limiter (${corrLimit.reason}) — signal scanning bypassed, but UI feed active.`);
+    return { pipelineSignals: [], pipelineTraces: [], marketRows, regimeLabel };
   }
 
   // ─── STEP 4: Scan symbols in batches ─────────────────────────
@@ -189,7 +203,9 @@ export async function runBonanzaCore(
         ]);
         const lastClose = tf15m?.length ? tf15m[tf15m.length - 1].close : 0;
         const change24h = tickers[symbol] ?? 0;
-        if (lastClose > 0) marketRows.push({ symbol, lastPrice: lastClose, changePct: change24h });
+        // marketRows is already populated pre-loop, just update the lastPrice if we have it
+        const rowIdx = marketRows.findIndex(r => r.symbol === symbol);
+        if (rowIdx >= 0 && lastClose > 0) marketRows[rowIdx].lastPrice = lastClose;
         const symbolFlow = orderFlowSnapshots?.[symbol];
         const sniperLogStart = sniperLogs.length;
         const sniper  = evaluateSniperSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, symbolFlow, btc4hTrend, regimeLabel, symbol);

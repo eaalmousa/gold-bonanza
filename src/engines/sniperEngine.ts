@@ -532,15 +532,29 @@ export function evaluateSniperSignal(
     const stopLoss        = Math.min(rawStop, minAtrStop); // ensure we are at or below the 1.2x floor
     const stopDistance    = Math.max(triggerPrice - stopLoss, triggerPrice * 0.0035);
     const stopPctVal      = (stopDistance / triggerPrice) * 100;
-    if (modeKey !== 'AGGRESSIVE' && (stopPctVal > 2.5 || stopPctVal < 0.4)) {
-      debugLog.push(`REJECT: Stop distance ${stopPctVal.toFixed(2)}% out of bounds [0.4%-2.5%]`);
+    // Apply stop bounds to ALL modes — even AGGRESSIVE should not have absurd stops
+    if (stopPctVal > 3.0 || stopPctVal < 0.35) {
+      debugLog.push(`REJECT: Stop distance ${stopPctVal.toFixed(2)}% out of bounds [0.35%-3.0%]`);
       return null;
     }
 
-    const takeProfit  = triggerPrice + 1.25 * stopDistance;
-    const takeProfit2 = triggerPrice + 2.5  * stopDistance;
+    const takeProfit  = triggerPrice + 1.5 * stopDistance;   // minimum 1.5R TP1
+    const takeProfit2 = triggerPrice + 2.5 * stopDistance;
     const qty         = riskPerTrade / stopDistance;
     const sizeUSDT    = qty * triggerPrice;
+
+    // ─── MINIMUM NET RR GATE ────────────────────────────────────────────
+    // After fees (0.05% maker each side) the net RR must be >= 1.3.
+    // This blocks setups where the stop is too wide to produce meaningful reward.
+    const feePerSide     = triggerPrice * 0.0005;  // ~0.05% taker fee per side
+    const totalFees      = feePerSide * 2;          // entry + exit
+    const netReward      = (takeProfit - triggerPrice) - totalFees;
+    const netRisk        = stopDistance + totalFees;
+    const netRR          = netReward / netRisk;
+    if (netRR < 1.3) {
+      debugLog.push(`REJECT: Net RR ${netRR.toFixed(2)} < 1.3 minimum (after fees)`);
+      return null;
+    }
 
     // ─── ZONE DISTANCE for quality report ────────────────────────
     const zoneDistPct     = ((close15 - zoneIdeal) / zoneIdeal) * 100;

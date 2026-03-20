@@ -89,7 +89,7 @@ export const api = {
     btcGateEnabled?: boolean; 
     trailTpEnabled?: boolean; 
     circuitBreakerEnabled?: boolean;
-    executionMode?: 'PAPER' | 'DEMO' | 'LIVE';
+    // executionMode removed — always LIVE
   }) => 
     apiRequest('/trade/config', { method: 'POST', body: JSON.stringify(config) }),
 };

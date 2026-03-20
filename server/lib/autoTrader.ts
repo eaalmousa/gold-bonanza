@@ -7,44 +7,45 @@ import path from 'path';
 
 const STATE_FILE = path.resolve(__dirname, '../../trader_state.json');
 
+// ─── Config ───────────────────────────────────────────────────────────────────
+// executionMode is permanently LIVE — no other modes exist in this codebase.
 export const TRADER_CONFIG = {
-  RISK_PER_TRADE: parseFloat(process.env.RISK_PER_TRADE || '0.10'),
-  MAX_CONCURRENT_TRADES: parseInt(process.env.MAX_CONCURRENT_TRADES || '8', 10),
-  LEVERAGE: parseInt(process.env.LEVERAGE || '10', 10),
-  SL_ENABLED: true,
-  TP_ENABLED: true,
-  TP1_ONLY: false,
-  TP1_RR: 1.25,
-  TP2_RR: 2.50,
-  MIN_SCORE: parseInt(process.env.MIN_SCORE_TO_DEPLOY || '15', 10),
-  BTC_GATE_ENABLED: true,
-  TRAIL_TP_ENABLED: false,
+  RISK_PER_TRADE:         parseFloat(process.env.RISK_PER_TRADE || '0.10'),
+  MAX_CONCURRENT_TRADES:  parseInt(process.env.MAX_CONCURRENT_TRADES || '6', 10),
+  LEVERAGE:               parseInt(process.env.LEVERAGE || '10', 10),
+  SL_ENABLED:             true,
+  TP_ENABLED:             true,
+  TP1_ONLY:               false,
+  TP1_RR:                 1.50,   // raised from 1.25
+  TP2_RR:                 2.50,
+  MIN_SCORE:              parseInt(process.env.MIN_SCORE_TO_DEPLOY || '20', 10),  // raised from 15
+  BTC_GATE_ENABLED:       true,
+  TRAIL_TP_ENABLED:       false,
   CIRCUIT_BREAKER_ENABLED: false,
-  isAutoTradingEnabled: false,
-  executionMode: 'DEMO' as 'PAPER' | 'DEMO' | 'LIVE'
+  isAutoTradingEnabled:   false,
 };
 
 const BASE_CAPITAL = parseFloat(process.env.BASE_CAPITAL || '300');
+const LIVE_BASE_URL = 'https://fapi.binance.com';
 
-// Load persisted state on startup
+// ─── Persistence ──────────────────────────────────────────────────────────────
 try {
   if (fs.existsSync(STATE_FILE)) {
     const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    TRADER_CONFIG.RISK_PER_TRADE = saved.RISK_PER_TRADE ?? TRADER_CONFIG.RISK_PER_TRADE;
-    TRADER_CONFIG.MAX_CONCURRENT_TRADES = saved.MAX_CONCURRENT_TRADES ?? TRADER_CONFIG.MAX_CONCURRENT_TRADES;
-    TRADER_CONFIG.LEVERAGE = saved.LEVERAGE ?? TRADER_CONFIG.LEVERAGE;
-    TRADER_CONFIG.SL_ENABLED = saved.SL_ENABLED ?? TRADER_CONFIG.SL_ENABLED;
-    TRADER_CONFIG.TP_ENABLED = saved.TP_ENABLED ?? TRADER_CONFIG.TP_ENABLED;
-    TRADER_CONFIG.TP1_ONLY = saved.TP1_ONLY ?? TRADER_CONFIG.TP1_ONLY;
-    TRADER_CONFIG.TP1_RR = saved.TP1_RR ?? TRADER_CONFIG.TP1_RR;
-    TRADER_CONFIG.TP2_RR = saved.TP2_RR ?? TRADER_CONFIG.TP2_RR;
-    TRADER_CONFIG.MIN_SCORE = saved.MIN_SCORE ?? TRADER_CONFIG.MIN_SCORE;
-    TRADER_CONFIG.BTC_GATE_ENABLED = saved.BTC_GATE_ENABLED ?? TRADER_CONFIG.BTC_GATE_ENABLED;
-    TRADER_CONFIG.TRAIL_TP_ENABLED = saved.TRAIL_TP_ENABLED ?? TRADER_CONFIG.TRAIL_TP_ENABLED;
+    TRADER_CONFIG.RISK_PER_TRADE          = saved.RISK_PER_TRADE          ?? TRADER_CONFIG.RISK_PER_TRADE;
+    TRADER_CONFIG.MAX_CONCURRENT_TRADES   = saved.MAX_CONCURRENT_TRADES   ?? TRADER_CONFIG.MAX_CONCURRENT_TRADES;
+    TRADER_CONFIG.LEVERAGE                = saved.LEVERAGE                ?? TRADER_CONFIG.LEVERAGE;
+    TRADER_CONFIG.SL_ENABLED              = saved.SL_ENABLED              ?? TRADER_CONFIG.SL_ENABLED;
+    TRADER_CONFIG.TP_ENABLED              = saved.TP_ENABLED              ?? TRADER_CONFIG.TP_ENABLED;
+    TRADER_CONFIG.TP1_ONLY                = saved.TP1_ONLY                ?? TRADER_CONFIG.TP1_ONLY;
+    TRADER_CONFIG.TP1_RR                  = saved.TP1_RR                  ?? TRADER_CONFIG.TP1_RR;
+    TRADER_CONFIG.TP2_RR                  = saved.TP2_RR                  ?? TRADER_CONFIG.TP2_RR;
+    TRADER_CONFIG.MIN_SCORE               = saved.MIN_SCORE               ?? TRADER_CONFIG.MIN_SCORE;
+    TRADER_CONFIG.BTC_GATE_ENABLED        = saved.BTC_GATE_ENABLED        ?? TRADER_CONFIG.BTC_GATE_ENABLED;
+    TRADER_CONFIG.TRAIL_TP_ENABLED        = saved.TRAIL_TP_ENABLED        ?? TRADER_CONFIG.TRAIL_TP_ENABLED;
     TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED = saved.CIRCUIT_BREAKER_ENABLED ?? TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED;
-    TRADER_CONFIG.isAutoTradingEnabled = saved.isAutoTradingEnabled ?? TRADER_CONFIG.isAutoTradingEnabled;
-    TRADER_CONFIG.executionMode = saved.executionMode ?? TRADER_CONFIG.executionMode;
-    console.log(`[Persistence] Loaded state: AUTO=${TRADER_CONFIG.isAutoTradingEnabled} MODE=${TRADER_CONFIG.executionMode} MIN_SCORE=${TRADER_CONFIG.MIN_SCORE}`);
+    TRADER_CONFIG.isAutoTradingEnabled    = saved.isAutoTradingEnabled    ?? TRADER_CONFIG.isAutoTradingEnabled;
+    console.log(`[Persistence] Loaded: AUTO=${TRADER_CONFIG.isAutoTradingEnabled} MIN_SCORE=${TRADER_CONFIG.MIN_SCORE}`);
   }
 } catch (e) {
   console.warn('[Persistence] Failed to load state file');
@@ -58,9 +59,10 @@ function saveState() {
   }
 }
 
-export function updateTraderConfig(config: { 
-  riskPerTrade?: number; 
-  maxConcurrent?: number; 
+// ─── Public API ───────────────────────────────────────────────────────────────
+export function updateTraderConfig(config: {
+  riskPerTrade?: number;
+  maxConcurrent?: number;
   leverage?: number;
   slEnabled?: boolean;
   tpEnabled?: boolean;
@@ -71,32 +73,33 @@ export function updateTraderConfig(config: {
   btcGateEnabled?: boolean;
   trailTpEnabled?: boolean;
   circuitBreakerEnabled?: boolean;
-  executionMode?: 'PAPER' | 'DEMO' | 'LIVE';
+  executionMode?: string; // accepted but ignored — always LIVE
 }) {
-  if (config.riskPerTrade !== undefined) TRADER_CONFIG.RISK_PER_TRADE = config.riskPerTrade;
-  if (config.maxConcurrent !== undefined) TRADER_CONFIG.MAX_CONCURRENT_TRADES = config.maxConcurrent;
-  if (config.leverage !== undefined) TRADER_CONFIG.LEVERAGE = config.leverage;
-  if (config.slEnabled !== undefined) TRADER_CONFIG.SL_ENABLED = config.slEnabled;
-  if (config.tpEnabled !== undefined) TRADER_CONFIG.TP_ENABLED = config.tpEnabled;
-  if (config.tp1Only !== undefined) TRADER_CONFIG.TP1_ONLY = config.tp1Only;
-  if (config.tp1RR !== undefined) TRADER_CONFIG.TP1_RR = config.tp1RR;
-  if (config.tp2RR !== undefined) TRADER_CONFIG.TP2_RR = config.tp2RR;
-  if (config.minScore !== undefined) TRADER_CONFIG.MIN_SCORE = config.minScore;
-  if (config.btcGateEnabled !== undefined) TRADER_CONFIG.BTC_GATE_ENABLED = config.btcGateEnabled;
-  if (config.trailTpEnabled !== undefined) TRADER_CONFIG.TRAIL_TP_ENABLED = config.trailTpEnabled;
+  if (config.riskPerTrade          !== undefined) TRADER_CONFIG.RISK_PER_TRADE          = config.riskPerTrade;
+  if (config.maxConcurrent         !== undefined) TRADER_CONFIG.MAX_CONCURRENT_TRADES   = config.maxConcurrent;
+  if (config.leverage              !== undefined) TRADER_CONFIG.LEVERAGE                = config.leverage;
+  if (config.slEnabled             !== undefined) TRADER_CONFIG.SL_ENABLED              = config.slEnabled;
+  if (config.tpEnabled             !== undefined) TRADER_CONFIG.TP_ENABLED              = config.tpEnabled;
+  if (config.tp1Only               !== undefined) TRADER_CONFIG.TP1_ONLY                = config.tp1Only;
+  if (config.tp1RR                 !== undefined) TRADER_CONFIG.TP1_RR                  = config.tp1RR;
+  if (config.tp2RR                 !== undefined) TRADER_CONFIG.TP2_RR                  = config.tp2RR;
+  if (config.minScore              !== undefined) TRADER_CONFIG.MIN_SCORE               = config.minScore;
+  if (config.btcGateEnabled        !== undefined) TRADER_CONFIG.BTC_GATE_ENABLED        = config.btcGateEnabled;
+  if (config.trailTpEnabled        !== undefined) TRADER_CONFIG.TRAIL_TP_ENABLED        = config.trailTpEnabled;
   if (config.circuitBreakerEnabled !== undefined) TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED = config.circuitBreakerEnabled;
-  if (config.executionMode !== undefined) TRADER_CONFIG.executionMode = config.executionMode;
-  
+  // executionMode is permanently LIVE — any incoming value is silently discarded
+
   saveState();
-  logMsg(`Config Updated & Saved: MIN_SCORE=${TRADER_CONFIG.MIN_SCORE} TRAIL=${TRADER_CONFIG.TRAIL_TP_ENABLED} SL=${TRADER_CONFIG.SL_ENABLED} TP=${TRADER_CONFIG.TP_ENABLED}`);
+  logMsg(`Config saved: MIN_SCORE=${TRADER_CONFIG.MIN_SCORE} SL=${TRADER_CONFIG.SL_ENABLED} TP=${TRADER_CONFIG.TP_ENABLED} TRAIL=${TRADER_CONFIG.TRAIL_TP_ENABLED}`);
 }
 
 export function toggleAutoTrade(enabled: boolean) {
   TRADER_CONFIG.isAutoTradingEnabled = enabled;
   saveState();
-  logMsg(`State changed and saved to: ${enabled ? 'ON' : 'OFF'}`);
+  logMsg(`AutoTrade: ${enabled ? 'ON' : 'OFF'}`);
 }
 
+// ─── Logs & Cache ─────────────────────────────────────────────────────────────
 export const tradeLogs: string[] = [];
 
 export interface BackendSignalState {
@@ -118,26 +121,17 @@ function logMsg(msg: string) {
   if (tradeLogs.length > 200) tradeLogs.pop();
 }
 
-function resolveBaseUrl(mode: string): string | null {
-  if (mode === 'LIVE') return 'https://fapi.binance.com';
-  if (mode === 'DEMO') return 'https://demo-fapi.binance.com';
-  return null; // PAPER mode
-}
-
+// ─── Main Evaluation Loop ─────────────────────────────────────────────────────
 export async function evaluateFrontendSignals(allSignals: any[]) {
   if (!TRADER_CONFIG.isAutoTradingEnabled) return backendSignalCache;
-  
-  const mode = TRADER_CONFIG.executionMode;
-  const baseUrl = resolveBaseUrl(mode);
 
-  logMsg(`--- STARTING EVALUATION [${mode}] ---`);
-  
-  // 1. TRUTH SYNCHRONIZATION: Always update cache first
+  logMsg(`--- LIVE EVALUATION START ---`);
+
+  // 1. Seed cache for all incoming signals
   allSignals.forEach(s => {
-    const sigId = s.id;
-    if (!backendSignalCache[sigId]) {
-      backendSignalCache[sigId] = {
-        signalId: sigId,
+    if (!backendSignalCache[s.id]) {
+      backendSignalCache[s.id] = {
+        signalId: s.id,
         symbol: s.symbol,
         createdAt: s.timestamp || Date.now(),
         source: 'BACKEND',
@@ -147,205 +141,167 @@ export async function evaluateFrontendSignals(allSignals: any[]) {
     }
   });
 
+  // 2. Fetch live Binance state
+  let activePos: any[] = [];
+  let balance = BASE_CAPITAL;
+
   try {
-    let activePos: any[] = [];
-    let balance = BASE_CAPITAL;
-    
-    // 2. Resolve Environment Capacity (Skip network if PAPER)
-    if (mode === 'PAPER' || !baseUrl) {
-      logMsg(`Mode is PAPER. Using simulated risk capacity.`);
-      activePos = []; // In paper mode we let the frontend handle tracking for now, or use a local log
-    } else {
-      try {
-        activePos = await getPositions(baseUrl);
-        const actualBalance = await getBalance(baseUrl);
-        if (actualBalance > 0) balance = actualBalance;
-      } catch (e: any) {
-        const is401 = e.message.includes('401');
-        logMsg(`CRITICAL ${is401 ? 'Identity (401)' : 'Network'} error fetch state: ${e.message}`);
-        
-        allSignals.forEach(s => {
-          const sigId = s.id;
-          backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
-          backendSignalCache[sigId].blockerReason = `Exchange unreachable (${mode}): ${e.message}`;
-          backendSignalCache[sigId].backendDecisionAt = Date.now();
-        });
-        return backendSignalCache;
-      }
-    }
-
-    if (activePos.length >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
-      logMsg(`Max capacity reached (${activePos.length}/${TRADER_CONFIG.MAX_CONCURRENT_TRADES}). Marking as blocked.`);
-      allSignals.forEach(s => {
-        const sigId = s.id;
-        if (s.status === 'ACCEPTED') {
-          backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
-          backendSignalCache[sigId].blockerReason = `Portfolio Wave Cap Reached (${activePos.length}/${TRADER_CONFIG.MAX_CONCURRENT_TRADES})`;
-        }
-      });
-      return backendSignalCache;
-    }
-
-    // 3. Filter and Evaluate Actionable Signals
-    const combined = allSignals
-      .filter(s => {
-        const sigId = s.id;
-        if (!s.signal || s.signal.score < TRADER_CONFIG.MIN_SCORE) {
-          backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
-          backendSignalCache[sigId].blockerReason = `Score ${s.signal?.score?.toFixed(1)} < ${TRADER_CONFIG.MIN_SCORE}`;
-          return false;
-        }
-        const et = s.signal.entryType;
-        if (s.status !== 'ACCEPTED') return false;
-        if (et === 'PENDING_BREAKOUT' || et === 'INVALIDATED' || et === 'EXPIRED_NO_RETEST') return false;
-        return true;
-      })
-      .sort((a, b) => b.signal.score - a.signal.score);
-
-    if (combined.length === 0) {
-      logMsg(`Evaluation done. No actionable signals passed the gateway.`);
-      return backendSignalCache;
-    }
-
-    // 4. Detailed Risk Gates
-    const activeLongsCount = activePos.filter(p => parseFloat(p.positionAmt) > 0).length;
-    const activeShortsCount = activePos.filter(p => parseFloat(p.positionAmt) < 0).length;
-
-    let longsInDeepRed = 0;
-    activePos.filter(p => parseFloat(p.positionAmt) > 0).forEach(p => {
-       const pnl = parseFloat(p.unRealizedProfit);
-       const margin = (parseFloat(p.positionAmt) * parseFloat(p.entryPrice)) / parseFloat(p.leverage);
-       if (margin > 0 && (pnl / margin) < -0.25) longsInDeepRed++; 
+    activePos = await getPositions(LIVE_BASE_URL);
+    const actualBalance = await getBalance(LIVE_BASE_URL);
+    if (actualBalance > 0) balance = actualBalance;
+  } catch (e: any) {
+    const is401 = e.message.includes('401');
+    logMsg(`CRITICAL ${is401 ? 'Auth (401)' : 'Network'} error fetching live state: ${e.message}`);
+    allSignals.forEach(s => {
+      backendSignalCache[s.id].backendDecision = 'BLOCKED_BACKEND';
+      backendSignalCache[s.id].blockerReason   = `Live exchange unreachable: ${e.message}`;
+      backendSignalCache[s.id].backendDecisionAt = Date.now();
     });
-    
-    let shortsInDeepRed = 0;
-    activePos.filter(p => parseFloat(p.positionAmt) < 0).forEach(p => {
-       const pnl = parseFloat(p.unRealizedProfit);
-       const margin = Math.abs((parseFloat(p.positionAmt) * parseFloat(p.entryPrice)) / parseFloat(p.leverage));
-       if (margin > 0 && (pnl / margin) < -0.25) shortsInDeepRed++; 
-    });
-
-    const MAX_DEPLOY_PER_SCAN = 2;     
-    let deployedLongsThisScan = 0;
-    let deployedShortsThisScan = 0;
-    let currentCapacity = activePos.length;
-
-    for (const row of combined) {
-      if (currentCapacity >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) break;
-
-      const sym = row.symbol;
-      const sigId = row.id;
-      const sig = row.signal;
-
-      if (activePos.some(p => p.symbol === sym)) {
-         backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
-         backendSignalCache[sigId].blockerReason = `Already holding ${sym}.`;
-         continue;
-      }
-
-      let isBlocked = false;
-      let blockReason = '';
-
-      if (sig.side === 'LONG') {
-         if (activeLongsCount + deployedLongsThisScan >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
-            blockReason = `Wave Cap (LONG)`;
-            isBlocked = true;
-         } else if (TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED && longsInDeepRed >= 1) {
-            blockReason = `Circuit Breaker (Deep Red LONG)`;
-            isBlocked = true;
-         } else if (deployedLongsThisScan >= MAX_DEPLOY_PER_SCAN) {
-            blockReason = `Scan Cluster Limit (LONG)`;
-            isBlocked = true;
-         } 
-      } else {
-         if (activeShortsCount + deployedShortsThisScan >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
-            blockReason = `Wave Cap (SHORT)`;
-            isBlocked = true;
-         } else if (TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED && shortsInDeepRed >= 1) {
-            blockReason = `Circuit Breaker (Deep Red SHORT)`;
-            isBlocked = true;
-         } else if (deployedShortsThisScan >= MAX_DEPLOY_PER_SCAN) {
-            blockReason = `Scan Cluster Limit (SHORT)`;
-            isBlocked = true;
-         }
-      }
-
-      if (isBlocked) {
-         backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
-         backendSignalCache[sigId].blockerReason = blockReason;
-         continue;
-      }
-
-      const tradeSizeUSDT = balance * TRADER_CONFIG.RISK_PER_TRADE; 
-      const qty = Math.max(0.001, (tradeSizeUSDT * TRADER_CONFIG.LEVERAGE) / sig.entryPrice); 
-
-      try {
-        if (mode === 'PAPER' || !baseUrl) {
-          logMsg(`📝 PAPER DEPLOY: ${sym} ${sig.side} | Qty: ${qty.toFixed(3)}`);
-          backendSignalCache[sigId].backendDecision = 'DEPLOYED_BACKEND';
-          backendSignalCache[sigId].deployedOrderId = `PAPER_${Date.now()}`;
-        } else {
-          logMsg(`🚀 EXECUTING: ${sym} ${sig.side} | Qty: ${qty.toFixed(3)} | Mode: ${mode}`);
-          
-          // ── FORENSIC TRACE (remove after verification) ────────────────────
-          console.warn(`[FORENSIC:AutoTrader] ========= EXECUTION TRACE =========`);
-          console.warn(`[FORENSIC:AutoTrader] Symbol:       ${sym}`);
-          console.warn(`[FORENSIC:AutoTrader] Signal.side:  ${sig.side}`);
-          console.warn(`[FORENSIC:AutoTrader] entry:        ${sig.entryPrice}`);
-          console.warn(`[FORENSIC:AutoTrader] stopLoss:     ${sig.stopLoss}`);
-          console.warn(`[FORENSIC:AutoTrader] takeProfit:   ${sig.takeProfit}`);
-          console.warn(`[FORENSIC:AutoTrader] Geometry OK?: TP ${sig.side === 'LONG' ? '>' : '<'} entry = ${sig.side === 'LONG' ? sig.takeProfit > sig.entryPrice : sig.takeProfit < sig.entryPrice}`);
-          console.warn(`[FORENSIC:AutoTrader] SL geom OK?:  SL ${sig.side === 'LONG' ? '<' : '>'} entry = ${sig.side === 'LONG' ? sig.stopLoss < sig.entryPrice : sig.stopLoss > sig.entryPrice}`);
-          console.warn(`[FORENSIC:AutoTrader] orderSide:    ${sig.side === 'LONG' ? 'BUY' : 'SELL'}`);
-          console.warn(`[FORENSIC:AutoTrader] mode:         ${mode}`);
-          console.warn(`[FORENSIC:AutoTrader] baseUrl:      ${baseUrl}`);
-          console.warn(`[FORENSIC:AutoTrader] ==========================================`);
-          // ── END FORENSIC TRACE ────────────────────────────────────────────
-          const entryRes = await placeMarketOrder(sym, sig.side === 'LONG' ? 'BUY' : 'SELL', qty, baseUrl);
-          
-          await new Promise(r => setTimeout(r, 1000));
-          const closeSide = sig.side === 'LONG' ? 'SELL' : 'BUY';
-
-          if (TRADER_CONFIG.SL_ENABLED) {
-            await placeStopMarket(sym, closeSide, sig.stopLoss, baseUrl);
-          }
-          
-          if (TRADER_CONFIG.TP_ENABLED) {
-            const tp1Price = sig.side === 'LONG'
-              ? sig.entryPrice + (Math.abs(sig.entryPrice - sig.stopLoss) * TRADER_CONFIG.TP1_RR)
-              : sig.entryPrice - (Math.abs(sig.entryPrice - sig.stopLoss) * TRADER_CONFIG.TP1_RR);
-
-            if (TRADER_CONFIG.TRAIL_TP_ENABLED) {
-              await placeTrailingStopMarket(sym, closeSide, 0.5, tp1Price, qty, baseUrl);
-            } else if (TRADER_CONFIG.TP1_ONLY) {
-              await placeTakeProfitMarket(sym, closeSide, tp1Price, undefined, baseUrl); 
-            } else {
-              const tp2Price = sig.side === 'LONG'
-                ? sig.entryPrice + (Math.abs(sig.entryPrice - sig.stopLoss) * TRADER_CONFIG.TP2_RR)
-                : sig.entryPrice - (Math.abs(sig.entryPrice - sig.stopLoss) * TRADER_CONFIG.TP2_RR);
-              await placeTakeProfitMarket(sym, closeSide, tp1Price, qty * 0.5, baseUrl);
-              await placeTakeProfitMarket(sym, closeSide, tp2Price, qty * 0.5, baseUrl);
-            }
-          }
-
-          backendSignalCache[sigId].backendDecision = 'DEPLOYED_BACKEND';
-          backendSignalCache[sigId].deployedOrderId = String(entryRes.orderId || 'SUCCESS');
-        }
-        currentCapacity++;
-        if (sig.side === 'LONG') deployedLongsThisScan++; else deployedShortsThisScan++;
-
-      } catch (err: any) {
-        logMsg(`❌ DEPLOY FAILED [${sym}]: ${err.message}`);
-        backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
-        backendSignalCache[sigId].blockerReason = `Execution failed: ${err.message}`;
-      }
-    }
-
-    fs.writeFileSync(path.resolve(__dirname, '../../backend_signals.json'), JSON.stringify(backendSignalCache, null, 2));
-    return backendSignalCache;
-
-  } catch (error: any) {
-    logMsg(`CRITICAL ERROR UNHANDLED: ${error.message}`);
     return backendSignalCache;
   }
+
+  // 3. Capacity check
+  if (activePos.length >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
+    logMsg(`Max capacity: ${activePos.length}/${TRADER_CONFIG.MAX_CONCURRENT_TRADES}`);
+    allSignals.forEach(s => {
+      if (s.status === 'ACCEPTED') {
+        backendSignalCache[s.id].backendDecision = 'BLOCKED_BACKEND';
+        backendSignalCache[s.id].blockerReason   = `Portfolio cap reached (${activePos.length}/${TRADER_CONFIG.MAX_CONCURRENT_TRADES})`;
+      }
+    });
+    return backendSignalCache;
+  }
+
+  // 4. Filter actionable signals
+  const combined = allSignals
+    .filter(s => {
+      if (!s.signal || s.signal.score < TRADER_CONFIG.MIN_SCORE) {
+        backendSignalCache[s.id].backendDecision = 'BLOCKED_BACKEND';
+        backendSignalCache[s.id].blockerReason   = `Score ${s.signal?.score?.toFixed(1)} < ${TRADER_CONFIG.MIN_SCORE}`;
+        return false;
+      }
+      const et = s.signal.entryType;
+      if (s.status !== 'ACCEPTED') return false;
+      if (et === 'PENDING_BREAKOUT' || et === 'INVALIDATED' || et === 'EXPIRED_NO_RETEST') return false;
+      return true;
+    })
+    .sort((a: any, b: any) => b.signal.score - a.signal.score);
+
+  if (combined.length === 0) {
+    logMsg(`No actionable signals passed gateway.`);
+    return backendSignalCache;
+  }
+
+  // 5. Risk gates
+  const activeLongsCount  = activePos.filter((p: any) => parseFloat(p.positionAmt) > 0).length;
+  const activeShortsCount = activePos.filter((p: any) => parseFloat(p.positionAmt) < 0).length;
+
+  let longsInDeepRed = 0;
+  activePos.filter((p: any) => parseFloat(p.positionAmt) > 0).forEach((p: any) => {
+    const pnl    = parseFloat(p.unRealizedProfit);
+    const margin = (parseFloat(p.positionAmt) * parseFloat(p.entryPrice)) / parseFloat(p.leverage);
+    if (margin > 0 && (pnl / margin) < -0.25) longsInDeepRed++;
+  });
+
+  let shortsInDeepRed = 0;
+  activePos.filter((p: any) => parseFloat(p.positionAmt) < 0).forEach((p: any) => {
+    const pnl    = parseFloat(p.unRealizedProfit);
+    const margin = Math.abs((parseFloat(p.positionAmt) * parseFloat(p.entryPrice)) / parseFloat(p.leverage));
+    if (margin > 0 && (pnl / margin) < -0.25) shortsInDeepRed++;
+  });
+
+  const MAX_DEPLOY_PER_SCAN   = 2;
+  let deployedLongsThisScan   = 0;
+  let deployedShortsThisScan  = 0;
+  let currentCapacity         = activePos.length;
+
+  // 6. Execute signals
+  for (const row of combined) {
+    if (currentCapacity >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) break;
+
+    const sym   = row.symbol;
+    const sigId = row.id;
+    const sig   = row.signal;
+
+    // Already holding this symbol?
+    if (activePos.some((p: any) => p.symbol === sym)) {
+      backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
+      backendSignalCache[sigId].blockerReason   = `Already holding ${sym}.`;
+      continue;
+    }
+
+    // Side-specific risk gates
+    let isBlocked   = false;
+    let blockReason = '';
+
+    if (sig.side === 'LONG') {
+      if (activeLongsCount + deployedLongsThisScan >= TRADER_CONFIG.MAX_CONCURRENT_TRADES)      { blockReason = 'Wave Cap (LONG)';              isBlocked = true; }
+      else if (TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED && longsInDeepRed  >= 1)                   { blockReason = 'Circuit Breaker (LONG)';       isBlocked = true; }
+      else if (deployedLongsThisScan  >= MAX_DEPLOY_PER_SCAN)                                   { blockReason = 'Scan Cluster Limit (LONG)';    isBlocked = true; }
+    } else {
+      if (activeShortsCount + deployedShortsThisScan >= TRADER_CONFIG.MAX_CONCURRENT_TRADES)    { blockReason = 'Wave Cap (SHORT)';             isBlocked = true; }
+      else if (TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED && shortsInDeepRed >= 1)                   { blockReason = 'Circuit Breaker (SHORT)';      isBlocked = true; }
+      else if (deployedShortsThisScan >= MAX_DEPLOY_PER_SCAN)                                   { blockReason = 'Scan Cluster Limit (SHORT)';   isBlocked = true; }
+    }
+
+    if (isBlocked) {
+      backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
+      backendSignalCache[sigId].blockerReason   = blockReason;
+      continue;
+    }
+
+    const riskUSDT = balance * TRADER_CONFIG.RISK_PER_TRADE;
+    const qty      = Math.max(0.001, (riskUSDT * TRADER_CONFIG.LEVERAGE) / sig.entryPrice);
+
+    try {
+      logMsg(`🚀 LIVE: ${sym} ${sig.side} | qty=${qty.toFixed(3)} | entry=${sig.entryPrice}`);
+      console.warn(`[FORENSIC] ${sym} | side=${sig.side} → orderSide=${sig.side === 'LONG' ? 'BUY' : 'SELL'} | SL=${sig.stopLoss} TP=${sig.takeProfit}`);
+
+      await setLeverage(sym, TRADER_CONFIG.LEVERAGE, LIVE_BASE_URL);
+      const entryRes = await placeMarketOrder(sym, sig.side === 'LONG' ? 'BUY' : 'SELL', qty, LIVE_BASE_URL);
+
+      await new Promise(r => setTimeout(r, 1000));
+      const closeSide = sig.side === 'LONG' ? 'SELL' : 'BUY';
+
+      if (TRADER_CONFIG.SL_ENABLED) {
+        await placeStopMarket(sym, closeSide, sig.stopLoss, LIVE_BASE_URL);
+      }
+
+      if (TRADER_CONFIG.TP_ENABLED) {
+        const riskDist = Math.abs(sig.entryPrice - sig.stopLoss);
+        const tp1Price = sig.side === 'LONG'
+          ? sig.entryPrice + riskDist * TRADER_CONFIG.TP1_RR
+          : sig.entryPrice - riskDist * TRADER_CONFIG.TP1_RR;
+
+        if (TRADER_CONFIG.TRAIL_TP_ENABLED) {
+          await placeTrailingStopMarket(sym, closeSide, 0.5, tp1Price, qty, LIVE_BASE_URL);
+        } else if (TRADER_CONFIG.TP1_ONLY) {
+          await placeTakeProfitMarket(sym, closeSide, tp1Price, undefined, LIVE_BASE_URL);
+        } else {
+          const tp2Price = sig.side === 'LONG'
+            ? sig.entryPrice + riskDist * TRADER_CONFIG.TP2_RR
+            : sig.entryPrice - riskDist * TRADER_CONFIG.TP2_RR;
+          await placeTakeProfitMarket(sym, closeSide, tp1Price, qty * 0.5, LIVE_BASE_URL);
+          await placeTakeProfitMarket(sym, closeSide, tp2Price, qty * 0.5, LIVE_BASE_URL);
+        }
+      }
+
+      backendSignalCache[sigId].backendDecision = 'DEPLOYED_BACKEND';
+      backendSignalCache[sigId].deployedOrderId = String(entryRes.orderId || 'SUCCESS');
+      currentCapacity++;
+      if (sig.side === 'LONG') deployedLongsThisScan++; else deployedShortsThisScan++;
+
+    } catch (err: any) {
+      logMsg(`❌ FAILED [${sym}]: ${err.message}`);
+      backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
+      backendSignalCache[sigId].blockerReason   = `Execution error: ${err.message}`;
+    }
+  }
+
+  try {
+    fs.writeFileSync(path.resolve(__dirname, '../../backend_signals.json'), JSON.stringify(backendSignalCache, null, 2));
+  } catch (_) { /* non-critical write */ }
+
+  logMsg(`--- EVALUATION COMPLETE ---`);
+  return backendSignalCache;
 }

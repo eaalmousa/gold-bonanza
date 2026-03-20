@@ -5,15 +5,15 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type {
-  ModeConfig, ActiveTrade, ClosedTrade, PaperSession,
+  ModeConfig, ActiveTrade,
   ExecutionMode, ExecutionResult, MarketRow,
   SignalRow, PriceData, SignalHistoryEntry, UnifiedTrace,
   MicrostructureRow, LiquidityLayer, TriggerLevel, BlockedSignal, PipelineHealth,
   MarketRegime, OrderFlowSnapshot
 } from '../types/trading';
 import { MODES } from '../types/trading';
-import { api } from '../services/api';
 import { executeOrder, toExecutionPayload } from '../services/executionAdapter';
+
 
 interface TradingState {
   // Core
@@ -35,15 +35,11 @@ interface TradingState {
   pipelineTraces: UnifiedTrace[];
   signalHistory: SignalHistoryEntry[];
 
-  // Active trades
+  // Active trades (live Binance only)
   activeTrades: ActiveTrade[];
   binancePositions: any[];
 
-  // Paper trading
-  paperMode: boolean;
-  paperSession: PaperSession;
-
-  // Execution adapter
+  // Execution — always LIVE
   executionMode: ExecutionMode;
   executionResults: ExecutionResult[];
 
@@ -94,15 +90,10 @@ interface TradingState {
   setOrderFlowSnapshot: (symbol: string, snapshot: OrderFlowSnapshot) => void;
   setBackendSignals: (signals: Record<string, any>) => void;
   queueSignal: (id: string) => void;
-  deploySignal: (signalId: string) => void; // Switched to ID-based deployment
-  setExecutionMode: (mode: ExecutionMode) => void;
+  deploySignal: (signalId: string) => void;
   addExecutionResult: (result: ExecutionResult) => void;
   updateTradeLivePrice: (symbol: string, livePrice: number) => void;
   updateTradeStatus: (idOrSymbol: string, status: string, price?: number, note?: string) => void;
-  // Paper trading actions
-  setPaperMode: (enabled: boolean) => void;
-  resetPaperSession: (startBalance?: number) => void;
-  closePaperTrade: (idOrSymbol: string, closePrice: number) => void;
   deployManualSignal: (signal: any, symbol: string) => void;
 }
 
@@ -139,23 +130,10 @@ export const useTradingStore = create<TradingState>()(
   orderFlowSnapshots: {},
   backendSignals: {},
 
-  // Paper trading
-  paperMode: false,
-  paperSession: {
-    startBalance: 10000,
-    currentBalance: 10000,
-    totalPnl: 0,
-    openExposure: 0,
-    winCount: 0,
-    lossCount: 0,
-    breakevenCount: 0,
-    avgRMultiple: 0,
-    closedTrades: []
-  },
-
-  // Execution adapter — default to PAPER (safe)
-  executionMode: 'PAPER' as ExecutionMode,
+  // Execution — hardwired to LIVE
+  executionMode: 'LIVE' as ExecutionMode,
   executionResults: [],
+
 
   setBalance: (balance) => set({ balance }),
 
@@ -308,8 +286,6 @@ export const useTradingStore = create<TradingState>()(
     const payload = toExecutionPayload(target.signal, symbol);
     payload.signalId = signalId; // Link payload back to original signal
 
-    const mode    = state.executionMode;
-    const isPaper = mode === 'PAPER';
 
     // ── Mark exact signal instance as DEPLOYED ───────────────────────────────
     set(s => ({
@@ -343,12 +319,11 @@ export const useTradingStore = create<TradingState>()(
       entryType:  payload.entryType,
       entryTiming:payload.entryTiming,
       reasons:    payload.reasons,
-      isPaperTrade: isPaper,
       statusHistory: [{ status: 'ACTIVE' as const, ts: Date.now() }]
     });
 
-    // ── Route through adapter ────────────────────────────────────────────────
-    executeOrder(mode, payload).then(result => {
+    // ── Always LIVE ────────────────────────────────────────────────────────────
+    executeOrder('LIVE', payload).then(result => {
       get().addExecutionResult(result);
       if (result.status === 'FAILED') {
         // Roll back the specific trade by ID
@@ -360,18 +335,6 @@ export const useTradingStore = create<TradingState>()(
         }));
         console.error(`[ExecAdapter] Rolled back ${symbol} (ID: ${signalId}) — reason: ${result.error}`);
       }
-    });
-  },
-
-  setExecutionMode: (mode) => {
-    set({
-      executionMode: mode,
-      paperMode: mode === 'PAPER'
-    });
-    
-    // BACKEND SYNC: Push the execution mode truth to the server
-    api.updateAutoTradeConfig({ executionMode: mode }).catch((err: any) => {
-      console.error(`[Backend Sync] Failed to update execution mode:`, err);
     });
   },
 
@@ -445,14 +408,8 @@ export const useTradingStore = create<TradingState>()(
       currentPrices: { ...state.currentPrices, [symbol.toUpperCase()]: { last: livePrice, ts: now } }
     };
 
-    // Auto-close check by ID
-    const PAPER_TERMINAL = ['TP2_HIT', 'SL_HIT', 'CLOSED', 'CANCELLED'];
-    updatedTrades.forEach(t => {
-      const wasNotTerminal = !PAPER_TERMINAL.includes(state.activeTrades.find(o => o.id === t.id)?.status ?? '');
-      if (t.isPaperTrade && wasNotTerminal && PAPER_TERMINAL.includes(t.status)) {
-        setTimeout(() => get().closePaperTrade(t.id, livePrice), 0);
-      }
-    });
+    // Auto-close removed — live trades managed via Binance positions sync only
+
 
     return newState;
   }),
@@ -478,76 +435,10 @@ export const useTradingStore = create<TradingState>()(
     })
   })),
 
-  // ─── Paper Trading Actions ──────────────────────────────────────────────────
-
-  setPaperMode: (enabled) => set({ paperMode: enabled }),
-
-  resetPaperSession: (startBalance = 10000) => set({
-    paperMode: true,
-    paperSession: {
-      startBalance,
-      currentBalance: startBalance,
-      totalPnl: 0,
-      openExposure: 0,
-      winCount: 0,
-      lossCount: 0,
-      breakevenCount: 0,
-      avgRMultiple: 0,
-      closedTrades: []
-    }
-  }),
-
-  closePaperTrade: (idOrSymbol, closePrice) => {
-    const state = get();
-    const trade = state.activeTrades.find(
-      t => t.isPaperTrade && (t.id === idOrSymbol || t.symbol.toUpperCase() === idOrSymbol.toUpperCase())
-    );
-    if (!trade) return;
-
-    const dir         = trade.side === 'LONG' ? 1 : -1;
-    const realizedPnl = parseFloat(((closePrice - trade.entryPrice) * dir * trade.qty).toFixed(2));
-    const outcome: ClosedTrade['outcome'] =
-      realizedPnl > 0.01 ? 'WIN' : realizedPnl < -0.01 ? 'LOSS' : 'BREAKEVEN';
-
-    const closedTrade: ClosedTrade = {
-      ...trade,
-      closePrice,
-      closedAt: Date.now(),
-      outcome,
-      realizedPnl
-    };
-
-    const prev = state.paperSession;
-    const allClosed = [...prev.closedTrades, closedTrade];
-    const wins   = prev.winCount   + (outcome === 'WIN'       ? 1 : 0);
-    const losses = prev.lossCount  + (outcome === 'LOSS'      ? 1 : 0);
-    const bes    = prev.breakevenCount + (outcome === 'BREAKEVEN' ? 1 : 0);
-    const allR   = allClosed.map(c => c.rMultiple ?? 0);
-    const avgR   = allR.length ? parseFloat((allR.reduce((a, b) => a + b, 0) / allR.length).toFixed(3)) : 0;
-    const newBalance   = parseFloat((prev.currentBalance + realizedPnl).toFixed(2));
-    const totalPnl     = parseFloat((newBalance - prev.startBalance).toFixed(2));
-    const openTrades   = state.activeTrades.filter(t => t.isPaperTrade && t.id !== trade.id);
-    const openExposure = openTrades.reduce((sum, t) => sum + (t.sizeUSDT ?? 0), 0);
-
-    set(s => ({
-      activeTrades: s.activeTrades.filter(t => t.id !== trade.id),
-      paperSession: {
-        ...prev, currentBalance: newBalance, totalPnl,
-        openExposure: parseFloat(openExposure.toFixed(2)),
-        winCount: wins, lossCount: losses, breakevenCount: bes,
-        avgRMultiple: avgR,
-        closedTrades: allClosed
-      }
-    }));
-
-    console.log(`[Paper] 📋 ${trade.symbol} (ID: ${trade.id}) CLOSED @ ${closePrice} | PnL: ${realizedPnl >= 0 ? '+' : ''}${realizedPnl} | Balance: $${newBalance} | ${outcome}`);
-  },
 
   deployManualSignal: (signal, symbol) => {
     const state = get();
     const payload = toExecutionPayload(signal, symbol);
-    const mode    = state.executionMode;
-    const isPaper = mode === 'PAPER';
     const fakeId  = `manual_${Date.now()}`;
 
     state.addActiveTrade({
@@ -569,19 +460,17 @@ export const useTradingStore = create<TradingState>()(
       deployedAt: Date.now(),
       status:     'ACTIVE',
       score:      payload.score,
-      isPaperTrade: isPaper,
       statusHistory: [{ status: 'ACTIVE' as const, ts: Date.now() }]
     });
 
-    executeOrder(mode, payload).then(result => {
+    executeOrder('LIVE', payload).then(result => {
       get().addExecutionResult(result);
     });
-      }
+  }
     }),
     {
       name: 'gold-bonanza-storage',
       partialize: (state) => ({
-        executionMode: state.executionMode,
         activeModeId: state.activeMode.key,
         isAutoTradeActive: state.isAutoTradeActive,
         isScannerActive: state.isScannerActive,

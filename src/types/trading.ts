@@ -155,9 +155,6 @@ export interface ActiveTrade {
   entryType?: string;
   entryTiming?: string;
   reasons?: string[];
-
-  // Paper trading flag
-  isPaperTrade?: boolean;
 }
 
 export interface ClosedTrade extends ActiveTrade {
@@ -166,21 +163,10 @@ export interface ClosedTrade extends ActiveTrade {
   outcome: 'WIN' | 'LOSS' | 'BREAKEVEN';
 }
 
-export interface PaperSession {
-  startBalance: number;
-  currentBalance: number;
-  totalPnl: number;
-  openExposure: number;        // sum of sizeUSDT for open paper trades
-  winCount: number;
-  lossCount: number;
-  breakevenCount: number;
-  avgRMultiple: number;        // mean rMultiple across closed trades
-  closedTrades: ClosedTrade[];
-}
-
 // ─── Execution Adapter ────────────────────────────────────────────────────────
 
-export type ExecutionMode = 'PAPER' | 'DEMO' | 'LIVE';
+/** Single live execution mode — no paper/demo/test paths */
+export type ExecutionMode = 'LIVE';
 
 /** Canonical order payload passed to every execution path */
 export interface ExecutionPayload {
@@ -202,7 +188,7 @@ export interface ExecutionPayload {
   kind?: string;
 }
 
-export type ExecutionResultStatus = 'SUBMITTING' | 'SUBMITTED' | 'FAILED' | 'PAPER';
+export type ExecutionResultStatus = 'SUBMITTING' | 'SUBMITTED' | 'FAILED';
 
 export interface ExecutionResult {
   signalId: string;

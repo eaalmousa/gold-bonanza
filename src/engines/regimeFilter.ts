@@ -83,19 +83,20 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
     };
   }
 
-  // ─── CHOP DETECTION (NEW) ──────────────────────────────────────
-  // Conditions: EMAs 20/50 are compressed (within 0.3% of each other)
-  // AND recent 8h range is small (<1.2% ATR-ratio). No clear direction.
+  // ─── CHOP DETECTION (HARDENED v2) ────────────────────────────────────────────
+  // TRIGGER: EMAs 20/50 compressed within 0.5% OR 8h range is tightly compressed.
+  // Previously used AND-logic which missed many legitimate ranging conditions.
+  // Now: EITHER condition alone is enough to declare CHOP and block all entries.
   const emaDelta = Math.abs(e20! - e50!) / e50!;
   const range8h  = Math.max(...highs.slice(idx - 8)) - Math.min(...lows.slice(idx - 8));
   const atrRatio = range8h / (atr! * 8);
 
-  if (emaDelta < 0.003 && atrRatio < 0.65) {
+  if (emaDelta < 0.005 || atrRatio < 0.70) {
     return {
       regime: 'CHOP',
       btc4hTrend, btcRsi,
-      scoreBonus: -5,
-      reason: `BTC CHOP: EMA20/50 compressed ${(emaDelta * 100).toFixed(2)}%, range ratio ${atrRatio.toFixed(2)}`
+      scoreBonus: -8,
+      reason: `BTC CHOP: EMA20/50 spread=${(emaDelta * 100).toFixed(2)}%, 8h range ratio=${atrRatio.toFixed(2)}`
     };
   }
 
@@ -165,13 +166,14 @@ export function getCorrelationPositionLimit(
   reason: string;
 } {
   if (regime === 'CRASH') {
-    return { allowNew: false, maxNewPositions: 0, reason: 'BTC CRASH — all new entries blocked' };
+    return { allowNew: false, maxNewPositions: 0, reason: 'BTC CRASH — all entries blocked' };
   }
   if (regime === 'CHOP') {
+    // CHOP = zero new positions. Range environments are the #1 source of false entries.
     return {
-      allowNew: currentOpenCount < 2,
-      maxNewPositions: 2,
-      reason: 'BTC CHOP — max 2 concurrent positions allowed'
+      allowNew: false,
+      maxNewPositions: 0,
+      reason: 'BTC CHOP — no new entries in ranging/compressed market'
     };
   }
   if (regime === 'TRENDING_DOWN' && btc4hTrend === 'DOWN') {

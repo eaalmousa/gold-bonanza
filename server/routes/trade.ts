@@ -10,18 +10,11 @@ import {
 
 export const tradeRouter = Router();
 
-// BASE_URLS mapping for mode resolution
-// The frontend sends 'DEMO' | 'LIVE' — these are the canonical mode strings across the whole stack.
-const BASE_URLS: Record<string, string> = {
-  DEMO: 'https://demo-fapi.binance.com',
-  LIVE: 'https://fapi.binance.com',
-  // Legacy aliases (kept for safety)
-  BINANCE_TEST: 'https://testnet.binancefuture.com',
-  BINANCE_LIVE: 'https://fapi.binance.com',
-};
+// Single live base URL — no demo/test endpoints
+const LIVE_BASE_URL = 'https://fapi.binance.com';
 
-function resolveBaseUrl(mode?: string): string {
-  return BASE_URLS[mode ?? ''] ?? BASE_URLS.DEMO;
+function resolveBaseUrl(): string {
+  return LIVE_BASE_URL;
 }
 
 tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
@@ -109,41 +102,28 @@ tradeRouter.get('/balance', requireAuth, async (req: any, res: any) => {
 });
 
 tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
-  // ── Read all fields from adapter ────────────────────────────────────────────
   const {
     symbol, side, entryPrice, stopLoss, takeProfit, takeProfit2,
     qty:         frontendQty,
     sizeUSDT:    frontendSize,
     leverage:    frontendLeverage,
-    mode,         // 'BINANCE_TEST' | 'BINANCE_LIVE'
-    // Provenance (stored in log, not sent to exchange)
     score, entryType, entryTiming, reasons
   } = req.body;
 
-  // ── Guard: mode must be explicit ────────────────────────────────────────────
-  const VALID_MODES = ['DEMO', 'LIVE', 'BINANCE_TEST', 'BINANCE_LIVE'];
-  if (!mode || !VALID_MODES.includes(mode)) {
-    return res.status(400).json({
-      error: `Invalid or missing execution mode: "${mode}". Must be one of: ${VALID_MODES.join(', ')}.`
-    });
-  }
-
-  // ── Guard: block LIVE/BINANCE_LIVE via env flag ───────────────────────────────────
-  const isLive = mode === 'LIVE' || mode === 'BINANCE_LIVE';
-  if (isLive && process.env.ENABLE_LIVE_TRADING !== 'true') {
+  // ── Live-only guard ──────────────────────────────────────────────────────────
+  if (process.env.ENABLE_LIVE_TRADING !== 'true') {
     return res.status(403).json({
-      error: 'LIVE mode is not enabled. Set ENABLE_LIVE_TRADING=true in server .env to unlock.'
+      error: 'Live trading not enabled. Set ENABLE_LIVE_TRADING=true in server .env.'
     });
   }
-
-  // ── Resolve BASE_URL per mode (NEVER shares with live in TEST mode) ──────────
-  const baseUrl = resolveBaseUrl(mode);
-  console.log(`[Trade:open] mode=${mode} → baseUrl=${baseUrl}`);
 
   // ── Validate required fields ─────────────────────────────────────────────────
   if (!symbol || !side || !entryPrice || !stopLoss || !takeProfit) {
     return res.status(400).json({ error: 'Missing required fields: symbol, side, entryPrice, stopLoss, takeProfit' });
   }
+
+  const baseUrl = resolveBaseUrl();
+  console.log(`[Trade:open] LIVE → ${baseUrl}`);
 
   // ── Use frontend-supplied qty/leverage where present; fallback to env config ─
   const lev = frontendLeverage ?? parseInt(process.env.LEVERAGE || '10', 10);
@@ -171,11 +151,11 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
   // ── Audit log BEFORE any submission ──────────────────────────────────────────
   const auditPayload = {
     symbol, side, entryPrice, stopLoss, takeProfit, takeProfit2,
-    qty: roundTo(qty, qtyPrec), leverage: lev, mode, baseUrl,
+    qty: roundTo(qty, qtyPrec), leverage: lev, mode: 'LIVE', baseUrl,
     score, entryType, entryTiming, reasons
   };
   console.log('[Trade:open] Outbound payload:', JSON.stringify(auditPayload, null, 2));
-  tradeLogs.unshift(`[${new Date().toISOString()}] [${mode}] SUBMITTING: ${symbol} ${side}`);
+  tradeLogs.unshift(`[${new Date().toISOString()}] [LIVE] SUBMITTING: ${symbol} ${side}`);
 
   try {
     // 1. Set leverage
@@ -230,45 +210,38 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
       console.log('[Trade:open] TP2 order response:', JSON.stringify(tp2Order));
     }
 
-    tradeLogs.unshift(`[${new Date().toISOString()}] [${mode}] ✅ SUBMITTED: ${symbol} ${side} orderId=${entryOrder.orderId}`);
+    tradeLogs.unshift(`[${new Date().toISOString()}] [LIVE] ✅ SUBMITTED: ${symbol} ${side} orderId=${entryOrder.orderId}`);
 
-    // ── Normalised success response ───────────────────────────────────────────
     return res.json({
       success:    true,
-      mode,
+      mode:       'LIVE',
       baseUrl,
       orderId:    entryOrder.orderId,
       clientOrderId: entryOrder.clientOrderId,
-      orders: {
-        entry:  entryOrder,
-        stopLoss: stopOrder,
-        takeProfit:  tp1Order,
-        takeProfit2: tp2Order
-      },
+      orders: { entry: entryOrder, stopLoss: stopOrder, takeProfit: tp1Order, takeProfit2: tp2Order },
       submittedPayload: auditPayload
     });
 
   } catch (e: any) {
     const errMsg = e?.message ?? 'Unknown error';
-    tradeLogs.unshift(`[${new Date().toISOString()}] [${mode}] ❌ FAILED: ${symbol} — ${errMsg}`);
+    tradeLogs.unshift(`[${new Date().toISOString()}] [LIVE] ❌ FAILED: ${symbol} — ${errMsg}`);
     console.error('[Trade:open] Error:', errMsg);
 
-    // ── Normalised error response ─────────────────────────────────────────────
     return res.status(500).json({
-      error:           errMsg,
-      mode,
+      error:            errMsg,
+      mode:            'LIVE',
       baseUrl,
       symbol,
-      failedAt:        Date.now(),
+      failedAt:         Date.now(),
       submittedPayload: auditPayload
     });
   }
 });
 
 tradeRouter.post('/close', requireAuth, async (req: any, res: any) => {
-  const { symbol, side, qty, mode } = req.body;
+  const { symbol, side, qty } = req.body;
   try {
-    const baseUrl = resolveBaseUrl(mode);
+    const baseUrl = resolveBaseUrl();
     const closeSide = side === 'LONG' ? 'SELL' : 'BUY';
     
     // We use the common binanceRequest now

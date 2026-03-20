@@ -40,6 +40,9 @@ function App() {
         if (config.enabled !== undefined) {
           setAutoTradeActive(config.enabled);
         }
+        // Force the backend to immediately respect our locally persisted execution mode
+        const localMode = useTradingStore.getState().executionMode;
+        await api.updateAutoTradeConfig({ executionMode: localMode });
       } catch (e) {
         console.warn('[Sync] Could not fetch initial state from cloud');
       }

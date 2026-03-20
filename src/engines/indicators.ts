@@ -219,3 +219,106 @@ export function detectDoublePattern(
 
   return null;
 }
+
+// ─── ZLSMA (ZERO-LAG SMA via DEMA approximation) ──────────────────────────────
+export function calcZLSMA(closes: number[], period: number = 20): (number | null)[] {
+  const ema1 = calcEMA(closes, period);
+  const ema1Values = ema1.map(v => v ?? closes[0]); // Safe fallback before EMA kicks in
+  const ema2 = calcEMA(ema1Values, period);
+  
+  const zlsma: (number | null)[] = closes.map((_, i) => {
+    if (ema1[i] == null || ema2[i] == null || i < period * 2 - 2) return null;
+    return 2 * (ema1[i] as number) - (ema2[i] as number);
+  });
+  return zlsma;
+}
+
+// ─── SESSION VOLUME PROFILE (SVP) ─────────────────────────────────────────────
+export interface VolumeProfile {
+  poc: number;
+  vah: number;
+  val: number;
+  totalVol: number;
+}
+export function calcSessionVolumeProfile(
+  highs: number[], lows: number[], closes: number[], vols: number[], 
+  lookback: number = 96, bins: number = 50
+): VolumeProfile | null {
+  if (closes.length < lookback) return null;
+  const startIdx = closes.length - lookback;
+  let maxH = -Infinity, minL = Infinity;
+  let totalVol = 0;
+  
+  for (let i = startIdx; i < closes.length; i++) {
+    if (highs[i] > maxH) maxH = highs[i];
+    if (lows[i] < minL) minL = lows[i];
+    totalVol += vols[i];
+  }
+  if (totalVol === 0 || maxH === minL) return null;
+
+  const binSize = (maxH - minL) / bins;
+  const profile = new Array(bins).fill(0);
+  
+  for (let i = startIdx; i < closes.length; i++) {
+    const h = highs[i], l = lows[i], v = vols[i];
+    const candleVol = v;
+    const startBin = Math.max(0, Math.floor((l - minL) / binSize));
+    const endBin = Math.min(bins - 1, Math.floor((h - minL) / binSize));
+    const binsTouched = endBin - startBin + 1;
+    const volPerBin = candleVol / binsTouched;
+    for (let b = startBin; b <= endBin; b++) profile[b] += volPerBin;
+  }
+  
+  let pocIdx = 0;
+  let maxV = -1;
+  for (let b = 0; b < bins; b++) {
+    if (profile[b] > maxV) { maxV = profile[b]; pocIdx = b; }
+  }
+  
+  let targetVol = totalVol * 0.70;
+  let currentVol = profile[pocIdx];
+  let up = pocIdx + 1;
+  let down = pocIdx - 1;
+  
+  while (currentVol < targetVol && (up < bins || down >= 0)) {
+    const volUp = up < bins ? profile[up] : -1;
+    const volDown = down >= 0 ? profile[down] : -1;
+    if (volUp > volDown) {
+      currentVol += volUp;
+      up++;
+    } else {
+      currentVol += volDown;
+      down--;
+    }
+  }
+  
+  const poc = minL + (pocIdx + 0.5) * binSize;
+  const vah = minL + (Math.min(bins - 1, up) * binSize);
+  const val = minL + (Math.max(0, down) * binSize);
+  
+  return { poc, vah, val, totalVol };
+}
+
+// ─── CHANDELIER EXIT (CE) ─────────────────────────────────────────────────────
+export function calcChandelierExit(
+  highs: number[], lows: number[], closes: number[], 
+  period = 22, mult = 3.0
+): { ceLong: (number | null)[], ceShort: (number | null)[] } {
+  const atrs = calcATR(highs, lows, closes, period);
+  const ceLong: (number | null)[] = new Array(closes.length).fill(null);
+  const ceShort: (number | null)[] = new Array(closes.length).fill(null);
+  
+  for (let i = period; i < closes.length; i++) {
+    const atr = atrs[i];
+    if (atr == null) continue;
+    let hh = -Infinity;
+    let ll = Infinity;
+    for (let j = i - period + 1; j <= i; j++) {
+      if (highs[j] > hh) hh = highs[j];
+      if (lows[j] < ll) ll = lows[j];
+    }
+    ceLong[i] = hh - atr * mult;
+    ceShort[i] = ll + atr * mult;
+  }
+  return { ceLong, ceShort };
+}

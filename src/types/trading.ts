@@ -137,8 +137,11 @@ export interface ActiveTrade {
   status: TradeStatus | string;  // string kept for AWAITING_BINANCE compatibility
   dynamicSL?: number;
 
-  // Live tracking
+  // Live tracking & Final Outcomes
   livePrice?: number;
+  mfe?: number;              // Max Favorable Excursion in price
+  mae?: number;              // Max Adverse Excursion in price
+  hasHit1R?: boolean;
   unrealizedPnl?: number;    // in USDT
   realizedPnl?: number;      // in USDT (set on close)
   rMultiple?: number;        // (exitPrice - entry) / (entry - sl) normalised to direction

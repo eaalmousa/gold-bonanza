@@ -391,9 +391,28 @@ export const useTradingStore = create<TradingState>()(
         newStatus = 'TP1_HIT'; realizedPnl = pnl;
         history = [...history, { status: 'TP1_HIT' as const, ts: now, price: livePrice, note: 'First target reached' }];
       }
+      // Update Outcome Trackers
+      let mfe = t.mfe ?? livePrice;
+      let mae = t.mae ?? livePrice;
+      if (t.side === 'LONG') {
+        if (livePrice > mfe) mfe = livePrice;
+        if (livePrice < mae) mae = livePrice;
+      } else {
+        if (livePrice < mfe) mfe = livePrice;
+        if (livePrice > mae) mae = livePrice;
+      }
+      
+      let hasHit1R = t.hasHit1R ?? false;
+      const risk = Math.abs(t.entryPrice - t.sl);
+      if (risk > 0 && !hasHit1R) {
+        const potential1RPrice = t.side === 'LONG' ? t.entryPrice + risk : t.entryPrice - risk;
+        if (t.side === 'LONG' && livePrice >= potential1RPrice) hasHit1R = true;
+        if (t.side === 'SHORT' && livePrice <= potential1RPrice) hasHit1R = true;
+      }
 
       return {
         ...t, livePrice, status: newStatus, realizedPnl, statusHistory: history,
+        mfe, mae, hasHit1R,
         unrealizedPnl: parseFloat(unrealizedPnl.toFixed(2)),
         rMultiple:     rMultiple  !== undefined ? parseFloat(rMultiple.toFixed(3))  : undefined,
         distToTp1:     distToTp1 !== undefined ? parseFloat(distToTp1.toFixed(3)) : undefined,
@@ -426,9 +445,20 @@ export const useTradingStore = create<TradingState>()(
 
       const TERMINAL = ['TP1_HIT', 'TP2_HIT', 'SL_HIT', 'CLOSED', 'CANCELLED'];
       let realizedPnl = t.realizedPnl;
-      if (TERMINAL.includes(newStatus) && price) {
-        const dir = t.side === 'LONG' ? 1 : -1;
-        realizedPnl = parseFloat(((price - t.entryPrice) * dir * t.qty).toFixed(2));
+      if (TERMINAL.includes(newStatus) && !TERMINAL.includes(t.status as string)) {
+        if (price) {
+          const dir = t.side === 'LONG' ? 1 : -1;
+          realizedPnl = parseFloat(((price - t.entryPrice) * dir * t.qty).toFixed(2));
+        }
+        
+        // Print Live Trade Outcome Audit
+        const moveMfePct = t.mfe ? (Math.abs(t.mfe - t.entryPrice) / t.entryPrice * 100).toFixed(2) : '0.00';
+        const moveMaePct = t.mae ? (Math.abs(t.mae - t.entryPrice) / t.entryPrice * 100).toFixed(2) : '0.00';
+        console.log(`\n\x1b[36m┌─── [TRADE OUTCOME: ${t.symbol} ${t.side}] ──────────────────────\x1b[0m`);
+        console.log(`\x1b[36m│\x1b[0m Result:      ${newStatus} (PnL: ${realizedPnl || 0} USDT)`);
+        console.log(`\x1b[36m│\x1b[0m Excursion:   Max Fav: ${moveMfePct}% | Max Adv: ${moveMaePct}%`);
+        console.log(`\x1b[36m│\x1b[0m Target 1R:   ${t.hasHit1R ? '✅ Achieved' : '❌ Missed'}`);
+        console.log(`\x1b[36m└────────────────────────────────────────────────────────────\x1b[0m\n`);
       }
 
       return { ...t, status: newStatus, statusHistory: history, realizedPnl };

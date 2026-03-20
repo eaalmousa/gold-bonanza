@@ -66,15 +66,14 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
     return { regime: 'RANGING', btc4hTrend, scoreBonus: 0, reason: 'EMA not ready' };
   }
 
-  // ─── CRASH DETECTION (Tightened: -1.8% over 3h) ──────────────
-  // Previous threshold was -3% over 4h — too late. By the time BTC is 
-  // down 3% in 4h, alts are already down 5-8%. We detect earlier.
+  // ─── CRASH DETECTION (Tightened for earlier detection) ─────────────────
+  // A rapid -1.5% in 3h or -3.5% in 10h is enough to suspend longs and enter CRASH mode.
   const close3h  = closes[idx - 3] ?? close;
   const drop3h   = ((close - close3h) / close3h) * 100;
   const close10h = closes[idx - 10] ?? close;
   const drop10h  = ((close - close10h) / close10h) * 100;
 
-  if (drop3h < -1.8 || drop10h < -4.5) {
+  if (drop3h < -1.5 || drop10h < -3.5) {
     return {
       regime: 'CRASH',
       btc4hTrend, btcRsi,
@@ -83,15 +82,16 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
     };
   }
 
-  // ─── CHOP DETECTION (HARDENED v2) ────────────────────────────────────────────
-  // TRIGGER: EMAs 20/50 compressed within 0.5% OR 8h range is tightly compressed.
-  // Previously used AND-logic which missed many legitimate ranging conditions.
-  // Now: EITHER condition alone is enough to declare CHOP and block all entries.
+  // ─── CHOP DETECTION (Extremely Strict) ──────────────────────────────────
+  // Markets are assumed choppy unless momentum is clearly expanding.
+  // We require EMA separation > 0.8% indicating real thrust, OR
+  // 8h range must be at least 1.0x ATRx8 (active expansion).
   const emaDelta = Math.abs(e20! - e50!) / e50!;
   const range8h  = Math.max(...highs.slice(idx - 8)) - Math.min(...lows.slice(idx - 8));
   const atrRatio = range8h / (atr! * 8);
 
-  if (emaDelta < 0.005 || atrRatio < 0.70) {
+  // If unsure, we reject by declaring CHOP.
+  if (emaDelta < 0.008 || atrRatio < 1.0) {
     return {
       regime: 'CHOP',
       btc4hTrend, btcRsi,
@@ -100,34 +100,36 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
     };
   }
 
-  // ─── TRENDING UP ──────────────────────────────────
+  // ─── TRENDING UP (Requires Real Displacement) ───────────────────
   const emaAlignedUp = e20! > e50! && e50! > e200!;
   const aboveEma200  = close > e200!;
-  const e20SlopeUp   = e20! > (ema20[idx - 5] ?? e20!);
-  const e50SlopeUp   = e50! > (ema50[idx - 5] ?? e50!);
+  // Must rise at least 0.15% over 5 hours, no flat drifting allowed
+  const e20SlopeUp   = ((e20! - (ema20[idx - 5] ?? e20!)) / e20!) * 100 > 0.15;
+  const e50SlopeUp   = ((e50! - (ema50[idx - 5] ?? e50!)) / e50!) * 100 > 0.10;
 
   if (emaAlignedUp && aboveEma200 && e20SlopeUp && e50SlopeUp) {
     const recentGain = ((close - close10h) / close10h) * 100;
-    const isStrong   = recentGain > 1.5;
+    const isStrong   = recentGain > 2.0; // tighter definition of strong
     return {
       regime: 'TRENDING_UP',
       btc4hTrend, btcRsi,
       scoreBonus: isStrong ? 3 : 1,
-      reason: `BTC uptrend: EMA aligned, +${recentGain.toFixed(1)}% (10h)`
+      reason: `BTC active uptrend: EMA aligned, steep slope, +${recentGain.toFixed(1)}% (10h)`
     };
   }
 
   // ─── TRENDING DOWN ────────────────────────────────
   const emaAlignedDown = e20! < e50! && e50! < e200!;
   const belowEma200    = close < e200!;
-  const e20SlopeDown   = e20! < (ema20[idx - 5] ?? e20!);
+  // Slope must be actively going down, not drifting
+  const e20SlopeDown   = ((e20! - (ema20[idx - 5] ?? e20!)) / e20!) * 100 < -0.15;
 
   if (emaAlignedDown && belowEma200 && e20SlopeDown) {
     return {
       regime: 'TRENDING_DOWN',
       btc4hTrend, btcRsi,
       scoreBonus: -3,
-      reason: `BTC downtrend: EMA aligned bearish`
+      reason: `BTC active downtrend: EMA aligned bearish, steep slope`
     };
   }
 

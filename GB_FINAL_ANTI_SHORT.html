@@ -719,6 +719,14 @@ function triggerCardOpenAlert(symbol, kind, sig) {
     console.error('triggerCardOpenAlert error:', e);
   }
 }
+// Complete Strict Side Resolver
+function resolveCanonicalSide(value) {
+  const v = String(value || '').toUpperCase();
+  if (/(SHORT|SELL|BEAR|DOWN)/.test(v)) return 'SHORT';
+  if (/(LONG|BUY|BULL|UP)/.test(v)) return 'LONG';
+  return 'UNKNOWN';
+}
+
 function inferSignalSide(sig) {
   try {
     const entry = Number(sig?.entryPrice ?? sig?.triggerPrice ?? sig?.price);
@@ -742,11 +750,13 @@ function inferSignalSide(sig) {
       sig?.entryHint
     ].filter(Boolean).join(' ')).toUpperCase();
 
-    // Auxiliary modules are allowed to hint bullish direction, but they may not
-    // invent a short without proper stop/target geometry.
-    if (/(LONG|BUY|BULL|UP)/.test(explicit)) return 'LONG';
+    // Auxiliary modules may hint bullish/bearish direction
+    const resolved = resolveCanonicalSide(explicit);
+    if (resolved !== 'UNKNOWN') return resolved;
   } catch (e) {}
-  return 'LONG';
+  
+  // Safe default: return UNKNOWN.
+  return 'UNKNOWN';
 }
     let isDataLive = false;
 
@@ -1523,10 +1533,10 @@ function renderSniperSignals(sniperSignals) {
             </div>
 
             <button
-              onclick="${dealStatus === 'CONFIRMED' ? '' : `registerDeploymentHub('${item.symbol}', '${displaySide}', ${pr}, ${qty}, ${t1}, ${sl}, ${ACTIVE_MODE.leverage}, '${s.kind}')`}"
-              ${dealStatus === 'CONFIRMED' ? 'disabled' : ''}
-              class="premium-btn w-full py-4 rounded-[2.2rem] text-[10px] tracking-[0.5em] font-black uppercase italic shadow-2xl ${dealStatus === 'CONFIRMED' ? 'opacity-80 cursor-default' : ''}">
-              ${dealStatus === 'CONFIRMED' ? 'CONFIRMED' : `EXECUTE ${ACTIVE_MODE.leverage}X`}
+              onclick="${dealStatus === 'CONFIRMED' || dealStatus.includes('INVALID') ? '' : `registerDeploymentHub('${item.symbol}', '${displaySide}', ${pr}, ${qty}, ${t1}, ${sl}, ${ACTIVE_MODE.leverage}, '${s.kind}')`}"
+              ${dealStatus === 'CONFIRMED' || dealStatus.includes('INVALID') ? 'disabled' : ''}
+              class="premium-btn w-full py-4 rounded-[2.2rem] text-[10px] tracking-[0.5em] font-black uppercase italic shadow-2xl ${dealStatus === 'CONFIRMED' ? 'opacity-80 cursor-default' : (dealStatus.includes('INVALID') ? 'grayscale opacity-70 cursor-not-allowed' : '')}">
+              ${dealStatus === 'CONFIRMED' ? 'CONFIRMED' : (dealStatus.includes('INVALID') ? dealStatus.replace('_', ' ') : `EXECUTE ${ACTIVE_MODE.leverage}X`)}
             </button>
           </div>
         `;
@@ -1641,10 +1651,10 @@ function renderSniperSignals(sniperSignals) {
             </div>
 
             <button
-              onclick="${dealStatus === 'CONFIRMED' ? '' : `registerDeploymentHub('${item.symbol}', '${displaySide}', ${pr}, ${qty}, ${t1}, ${sl}, ${ACTIVE_MODE.leverage}, '${s.kind}')`}"
-              ${dealStatus === 'CONFIRMED' ? 'disabled' : ''}
-              class="blue-btn w-full py-4 rounded-[2.2rem] text-[10px] tracking-[0.5em] font-black uppercase italic shadow-2xl ${dealStatus === 'CONFIRMED' ? 'opacity-80 cursor-default' : ''}">
-              ${dealStatus === 'CONFIRMED' ? 'CONFIRMED' : `EXECUTE ${ACTIVE_MODE.leverage}X`}
+              onclick="${dealStatus === 'CONFIRMED' || dealStatus.includes('INVALID') ? '' : `registerDeploymentHub('${item.symbol}', '${displaySide}', ${pr}, ${qty}, ${t1}, ${sl}, ${ACTIVE_MODE.leverage}, '${s.kind}')`}"
+              ${dealStatus === 'CONFIRMED' || dealStatus.includes('INVALID') ? 'disabled' : ''}
+              class="blue-btn w-full py-4 rounded-[2.2rem] text-[10px] tracking-[0.5em] font-black uppercase italic shadow-2xl ${dealStatus === 'CONFIRMED' ? 'opacity-80 cursor-default' : (dealStatus.includes('INVALID') ? 'grayscale opacity-70 cursor-not-allowed' : '')}">
+              ${dealStatus === 'CONFIRMED' ? 'CONFIRMED' : (dealStatus.includes('INVALID') ? dealStatus.replace('_', ' ') : `EXECUTE ${ACTIVE_MODE.leverage}X`)}
             </button>
           </div>
         `;
@@ -1659,7 +1669,8 @@ function renderSniperSignals(sniperSignals) {
     // =========================
     function registerDeploymentHub(symbol, type, price, qty, t1, sl, lvg, kind) {
   try {
-      const side = String(type || 'LONG').toUpperCase().includes('SHORT') ? 'SHORT' : 'LONG';
+      const explicitType = String(type || '').toUpperCase();
+      const canonicalSide = /(SHORT|SELL|BEAR|DOWN)/.test(explicitType) ? 'SHORT' : (/(LONG|BUY|BULL|UP)/.test(explicitType) ? 'LONG' : 'UNKNOWN');
       const dealKind = String(kind || 'SNIPER').toUpperCase();
       const safePrice = Number(price || 0);
       const safeQty = Number(qty || 0);
@@ -1667,6 +1678,37 @@ function renderSniperSignals(sniperSignals) {
       const safeSL = Number(sl || 0);
       const safeLeverage = Math.max(1, Number(lvg || ACTIVE_MODE.leverage || 1));
       const sizeUSDT = safePrice > 0 && safeQty > 0 ? safePrice * safeQty : 0;
+
+      // 1. STRICT DIRECTION VALIDATION (MUST OCCUR BEFORE GEOMETRY)
+      if (canonicalSide === 'UNKNOWN') {
+        console.error(`[EXECUTION BLOCKED] ${symbol} Unknown or missing direction (inferred as UNKNOWN)`);
+        setDealCardStatus(symbol, dealKind, 'INVALID_DIRECTION');
+        if (typeof window.gbCardBridgeForceRender === 'function') window.gbCardBridgeForceRender();
+        return;
+      }
+
+      // 2. STRICT GEOMETRY VALIDATION
+      if (safePrice > 0 && safeT1 > 0 && safeSL > 0) {
+        if (canonicalSide === 'LONG' && (safeT1 <= safePrice || safeSL >= safePrice)) {
+          console.error(`[EXECUTION BLOCKED] ${symbol} LONG geometry invalid (entry: ${safePrice}, tp: ${safeT1}, sl: ${safeSL})`);
+          setDealCardStatus(symbol, dealKind, 'INVALID_GEOMETRY');
+          if (typeof window.gbCardBridgeForceRender === 'function') window.gbCardBridgeForceRender();
+          return;
+        }
+        if (canonicalSide === 'SHORT' && (safeT1 >= safePrice || safeSL <= safePrice)) {
+          console.error(`[EXECUTION BLOCKED] ${symbol} SHORT geometry invalid (entry: ${safePrice}, tp: ${safeT1}, sl: ${safeSL})`);
+          setDealCardStatus(symbol, dealKind, 'INVALID_GEOMETRY');
+          if (typeof window.gbCardBridgeForceRender === 'function') window.gbCardBridgeForceRender();
+          return;
+        }
+      } else {
+        console.error(`[EXECUTION BLOCKED] ${symbol} Missing required geometry. Entry:${safePrice}, TP:${safeT1}, SL:${safeSL}`);
+        setDealCardStatus(symbol, dealKind, 'INVALID_GEOMETRY');
+        if (typeof window.gbCardBridgeForceRender === 'function') window.gbCardBridgeForceRender();
+        return;
+      }
+
+      const orderSide = canonicalSide === 'SHORT' ? 'SELL' : 'BUY';
 
       setDealCardStatus(symbol, dealKind, 'CONFIRMED');
 
@@ -1678,8 +1720,11 @@ function renderSniperSignals(sniperSignals) {
       const payload = {
         symbol,
         kind: dealKind,
-        type: side,
-        side,
+        type: canonicalSide,
+        side: canonicalSide,
+        orderSide: orderSide,
+        positionSide: canonicalSide,
+        intendedSide: canonicalSide,
         entryPrice: safePrice,
         qty: safeQty,
         qtyBase: safeQty,
@@ -9257,12 +9302,17 @@ try{
 
   function buildPayload(row){
     const price = U.num(row.price || row.entryPrice || row.triggerPrice || 0, 0);
+    const explicitStr = String(row.dir || row.side || row.type || row.direction || '').toUpperCase();
+    const canonicalSide = /(SHORT|SELL|BEAR|DOWN)/.test(explicitStr) ? 'SHORT' : (/(LONG|BUY|BULL|UP)/.test(explicitStr) ? 'LONG' : 'UNKNOWN');
+    
     return {
       symbol: U.up(row.symbol),
       score: U.num(row.score, 0),
       microScore: U.num(row.score, 0),
       reason: 'GB125_FULL_PIPELINE',
-      bias: 'LONG',
+      bias: canonicalSide,      // PREVIOUSLY HARDCODED TO LONG
+      side: canonicalSide,      // EXPLICIT MAPPING, NEVER FALLS BACK TO LONG
+      direction: canonicalSide, // EXPLICIT MAPPING
       entryPrice: price || undefined,
       triggerPrice: price || undefined,
       price: price || undefined,

@@ -16,7 +16,8 @@ const SIGNALS_FILE = path.resolve(__dirname, '../../backend_signals.json');
 // ─── Backend Singleton State ──────────────────────────────────────────────────
 export let latestMarketState = {
   pipelineSignals: [] as any[],
-  marketRows: [] as any[],
+  pipelineTraces:  [] as any[],
+  marketRows:      [] as any[],
   regime: 'RANGING',
   lastScanAt: 0,
   scanProgress: 100
@@ -102,6 +103,7 @@ async function startAutoScanner() {
       );
 
       latestMarketState.pipelineSignals = result.pipelineSignals;
+      latestMarketState.pipelineTraces  = result.pipelineTraces;
       latestMarketState.marketRows      = result.marketRows;
       latestMarketState.regime          = result.regimeLabel;
       latestMarketState.lastScanAt      = Date.now();

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from './auth';
 import {
-  getPositions, getBalance, setLeverage, binanceRequest
+  getPositions, getBalance, setLeverage, binanceRequest, getRateLimitStatus
 } from '../lib/binance';
 import {
   TRADER_CONFIG, toggleAutoTrade, tradeLogs,
@@ -38,7 +38,8 @@ tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
       circuitBreaker: TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED
     },
     signals: backendSignalCache,
-    latestMarketState
+    latestMarketState,
+    rateLimit: getRateLimitStatus()
   });
 });
 

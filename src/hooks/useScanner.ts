@@ -31,6 +31,9 @@ export function useScanner() {
       if (state.latestMarketState) {
         const ms = state.latestMarketState;
         setPipelineSignals(ms.pipelineSignals || []);
+        if (ms.pipelineTraces) {
+            addPipelineTraces(ms.pipelineTraces);
+        }
         setMarketRows(ms.marketRows || []);
         setMarketRegime(ms.regime || 'RANGING');
         setScanProgress(ms.scanProgress || 100);

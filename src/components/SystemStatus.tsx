@@ -194,6 +194,7 @@ export default function SystemStatus() {
               type="number" step="0.01"
               style={inputStyle}
               value={(config.riskPct * 100).toFixed(2)}
+              onFocus={e => e.target.select()}
               onChange={e => handleConfigChange('riskPct', String(Number(e.target.value) / 100))}
             />
           </div>
@@ -204,6 +205,7 @@ export default function SystemStatus() {
               type="number" step="1"
               style={inputStyle}
               value={config.maxTrades}
+              onFocus={e => e.target.select()}
               onChange={e => handleConfigChange('maxTrades', e.target.value)}
             />
           </div>
@@ -214,6 +216,7 @@ export default function SystemStatus() {
               type="number" step="1"
               style={inputStyle}
               value={config.leverage}
+              onFocus={e => e.target.select()}
               onChange={e => handleConfigChange('leverage', e.target.value)}
             />
           </div>
@@ -224,6 +227,7 @@ export default function SystemStatus() {
               type="number" step="1"
               style={{ ...inputStyle, color: 'var(--green)' }}
               value={config.minScore}
+              onFocus={e => e.target.select()}
               onChange={e => handleConfigChange('minScore', e.target.value)}
             />
           </div>
@@ -324,6 +328,7 @@ export default function SystemStatus() {
                     type="number" step="0.1"
                     style={{ ...inputStyle, width: '45px', fontSize: 13 }}
                     value={config.tp1RR}
+                    onFocus={e => e.target.select()}
                     onChange={e => handleConfigChange('tp1RR', e.target.value)}
                   />
                 </div>
@@ -334,6 +339,7 @@ export default function SystemStatus() {
                       type="number" step="0.1"
                       style={{ ...inputStyle, width: '45px', fontSize: 13 }}
                       value={config.tp2RR}
+                      onFocus={e => e.target.select()}
                       onChange={e => handleConfigChange('tp2RR', e.target.value)}
                     />
                   </div>

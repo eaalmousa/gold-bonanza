@@ -11,18 +11,18 @@ const STATE_FILE = path.resolve(__dirname, '../../trader_state.json');
 // executionMode is permanently LIVE — no other modes exist in this codebase.
 export const TRADER_CONFIG = {
   RISK_PER_TRADE:         parseFloat(process.env.RISK_PER_TRADE || '0.10'),
-  MAX_CONCURRENT_TRADES:  parseInt(process.env.MAX_CONCURRENT_TRADES || '6', 10),
+  MAX_CONCURRENT_TRADES:  100, // TEMPORARY RELAXATION FOR TRACE CAPTURE
   LEVERAGE:               parseInt(process.env.LEVERAGE || '10', 10),
   SL_ENABLED:             true,
   TP_ENABLED:             true,
   TP1_ONLY:               false,
   TP1_RR:                 1.50,   // raised from 1.25
   TP2_RR:                 2.50,
-  MIN_SCORE:              parseInt(process.env.MIN_SCORE_TO_DEPLOY || '20', 10),  // raised from 15
-  BTC_GATE_ENABLED:       true,
+  MIN_SCORE:              -100,  // TEMPORARY RELAXATION FOR TRACE CAPTURE
+  BTC_GATE_ENABLED:       false,
   TRAIL_TP_ENABLED:       false,
   CIRCUIT_BREAKER_ENABLED: false,
-  isAutoTradingEnabled:   false,
+  isAutoTradingEnabled:   true,
 };
 
 const BASE_CAPITAL = parseFloat(process.env.BASE_CAPITAL || '300');

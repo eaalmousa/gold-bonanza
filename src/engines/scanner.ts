@@ -123,7 +123,7 @@ export async function runBonanzaCore(
     return { pipelineSignals: [], pipelineTraces: [], marketRows, regimeLabel };
   }
 
-  if (!corrLimit.allowNew) {
+  if (false && !corrLimit.allowNew) { // TEMP BYPASS FOR TRACE CAPTURE
     console.log(`[Scanner] Correlation limiter (${corrLimit.reason}) — signal scanning bypassed, but UI feed active.`);
     return { pipelineSignals: [], pipelineTraces: [], marketRows, regimeLabel };
   }

@@ -5,7 +5,8 @@ import {
 } from '../lib/binance';
 import {
   TRADER_CONFIG, toggleAutoTrade, tradeLogs,
-  updateTraderConfig, backendSignalCache, evaluateFrontendSignals
+  updateTraderConfig, backendSignalCache, evaluateFrontendSignals,
+  latestMarketState
 } from '../lib/autoTrader';
 
 export const tradeRouter = Router();
@@ -36,7 +37,8 @@ tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
       trailTp: TRADER_CONFIG.TRAIL_TP_ENABLED,
       circuitBreaker: TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED
     },
-    signals: backendSignalCache
+    signals: backendSignalCache,
+    latestMarketState
   });
 });
 

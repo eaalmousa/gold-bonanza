@@ -1,205 +1,176 @@
 import crypto from 'crypto';
 
+// ─── Rate Limit Tracking ──────────────────────────────────────────────────────
+let usedWeight1m     = 0;
+let cooldownUntil   = 0;
+let isBanned         = false;
+
+export function getRateLimitStatus() {
+  const now = Date.now();
+  return {
+    usedWeight1m,
+    cooldownUntil,
+    isBanned: isBanned && now < cooldownUntil,
+    active: now > cooldownUntil && (!isBanned || now > cooldownUntil)
+  };
+}
+
 const getApiKey = (url?: string) => {
   const isTest = url?.includes('testnet') || url?.includes('demo-fapi') || process.env.BINANCE_BASE_URL?.includes('testnet');
-  if (isTest) {
-    if (process.env.BINANCE_TEST_API_KEY) return process.env.BINANCE_TEST_API_KEY;
-    throw new Error('BINANCE_TEST_API_KEY is not set. Cannot execute in DEMO/TESTNET mode.');
-  }
-  const liveKey = process.env.BINANCE_API_KEY;
-  if (!liveKey) throw new Error('BINANCE_API_KEY is not set. Cannot execute in LIVE mode.');
-  return liveKey;
+  if (isTest) return process.env.BINANCE_TEST_API_KEY;
+  return process.env.BINANCE_API_KEY;
 };
 
 const getApiSecret = (url?: string) => {
   const isTest = url?.includes('testnet') || url?.includes('demo-fapi') || process.env.BINANCE_BASE_URL?.includes('testnet');
-  if (isTest) {
-    if (process.env.BINANCE_TEST_API_SECRET) return process.env.BINANCE_TEST_API_SECRET;
-    throw new Error('BINANCE_TEST_API_SECRET is not set.');
-  }
-  const liveSecret = process.env.BINANCE_API_SECRET;
-  if (!liveSecret) throw new Error('BINANCE_API_SECRET is not set.');
-  return liveSecret;
+  if (isTest) return process.env.BINANCE_TEST_API_SECRET;
+  return process.env.BINANCE_API_SECRET;
 };
 
-// Always live Binance futures. BINANCE_BASE_URL should not be set to anything other than 'https://fapi.binance.com'.
-const getBaseUrl = () => {
-  const url = process.env.BINANCE_BASE_URL || 'https://fapi.binance.com';
-  if (url.includes('demo-fapi') || url.includes('testnet')) {
-    throw new Error(`[binance.ts] BINANCE_BASE_URL points to a non-live endpoint: ${url}. Only https://fapi.binance.com is allowed.`);
-  }
-  return url;
-};
+const getBaseUrl = () => process.env.BINANCE_BASE_URL || 'https://fapi.binance.com';
 
 function sign(queryString: string, url?: string): string {
   const secret = getApiSecret(url);
-  if (!secret) throw new Error('BINANCE_API_SECRET is not set');
+  if (!secret) return '';
   return crypto.createHmac('sha256', secret).update(queryString).digest('hex');
 }
 
+// ─── Request Gatekeeper ────────────────────────────────────────────────────────
 export async function binanceRequest(method: string, endpoint: string, data: Record<string, any> = {}, overrideBaseUrl?: string) {
+  const now = Date.now();
+  if (now < cooldownUntil) {
+    const minLeft = Math.ceil((cooldownUntil - now) / 60000);
+    const reason = isBanned ? 'IP BAN' : 'Rate Limit (429)';
+    throw new Error(`[Binance] Request blocked - ${reason}. Retry after ${minLeft} minutes.`);
+  }
+
   const targetBaseUrl = overrideBaseUrl || getBaseUrl();
   const key = getApiKey(targetBaseUrl);
   if (!key) throw new Error('BINANCE_API_KEY is not set');
 
+  // Algorithm for signed requests
   const payload = { ...data, timestamp: Date.now() };
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(payload)) {
     if (v !== undefined && v !== null) params.append(k, String(v));
   }
-  
-  params.sort(); // Binance requires sorted params in some endpoints
+  params.sort();
   const queryString = params.toString();
   const signature = sign(queryString, targetBaseUrl);
-  
-  const url = `${targetBaseUrl}${endpoint}?${queryString}&signature=${signature}`;
-  
-  const censoredKey = key.substring(0, 6) + '...' + key.substring(key.length - 4);
-  console.log(`[Binance:${method}] ${endpoint} via ${targetBaseUrl} (Key: ${censoredKey})`);
+  const url = `${targetBaseUrl}${endpoint}?${queryString}${signature ? `&signature=${signature}` : ''}`;
 
-  const res = await fetch(url, {
-    method,
-    headers: {
-      'X-MBX-APIKEY': key,
-      'Content-Type': 'application/x-www-form-urlencoded'
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        'X-MBX-APIKEY': key,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
+
+    // Update weight metrics
+    const weightHeader = res.headers.get('x-mbx-used-weight-1m');
+    if (weightHeader) usedWeight1m = parseInt(weightHeader, 10);
+
+    const json = await res.json() as any;
+
+    if (!res.ok) {
+      if (res.status === 429) {
+        // Backoff for 2 minutes on 429
+        cooldownUntil = Date.now() + (120 * 1000);
+        isBanned = false;
+        console.warn(`[Binance] ⚠️ 429 Rate Limit hit. Weight=${usedWeight1m}. Pausing requests for 2 mins.`);
+      }
+      if (res.status === 418) {
+        // Backoff for 15 minutes on 418 (Teapot / Ban)
+        cooldownUntil = Date.now() + (900 * 1000);
+        isBanned = true;
+        console.error(`[Binance] 🚫 418 IP BANNED. Pausing all network activity for 15 mins.`);
+      }
+      throw new Error(`Binance API ${res.status}: ${json.msg || JSON.stringify(json)}`);
     }
-  });
 
-  const json = await res.json() as any;
-  if (!res.ok) {
-    throw new Error(`Binance API ${res.status}: ${json.msg || JSON.stringify(json)}`);
+    return json;
+  } catch (err: any) {
+    throw err;
   }
-  
-  return json;
 }
 
-// Deprecated local request() - mapping to exported binanceRequest
-async function request(m: string, e: string, d: Record<string, any> = {}) {
-  return binanceRequest(m, e, d);
+// ─── Core Actions ──────────────────────────────────────────────────────────────
+export async function getBalance(): Promise<number> {
+  try {
+    const res = await binanceRequest('GET', '/fapi/v2/balance');
+    const usdtAsset = (res as any[]).find(a => a.asset === 'USDT');
+    return usdtAsset ? parseFloat(usdtAsset.balance) : 0;
+  } catch { return 0; }
 }
 
-export async function getBalance(overrideBaseUrl?: string): Promise<number> {
-  const res = await binanceRequest('GET', '/fapi/v2/balance', {}, overrideBaseUrl);
-  const usdtAsset = (res as any[]).find(a => a.asset === 'USDT');
-  return usdtAsset ? parseFloat(usdtAsset.balance) : 0;
-}
-
-export interface Position {
-  symbol: string;
-  positionAmt: string;
-  entryPrice: string;
-  unRealizedProfit: string;
-  leverage: string;
-  positionSide: string;
-}
-
-export async function getPositions(overrideBaseUrl?: string): Promise<Position[]> {
-  const res = await binanceRequest('GET', '/fapi/v2/positionRisk', {}, overrideBaseUrl);
-  // Only return open positions
-  return (res as Position[]).filter(p => parseFloat(p.positionAmt) !== 0);
-}
-
-export async function setLeverage(symbol: string, leverage: number, overrideBaseUrl?: string) {
-  return binanceRequest('POST', '/fapi/v1/leverage', { symbol, leverage }, overrideBaseUrl);
+export async function getPositions(): Promise<any[]> {
+  try {
+    const res = await binanceRequest('GET', '/fapi/v2/positionRisk');
+    return (res as any[]).filter(p => parseFloat(p.positionAmt) !== 0);
+  } catch { return []; }
 }
 
 let cachedExchangeInfo: any = null;
+let lastExchangeInfoFetch = 0;
 
-export async function getExchangeInfo(overrideBaseUrl?: string) {
-  if (cachedExchangeInfo) return cachedExchangeInfo;
+export async function getExchangeInfo() {
+  if (cachedExchangeInfo && (Date.now() - lastExchangeInfoFetch < 3600000)) return cachedExchangeInfo;
   try {
-    const base = overrideBaseUrl || getBaseUrl();
-    const res = await fetch(`${base}/fapi/v1/exchangeInfo`);
+    const res = await fetch(`${getBaseUrl()}/fapi/v1/exchangeInfo`);
     cachedExchangeInfo = await res.json();
+    lastExchangeInfoFetch = Date.now();
     return cachedExchangeInfo;
-  } catch (e) {
-    console.error('Failed to fetch ExchangeInfo:', e);
-    return null;
-  }
+  } catch { return cachedExchangeInfo; }
 }
 
-function roundTo(value: number, precision: number): string {
-  if (precision === 0) return Math.round(value).toString();
-  return value.toFixed(precision);
-}
-
-// Helper to find symbol rules
-async function getSymbolPrecision(symbol: string, overrideBaseUrl?: string) {
-  const info = await getExchangeInfo(overrideBaseUrl);
+async function getSymbolPrecision(symbol: string) {
+  const info = await getExchangeInfo();
   if (!info || !info.symbols) return { price: 2, qty: 3 };
   const s = info.symbols.find((x: any) => x.symbol === symbol);
   if (!s) return { price: 2, qty: 3 };
-  return {
-    price: s.pricePrecision,
-    qty: s.quantityPrecision
-  };
+  return { price: s.pricePrecision, qty: s.quantityPrecision };
 }
 
-export async function placeMarketOrder(symbol: string, side: 'BUY' | 'SELL', qty: number, overrideBaseUrl?: string) {
-  const { qty: qPrec } = await getSymbolPrecision(symbol, overrideBaseUrl);
-  
+function roundTo(v: number, p: number) { 
+  return p === 0 ? Math.round(v).toString() : v.toFixed(p); 
+}
+
+export async function setLeverage(symbol: string, leverage: number) {
+  return binanceRequest('POST', '/fapi/v1/leverage', { symbol, leverage });
+}
+
+export async function placeMarketOrder(symbol: string, side: 'BUY' | 'SELL', qty: number) {
+  const { qty: qPrec } = await getSymbolPrecision(symbol);
   return binanceRequest('POST', '/fapi/v1/order', {
-    symbol,
-    side,
-    type: 'MARKET',
-    quantity: roundTo(qty, qPrec)
-  }, overrideBaseUrl);
+    symbol, side, type: 'MARKET', quantity: roundTo(qty, qPrec)
+  });
 }
 
-export async function placeStopMarket(symbol: string, side: 'BUY' | 'SELL', stopPrice: number, overrideBaseUrl?: string) {
-  const { price: pPrec } = await getSymbolPrecision(symbol, overrideBaseUrl);
-  
+export async function placeStopMarket(symbol: string, side: 'BUY' | 'SELL', stopPrice: number) {
+  const { price: pPrec } = await getSymbolPrecision(symbol);
   return binanceRequest('POST', '/fapi/v1/algoOrder', {
-    algoType: 'CONDITIONAL',
-    symbol,
-    side,
-    type: 'STOP_MARKET',
-    triggerPrice: roundTo(stopPrice, pPrec),
-    closePosition: 'true'
-  }, overrideBaseUrl);
+    algoType: 'CONDITIONAL', symbol, side, type: 'STOP_MARKET',
+    triggerPrice: roundTo(stopPrice, pPrec), closePosition: 'true'
+  });
 }
 
-export async function placeTakeProfitMarket(symbol: string, side: 'BUY' | 'SELL', stopPrice: number, qty?: number, overrideBaseUrl?: string) {
-  const { price: pPrec, qty: qPrec } = await getSymbolPrecision(symbol, overrideBaseUrl);
-  
+export async function placeTakeProfitMarket(symbol: string, side: 'BUY' | 'SELL', stopPrice: number, qty?: number) {
+  const { price: pPrec, qty: qPrec } = await getSymbolPrecision(symbol);
   const params: any = {
-    symbol,
-    side,
-    type: 'TAKE_PROFIT_MARKET',
-    triggerPrice: roundTo(stopPrice, pPrec),
-    algoType: 'CONDITIONAL'
+    symbol, side, type: 'TAKE_PROFIT_MARKET', triggerPrice: roundTo(stopPrice, pPrec), algoType: 'CONDITIONAL'
   };
-
-  if (qty) {
-    params.quantity = roundTo(qty, qPrec);
-    params.reduceOnly = 'true';
-  } else {
-    params.closePosition = 'true';
-  }
-
-  return binanceRequest('POST', '/fapi/v1/algoOrder', params, overrideBaseUrl);
+  if (qty) { params.quantity = roundTo(qty, qPrec); params.reduceOnly = 'true'; } 
+  else { params.closePosition = 'true'; }
+  return binanceRequest('POST', '/fapi/v1/algoOrder', params);
 }
 
-export async function placeTrailingStopMarket(symbol: string, side: 'BUY' | 'SELL', callbackRatePct: number, activationPrice?: number, qty?: number, overrideBaseUrl?: string) {
-  const { price: pPrec, qty: qPrec } = await getSymbolPrecision(symbol, overrideBaseUrl);
-  
-  const params: any = {
-    symbol,
-    side,
-    type: 'TRAILING_STOP_MARKET',
-    callbackRate: callbackRatePct.toString()
-  };
-
-  if (activationPrice) {
-    params.activationPrice = roundTo(activationPrice, pPrec);
-  }
-
-  if (qty) {
-    params.quantity = roundTo(qty, qPrec);
-    params.reduceOnly = 'true';
-  } else {
-    params.closePosition = 'true';
-  }
-
-  return binanceRequest('POST', '/fapi/v1/order', params, overrideBaseUrl);
+export async function placeTrailingStopMarket(symbol: string, side: 'BUY' | 'SELL', callbackRatePct: number, activationPrice?: number, qty?: number) {
+  const { price: pPrec, qty: qPrec } = await getSymbolPrecision(symbol);
+  const params: any = { symbol, side, type: 'TRAILING_STOP_MARKET', callbackRate: callbackRatePct.toString() };
+  if (activationPrice) params.activationPrice = roundTo(activationPrice, pPrec);
+  if (qty) { params.quantity = roundTo(qty, qPrec); params.reduceOnly = 'true'; } 
+  else { params.closePosition = 'true'; }
+  return binanceRequest('POST', '/fapi/v1/order', params);
 }

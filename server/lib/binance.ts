@@ -22,7 +22,14 @@ const getApiSecret = (url?: string) => {
   return liveSecret;
 };
 
-const getBaseUrl = () => process.env.BINANCE_BASE_URL || 'https://demo-fapi.binance.com';
+// Always live Binance futures. BINANCE_BASE_URL should not be set to anything other than 'https://fapi.binance.com'.
+const getBaseUrl = () => {
+  const url = process.env.BINANCE_BASE_URL || 'https://fapi.binance.com';
+  if (url.includes('demo-fapi') || url.includes('testnet')) {
+    throw new Error(`[binance.ts] BINANCE_BASE_URL points to a non-live endpoint: ${url}. Only https://fapi.binance.com is allowed.`);
+  }
+  return url;
+};
 
 function sign(queryString: string, url?: string): string {
   const secret = getApiSecret(url);

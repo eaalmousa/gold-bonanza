@@ -3,7 +3,6 @@ import { Target, X, TrendingUp, RefreshCw, Wifi, WifiOff, Activity, Clock } from
 import { api } from '../services/api';
 import { useTradingStore } from '../store/tradingStore';
 import type { ActiveTrade, SignalRow } from '../types/trading';
-import { getCanonicalPositionCount } from '../utils/positionCount';
 
 export default function CommandSyncHub() {
   const [loading, setLoading] = useState(true);
@@ -14,8 +13,7 @@ export default function CommandSyncHub() {
   const { 
     activeTrades: rawTrades, pipelineSignals: rawSignals, 
     removeActiveTrade, deploySignal,
-    binancePositions: rawPositions, setBinancePositions,
-    executionMode, setExecutionMode
+    binancePositions: rawPositions, setBinancePositions
   } = useTradingStore();
 
   const activeTrades = Array.isArray(rawTrades) ? rawTrades : [];
@@ -78,27 +76,16 @@ export default function CommandSyncHub() {
     if (idx >= 0) removeActiveTrade(idx);
   };
 
-  const handleModeSwitch = (mode: 'PAPER' | 'DEMO' | 'LIVE') => {
-    setExecutionMode(mode);
-  };
-
-  // Filter logic: Only show trades matching the current mode
-  const isPaperMode = executionMode === 'PAPER';
-  
-  // 1. Filter Binance positions: Only show in DEMO/LIVE modes
-  const filteredPositions = isPaperMode ? [] : binancePositions;
+  // Filter Binance positions (always show)
+  const filteredPositions = binancePositions;
   const binanceSymbols = new Set(filteredPositions.map((p: any) => p.symbol?.toUpperCase()));
 
-  // 2. Filter Local trades: 
-  //    - In PAPER mode: Only show isPaperTrade: true
-  //    - In DEMO/LIVE: Only show isPaperTrade: false (unsynced)
+  // Local trades: show unsynced trades not yet on Binance
   const filteredLocal = activeTrades.filter(t => {
-    const paperMatch = isPaperMode ? t.isPaperTrade : !t.isPaperTrade;
-    // We also exclude local trades if they are already in the Binance positions list to avoid double-counting
-    return paperMatch && !binanceSymbols.has(t.symbol?.toUpperCase());
+    return !binanceSymbols.has(t.symbol?.toUpperCase());
   });
 
-  // 3. Filter Pending: Show all queued signals
+  // Pending: queued signals
   const allPending = pipelineSignals.filter(s => s.status === 'QUEUED');
 
   const displayCount = filteredPositions.length + filteredLocal.length + allPending.length;
@@ -123,31 +110,16 @@ export default function CommandSyncHub() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {/* Execution Mode Toggle */}
+          {/* Static LIVE badge — mode switching removed */}
           <div style={{ 
-            display: 'flex', background: 'rgba(0,0,0,0.3)', borderRadius: 'var(--radius-full)', 
-            padding: 4, border: '1px solid rgba(255,255,255,0.05)', marginRight: 12 
+            padding: '6px 14px', borderRadius: 'var(--radius-full)',
+            fontSize: 9, fontWeight: 900,
+            background: 'rgba(239,68,68,0.2)',
+            color: '#f87171',
+            border: '1px solid rgba(239,68,68,0.3)',
+            letterSpacing: '0.15em'
           }}>
-            {(['PAPER', 'DEMO', 'LIVE'] as const).map(m => (
-              <button
-                key={m}
-                onClick={() => handleModeSwitch(m)}
-                style={{
-                  padding: '6px 14px', borderRadius: 'var(--radius-full)', border: 'none',
-                  fontSize: 9, fontWeight: 900, cursor: 'pointer',
-                  background: executionMode === m 
-                    ? (m === 'LIVE' ? 'rgba(239,68,68,0.2)' : m === 'DEMO' ? 'rgba(59,130,246,0.2)' : 'rgba(168,85,247,0.2)') 
-                    : 'transparent',
-                  color: executionMode === m 
-                    ? (m === 'LIVE' ? '#f87171' : m === 'DEMO' ? '#60a5fa' : '#c084fc') 
-                    : 'var(--text-muted)',
-                  transition: 'all 0.2s',
-                  letterSpacing: '0.1em'
-                }}
-              >
-                {m}
-              </button>
-            ))}
+            ● LIVE
           </div>
 
           <div style={{
@@ -373,11 +345,11 @@ function LocalTradeCard({
             {trade.leverage}x {trade.side}
             <span style={{ 
               marginLeft: 8, padding: '2px 6px', borderRadius: 4, 
-              background: trade.isPaperTrade ? 'rgba(99,102,241,0.1)' : 'rgba(245,158,11,0.1)', 
-              color: trade.isPaperTrade ? '#818cf8' : '#f59e0b', fontSize: 9, letterSpacing: '0.1em',
-              border: `1px solid ${trade.isPaperTrade ? 'rgba(99,102,241,0.3)' : 'rgba(245,158,11,0.3)'}`
+              background: 'rgba(245,158,11,0.1)', 
+              color: '#f59e0b', fontSize: 9, letterSpacing: '0.1em',
+              border: `1px solid rgba(245,158,11,0.3)`
             }}>
-              {trade.isPaperTrade ? 'PAPER' : 'UNSYNCED'}
+              UNSYNCED
             </span>
           </div>
         </div>

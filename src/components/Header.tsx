@@ -5,18 +5,12 @@ import { getCanonicalPositionCount } from '../utils/positionCount';
 
 export default function Header() {
   const { 
-    isDataLive, activeMode, executionMode, activeTrades, 
+    isDataLive, activeMode, activeTrades, 
     binancePositions, pipelineSignals, binanceStatus, 
-    isAutoTradeActive, setAutoTradeActive, setExecutionMode 
+    isAutoTradeActive, setAutoTradeActive
   } = useTradingStore();
 
-  const handleModeCycle = () => {
-    const modes: ('PAPER' | 'DEMO' | 'LIVE')[] = ['PAPER', 'DEMO', 'LIVE'];
-    const currentIdx = modes.indexOf(executionMode);
-    const nextMode = modes[(currentIdx + 1) % modes.length];
-    setExecutionMode(nextMode);
-  };
-
+  // executionMode is always 'LIVE' — no cycle needed
   const handleToggleAutoTrade = async () => {
     try {
       const res = await api.toggleAutoTrade(!isAutoTradeActive);
@@ -103,23 +97,21 @@ export default function Header() {
           {activeMode.key}
         </div>
         
-        <button 
-          onClick={handleModeCycle}
+        {/* Execution Mode — always LIVE */}
+        <div
           style={{
             padding: '10px 20px',
             borderRadius: 'var(--radius-full)',
             fontSize: 11, fontWeight: 900,
-            border: `1px solid ${executionMode === 'LIVE' ? 'rgba(239,68,68,0.4)' : executionMode === 'DEMO' ? 'rgba(59,130,246,0.4)' : 'rgba(168,85,247,0.4)'}`,
-            background: executionMode === 'LIVE' ? 'rgba(239,68,68,0.1)' : executionMode === 'DEMO' ? 'rgba(59,130,246,0.1)' : 'rgba(168,85,247,0.1)',
-            color: executionMode === 'LIVE' ? '#f87171' : executionMode === 'DEMO' ? '#60a5fa' : '#c084fc',
+            border: '1px solid rgba(239,68,68,0.4)',
+            background: 'rgba(239,68,68,0.1)',
+            color: '#f87171',
             letterSpacing: '0.35em',
-            boxShadow: executionMode === 'LIVE' ? '0 0 15px rgba(239,68,68,0.2)' : 'none',
-            cursor: 'pointer',
-            transition: 'all 0.2s'
+            boxShadow: '0 0 15px rgba(239,68,68,0.2)',
           }}
         >
-          {executionMode}
-        </button>
+          ● LIVE
+        </div>
 
 
         {totalActiveCount > 0 && (

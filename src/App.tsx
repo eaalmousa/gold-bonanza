@@ -7,7 +7,6 @@ import AutoTraderConsole from './components/AutoTraderConsole';
 import PipelineSignals from './components/PipelineSignals';
 import MarketIntelligence from './components/MarketIntelligence';
 import CommandSyncHub from './components/CommandSyncHub';
-import PaperAccountPanel from './components/PaperAccountPanel';
 import InstitutionalLiquidityMap from './components/InstitutionalLiquidityMap';
 import SniperRadar from './components/SniperRadar';
 import LockdownDiagnostics from './components/LockdownDiagnostics';
@@ -186,10 +185,6 @@ function App() {
 
       <div className="terminal-panel" style={{ padding: '32px' }}>
         <CommandSyncHub />
-      </div>
-
-      <div className="terminal-panel" style={{ padding: '32px' }}>
-        <PaperAccountPanel />
       </div>
 
       <div className="terminal-panel" style={{ padding: '32px' }}>

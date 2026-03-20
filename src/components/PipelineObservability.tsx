@@ -42,20 +42,32 @@ export function PipelineObservability() {
     letterSpacing: '0.05em',
   };
 
+  const isScannerActive = useTradingStore(s => s.isScannerActive);
+  const lastScanAt = useTradingStore(s => s.lastScanAt);
+
   if (traces.length === 0) {
     return (
       <div style={containerStyle}>
-        <div style={titleRowStyle}>
-          <span style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: 'rgba(51,65,85,0.9)', display: 'inline-block'
-          }} />
-          <span style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: 13 }}>
-            Pipeline Observability
-          </span>
+        <div style={headerStyle}>
+          <div style={titleRowStyle}>
+            <div style={{
+              width: 10, height: 10, borderRadius: '50%',
+              background: isScannerActive ? 'var(--green)' : 'rgba(51,65,85,0.9)',
+              boxShadow: isScannerActive ? '0 0 10px var(--green)' : 'none',
+              animation: (isScannerActive && !lastScanAt) ? 'pulse 2s infinite' : 'none'
+            }} />
+            <span style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: 13 }}>
+              Pipeline Observability
+            </span>
+          </div>
+          {isScannerActive && !lastScanAt && (
+             <span style={{ fontSize: 10, color: 'var(--gold)', fontWeight: 800 }}>INITIALIZING SCOUT CYCLE...</span>
+          )}
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 10 }}>
-          Awaiting signal pipeline output... Start the Engine to populate traces.
+          {isScannerActive 
+            ? "Background scout is active. Awaiting first market evaluation traces (90s cycle)..."
+            : "Awaiting signal pipeline output... Start the Engine to trigger the background scout."}
         </p>
       </div>
     );

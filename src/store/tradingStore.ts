@@ -55,6 +55,7 @@ interface TradingState {
 
   // Market context
   marketRegime: MarketRegime;
+  lastScanAt: number | null;
   orderFlowSnapshots: Record<string, OrderFlowSnapshot>;
   backendSignals: Record<string, any>;
 
@@ -70,7 +71,7 @@ interface TradingState {
   updatePrices: (prices: Record<string, PriceData>) => void;
   setMarketRows: (rows: MarketRow[]) => void;
   setPipelineSignals: (signals: SignalRow[]) => void;
-  addPipelineTraces: (traces: UnifiedTrace[]) => void;
+  setPipelineTraces: (traces: UnifiedTrace[]) => void;
   setBinancePositions: (positions: any[]) => void;
   addSignalToHistory: (entry: SignalHistoryEntry) => void;
   addActiveTrade: (trade: ActiveTrade) => void;
@@ -87,6 +88,7 @@ interface TradingState {
 
   // Market context actions
   setMarketRegime: (regime: MarketRegime) => void;
+  setLastScanAt: (at: number) => void;
   setOrderFlowSnapshot: (symbol: string, snapshot: OrderFlowSnapshot) => void;
   setBackendSignals: (signals: Record<string, any>) => void;
   queueSignal: (id: string) => void;
@@ -127,6 +129,7 @@ export const useTradingStore = create<TradingState>()(
     { label: 'EXECUTION RELAY', value: 100.0, status: 'ok' },
   ],
   marketRegime: 'RANGING' as MarketRegime,
+  lastScanAt: null as number | null,
   orderFlowSnapshots: {},
   backendSignals: {},
 
@@ -193,11 +196,8 @@ export const useTradingStore = create<TradingState>()(
   }),
 
 
-  addPipelineTraces: (traces) => set(state => {
-    const validTraces = Array.isArray(traces) ? traces : [];
-    return {
-      pipelineTraces: [...validTraces, ...state.pipelineTraces].slice(0, 200)
-    };
+  setPipelineTraces: (traces) => set({ 
+    pipelineTraces: Array.isArray(traces) ? traces.slice(0, 200) : [] 
   }),
 
   addSignalToHistory: (entry) => set(state => ({
@@ -240,6 +240,7 @@ export const useTradingStore = create<TradingState>()(
   setPipelineHealth: (health) => set({ pipelineHealth: Array.isArray(health) ? health : [] }),
 
   setMarketRegime: (regime) => set({ marketRegime: regime }),
+  setLastScanAt: (lastScanAt) => set({ lastScanAt }),
   setOrderFlowSnapshot: (symbol, snapshot) => set(state => ({
     orderFlowSnapshots: { ...state.orderFlowSnapshots, [symbol]: snapshot }
   })),

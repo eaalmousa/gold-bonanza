@@ -109,6 +109,9 @@ async function startAutoScanner() {
       latestMarketState.lastScanAt      = Date.now();
       latestMarketState.scanProgress    = 100;
 
+      // Diagnostic Heartbeat
+      console.log(`[AutoTrader] Scan Cycle End. Signals: ${latestMarketState.pipelineSignals.length} | Traces: ${latestMarketState.pipelineTraces.length} | Regime: ${latestMarketState.regime}`);
+
       if (TRADER_CONFIG.isAutoTradingEnabled && result.pipelineSignals.length > 0) {
         await evaluateFrontendSignals(result.pipelineSignals);
       }

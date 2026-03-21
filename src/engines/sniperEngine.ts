@@ -163,7 +163,8 @@ function evaluateSniperSignalInner(
   diag.zlsmaValue = zlsmaNow.toFixed(4);
   diag.zlsmaSlopePct = zlsmaPctChange.toFixed(3) + '%';
 
-  const slopeThresh = modeKey === 'AGGRESSIVE' ? 0.03 : modeKey === 'CONSERVATIVE' ? 0.12 : 0.08;
+  const baseThresh = modeKey === 'AGGRESSIVE' ? 0.03 : modeKey === 'CONSERVATIVE' ? 0.12 : 0.08;
+  const slopeThresh = regime === 'CHOP' ? 0.01 : baseThresh;
   const breakThresh = slopeThresh + 0.05;
 
   const isBreakingDown = closes1h[idx1h] < e50_1h! && zlsmaPctChange < -breakThresh;
@@ -203,7 +204,6 @@ function evaluateSniperSignalInner(
 
   const cfg = activeMode.pullback;
   const range = Math.max(1e-9, candle.high - candle.low);
-  const body = Math.abs(candle.close - candle.open);
 
   const calculateSafeSizing = (s: string, entry: number, sl: number) => {
     const intendedRisk = balance * activeMode.riskPct;
@@ -242,10 +242,10 @@ function evaluateSniperSignalInner(
     score += candle.close > svp5d.poc ? 4 : 2;
     if (rsiNow < cfg.rsiMin || rsiNow > cfg.rsiMax || rsiNow <= rsiPrev!) { debugLog.push('REJECT: RSI'); return null; }
     score += 2;
-    if (candle.volume / volAvg < cfg.volMult) { debugLog.push('REJECT: Volume'); return null; }
+    // Volume floor is not mathematically sound for a pullback/exhaustion pivot; removed 'Volume' gate.
     score += 2;
-    // Relaxed 'Weak candle' check: allow 40% body (down from 55%) and up to 40% upper wick (up from 30%)
-    if (candle.close <= candle.open || (body/range) < 0.40 || (candle.close - candle.low)/range < 0.60) { debugLog.push('REJECT: Weak candle'); return null; }
+    // Allow natural pullback geometries (Pin-bars/Hammers) by exclusively filtering massive counter-wicks (>45%)
+    if (candle.close <= candle.open || (candle.close - candle.low)/range < 0.55) { debugLog.push('REJECT: Weak candle'); return null; }
     if (candle.close <= Math.max(prev.open, prev.close) && modeKey !== 'AGGRESSIVE') { debugLog.push('REJECT: No displacement'); return null; }
     score += 2 + (regimeScoreBonus || 0);
 
@@ -274,14 +274,13 @@ function evaluateSniperSignalInner(
     if (candle.close > svp5d.vah) { debugLog.push('REJECT: Above VAH'); return null; }
     score += candle.close < svp5d.poc ? 4 : 2;
     const rsiMaxShort = 100 - cfg.rsiMin;
-    // For shorts, we only care if RSI bounced too high (breaking trend). 
-    // If it's still extremely low (e.g. < rsiMinShort), it's a valid waterfall continuation.
-    if (rsiNow > rsiMaxShort || rsiNow >= rsiPrev!) { debugLog.push('REJECT: RSI Short'); return null; }
+    // Removed strict `rsiPrev` smoothing check as it artificially blocks valid waterfall continuations
+    if (rsiNow > rsiMaxShort) { debugLog.push('REJECT: RSI Short'); return null; }
     score += 2;
-    if (candle.volume / volAvg < cfg.volMult) { debugLog.push('REJECT: Volume short'); return null; }
+    // Volume floor is not mathematically sound for a pullback/exhaustion pivot; removed 'Volume short' gate.
     score += 2;
-    // Relaxed 'Weak bear' check: allow 40% body and up to 40% lower wick
-    if (candle.close >= candle.open || (body/range) < 0.40 || (candle.high - candle.close)/range < 0.60) { debugLog.push('REJECT: Weak bear'); return null; }
+    // Allow shooting-star bearish pin-bars by only rejecting if the structural lower wick exceeds 45% of range
+    if (candle.close >= candle.open || (candle.high - candle.close)/range < 0.55) { debugLog.push('REJECT: Weak bear'); return null; }
     if (candle.close >= Math.min(prev.open, prev.close) && modeKey !== 'AGGRESSIVE') { debugLog.push('REJECT: No short displacement'); return null; }
     score += 2 + (regimeScoreBonus || 0);
 

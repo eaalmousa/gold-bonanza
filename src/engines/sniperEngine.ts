@@ -234,6 +234,7 @@ function evaluateSniperSignalInner(
 
   let score = 0;
   const reasons: string[] = [];
+  const candleThresh = modeKey === 'AGGRESSIVE' ? 0.30 : modeKey === 'CONSERVATIVE' ? 0.55 : 0.42;
 
   if (side === 'LONG') {
     diag.svpContext = candle.close > svp5d.poc ? 'ABOVE POC' : (candle.close < svp5d.val ? 'BELOW VAL' : 'INSIDE');
@@ -244,8 +245,8 @@ function evaluateSniperSignalInner(
     score += 2;
     // Volume floor is not mathematically sound for a pullback/exhaustion pivot; removed 'Volume' gate.
     score += 2;
-    // Allow natural pullback geometries (Pin-bars/Hammers) by exclusively filtering massive counter-wicks (>45%)
-    if (candle.close <= candle.open || (candle.close - candle.low)/range < 0.55) { debugLog.push('REJECT: Weak candle'); return null; }
+    // Mode-aware rejection of massive counter-wicks
+    if (candle.close <= candle.open || (candle.close - candle.low)/range < candleThresh) { debugLog.push('REJECT: Weak candle'); return null; }
     if (candle.close <= Math.max(prev.open, prev.close) && modeKey !== 'AGGRESSIVE') { debugLog.push('REJECT: No displacement'); return null; }
     score += 2 + (regimeScoreBonus || 0);
 
@@ -279,8 +280,8 @@ function evaluateSniperSignalInner(
     score += 2;
     // Volume floor is not mathematically sound for a pullback/exhaustion pivot; removed 'Volume short' gate.
     score += 2;
-    // Allow shooting-star bearish pin-bars by only rejecting if the structural lower wick exceeds 45% of range
-    if (candle.close >= candle.open || (candle.high - candle.close)/range < 0.55) { debugLog.push('REJECT: Weak bear'); return null; }
+    // Mode-aware rejection of massive counter-wicks
+    if (candle.close >= candle.open || (candle.high - candle.close)/range < candleThresh) { debugLog.push('REJECT: Weak bear'); return null; }
     if (candle.close >= Math.min(prev.open, prev.close) && modeKey !== 'AGGRESSIVE') { debugLog.push('REJECT: No short displacement'); return null; }
     score += 2 + (regimeScoreBonus || 0);
 

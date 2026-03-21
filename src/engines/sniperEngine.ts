@@ -244,7 +244,8 @@ function evaluateSniperSignalInner(
     score += 2;
     if (candle.volume / volAvg < cfg.volMult) { debugLog.push('REJECT: Volume'); return null; }
     score += 2;
-    if (candle.close <= candle.open || (body/range) < 0.55 || (candle.close - candle.low)/range < 0.70) { debugLog.push('REJECT: Weak candle'); return null; }
+    // Relaxed 'Weak candle' check: allow 40% body (down from 55%) and up to 40% upper wick (up from 30%)
+    if (candle.close <= candle.open || (body/range) < 0.40 || (candle.close - candle.low)/range < 0.60) { debugLog.push('REJECT: Weak candle'); return null; }
     if (candle.close <= Math.max(prev.open, prev.close) && modeKey !== 'AGGRESSIVE') { debugLog.push('REJECT: No displacement'); return null; }
     score += 2 + (regimeScoreBonus || 0);
 
@@ -272,13 +273,15 @@ function evaluateSniperSignalInner(
     if (candle.high < zl15 * (1 - cfg.valueZoneSlack) && !isBreakingDown) { debugLog.push('REJECT: Below zone'); return null; }
     if (candle.close > svp5d.vah) { debugLog.push('REJECT: Above VAH'); return null; }
     score += candle.close < svp5d.poc ? 4 : 2;
-    const rsiMinShort = 100 - cfg.rsiMax;
     const rsiMaxShort = 100 - cfg.rsiMin;
-    if (rsiNow < rsiMinShort || rsiNow > rsiMaxShort || rsiNow >= rsiPrev!) { debugLog.push('REJECT: RSI Short'); return null; }
+    // For shorts, we only care if RSI bounced too high (breaking trend). 
+    // If it's still extremely low (e.g. < rsiMinShort), it's a valid waterfall continuation.
+    if (rsiNow > rsiMaxShort || rsiNow >= rsiPrev!) { debugLog.push('REJECT: RSI Short'); return null; }
     score += 2;
     if (candle.volume / volAvg < cfg.volMult) { debugLog.push('REJECT: Volume short'); return null; }
     score += 2;
-    if (candle.close >= candle.open || (body/range) < 0.55 || (candle.high - candle.close)/range < 0.70) { debugLog.push('REJECT: Weak bear'); return null; }
+    // Relaxed 'Weak bear' check: allow 40% body and up to 40% lower wick
+    if (candle.close >= candle.open || (body/range) < 0.40 || (candle.high - candle.close)/range < 0.60) { debugLog.push('REJECT: Weak bear'); return null; }
     if (candle.close >= Math.min(prev.open, prev.close) && modeKey !== 'AGGRESSIVE') { debugLog.push('REJECT: No short displacement'); return null; }
     score += 2 + (regimeScoreBonus || 0);
 

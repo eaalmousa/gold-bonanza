@@ -163,7 +163,8 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
 export function getCorrelationPositionLimit(
   regime: MarketRegime,
   btc4hTrend: 'UP' | 'DOWN' | 'RANGING',
-  currentOpenCount: number
+  currentOpenCount: number,
+  modeKey: string = 'BALANCED'
 ): {
   allowNew: boolean;
   maxNewPositions: number;
@@ -173,12 +174,14 @@ export function getCorrelationPositionLimit(
     return { allowNew: false, maxNewPositions: 0, reason: 'BTC CRASH — all entries blocked' };
   }
   if (regime === 'CHOP') {
+    const limits: Record<string, number> = { CONSERVATIVE: 1, BALANCED: 2, AGGRESSIVE: 4 };
+    const maxEntries = limits[modeKey] || 2;
     // CHOP = limited entries. Range environments produce more false entries,
     // but zero entries permanently disables the scanner which is worse.
     return {
       allowNew: true,
-      maxNewPositions: 2,
-      reason: 'BTC CHOP — limited to 2 new entries in ranging/compressed market'
+      maxNewPositions: maxEntries,
+      reason: `BTC CHOP — limited to ${maxEntries} new entries in ranging/compressed market (${modeKey})`
     };
   }
   if (regime === 'TRENDING_DOWN' && btc4hTrend === 'DOWN') {

@@ -61,6 +61,9 @@ export default function SystemStatus() {
           trailTp:        res.trailTpEnabled    ?? CANONICAL_DEFAULTS.trailTp,
           circuitBreaker: res.circuitBreakerEnabled ?? false,
         });
+        if (res.activeModeId) {
+          setMode(res.activeModeId);
+        }
         setIsLoaded(true);
       })
       .catch(console.error);
@@ -161,6 +164,7 @@ export default function SystemStatus() {
               className={`mode-btn ${activeMode.key === m.key ? 'active' : ''}`}
               onClick={() => {
                 setMode(m.key);
+                api.updateAutoTradeConfig({ activeModeId: m.key }).catch(console.error);
               }}
             >
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

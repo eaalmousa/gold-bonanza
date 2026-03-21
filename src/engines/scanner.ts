@@ -64,7 +64,7 @@ export async function runBonanzaCore(
   }
 
   const openCount = currentOpenPositionCount ?? 0;
-  const corrLimit = getCorrelationPositionLimit(regime, btc4hTrend, openCount);
+  const corrLimit = getCorrelationPositionLimit(regime, btc4hTrend, openCount, activeMode.key);
   console.log(`[Correlation Limiter] ${corrLimit.reason} | Max new: ${corrLimit.maxNewPositions}`);
 
   // ─── STEP 3: Fetch 24h tickers ───────────────────────────────

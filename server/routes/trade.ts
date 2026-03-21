@@ -35,7 +35,8 @@ tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
       minScore: TRADER_CONFIG.MIN_SCORE,
       btcGate: TRADER_CONFIG.BTC_GATE_ENABLED,
       trailTp: TRADER_CONFIG.TRAIL_TP_ENABLED,
-      circuitBreaker: TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED
+      circuitBreaker: TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED,
+      activeModeId: TRADER_CONFIG.ACTIVE_MODE_ID
     },
     signals: backendSignalCache,
     latestMarketState,
@@ -77,7 +78,8 @@ tradeRouter.get('/config', requireAuth, (req: any, res: any) => {
     minScore: TRADER_CONFIG.MIN_SCORE,
     btcGateEnabled: TRADER_CONFIG.BTC_GATE_ENABLED,
     trailTpEnabled: TRADER_CONFIG.TRAIL_TP_ENABLED,
-    circuitBreakerEnabled: TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED
+    circuitBreakerEnabled: TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED,
+    activeModeId: TRADER_CONFIG.ACTIVE_MODE_ID
   });
 });
 

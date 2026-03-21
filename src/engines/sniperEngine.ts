@@ -162,15 +162,18 @@ function evaluateSniperSignalInner(
   diag.zlsmaValue = zlsmaNow.toFixed(4);
   diag.zlsmaSlopePct = zlsmaPctChange.toFixed(3) + '%';
 
-  const isBreakingDown = closes1h[idx1h] < e50_1h! && zlsmaPctChange < -0.20;
-  const isRecovering   = closes1h[idx1h] > e50_1h! && zlsmaPctChange > 0.20;
+  const slopeThresh = modeKey === 'AGGRESSIVE' ? 0.05 : modeKey === 'CONSERVATIVE' ? 0.25 : 0.15;
+  const breakThresh = slopeThresh + 0.05;
+
+  const isBreakingDown = closes1h[idx1h] < e50_1h! && zlsmaPctChange < -breakThresh;
+  const isRecovering   = closes1h[idx1h] > e50_1h! && zlsmaPctChange > breakThresh;
 
   let side: 'LONG' | 'SHORT';
   if (isBreakingDown) side = 'SHORT';
   else if (isRecovering) side = 'LONG';
-  else if (zlsmaPctChange > 0.15) side = 'LONG';
-  else if (zlsmaPctChange < -0.15) side = 'SHORT';
-  else { debugLog.push('REJECT: Weak ZLSMA slope'); return null; }
+  else if (zlsmaPctChange > slopeThresh) side = 'LONG';
+  else if (zlsmaPctChange < -slopeThresh) side = 'SHORT';
+  else { debugLog.push(`REJECT: Weak ZLSMA slope (needs > ${slopeThresh}%)`); return null; }
 
   diag.side = side;
 

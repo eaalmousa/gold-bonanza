@@ -56,7 +56,8 @@ export const TRADER_CONFIG = {
   BTC_GATE_ENABLED: true,
   TRAIL_TP_ENABLED: false,
   CIRCUIT_BREAKER_ENABLED: false,
-  ENABLED: false // Standardized naming to match API
+  ENABLED: false, // Standardized naming to match API
+  ACTIVE_MODE_ID: 'BALANCED'
 };
 
 // Canonical Mapping Funnel: Funnels any JSON case into master runtime
@@ -88,6 +89,9 @@ export function applyConfig(c: any) {
   
   if (c.enabled !== undefined || c.ENABLED !== undefined || c.isAutoTradingEnabled !== undefined)
       TRADER_CONFIG.ENABLED = c.enabled ?? c.ENABLED ?? c.isAutoTradingEnabled;
+  
+  if (c.activeModeId !== undefined || c.ACTIVE_MODE_ID !== undefined)
+      TRADER_CONFIG.ACTIVE_MODE_ID = c.activeModeId ?? c.ACTIVE_MODE_ID;
 }
 
 // Hardened Persistence Helper (Heals disk case drift)
@@ -106,7 +110,8 @@ const saveState = () => {
       BTC_GATE_ENABLED: Boolean(TRADER_CONFIG.BTC_GATE_ENABLED),
       TRAIL_TP_ENABLED: Boolean(TRADER_CONFIG.TRAIL_TP_ENABLED),
       CIRCUIT_BREAKER_ENABLED: Boolean(TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED),
-      ENABLED: Boolean(TRADER_CONFIG.ENABLED)
+      ENABLED: Boolean(TRADER_CONFIG.ENABLED),
+      ACTIVE_MODE_ID: String(TRADER_CONFIG.ACTIVE_MODE_ID)
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(canonicalExport, null, 2));
   } catch (err) {
@@ -152,11 +157,14 @@ async function startAutoScanner() {
       latestMarketState.scanProgress = 0;
       const balance = await getBalance() || 1000;
       
-      const activeMode = MODES.BALANCED;
+      const configuredModeId = TRADER_CONFIG.ACTIVE_MODE_ID as keyof typeof MODES;
+      const activeMode = MODES[configuredModeId] || MODES.BALANCED;
+      
       const modeProxy = {
         ...activeMode,
         riskPct: TRADER_CONFIG.RISK_PER_TRADE,
-        pullback: { ...activeMode.pullback, scoreMin: TRADER_CONFIG.MIN_SCORE }
+        pullback: { ...activeMode.pullback, scoreMin: TRADER_CONFIG.MIN_SCORE },
+        breakout: { ...activeMode.breakout, scoreMin: TRADER_CONFIG.MIN_SCORE }
       };
 
       const result = await runBonanzaCore(

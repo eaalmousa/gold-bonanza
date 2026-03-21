@@ -163,7 +163,7 @@ function evaluateSniperSignalInner(
   diag.zlsmaValue = zlsmaNow.toFixed(4);
   diag.zlsmaSlopePct = zlsmaPctChange.toFixed(3) + '%';
 
-  const slopeThresh = modeKey === 'AGGRESSIVE' ? 0.05 : modeKey === 'CONSERVATIVE' ? 0.25 : 0.15;
+  const slopeThresh = modeKey === 'AGGRESSIVE' ? 0.03 : modeKey === 'CONSERVATIVE' ? 0.12 : 0.08;
   const breakThresh = slopeThresh + 0.05;
 
   const isBreakingDown = closes1h[idx1h] < e50_1h! && zlsmaPctChange < -breakThresh;

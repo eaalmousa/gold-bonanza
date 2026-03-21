@@ -236,7 +236,7 @@ function evaluateSniperSignalInner(
 
   let score = 0;
   const reasons: string[] = [];
-  const candleThresh = modeKey === 'AGGRESSIVE' ? 0.25 : modeKey === 'CONSERVATIVE' ? 0.55 : 0.38;
+  const candleThresh = modeKey === 'AGGRESSIVE' ? 0.22 : modeKey === 'CONSERVATIVE' ? 0.55 : 0.33;
 
   if (side === 'LONG') {
     diag.svpContext = candle.close > svp5d.poc ? 'ABOVE POC' : (candle.close < svp5d.val ? 'BELOW VAL' : 'INSIDE');

@@ -51,45 +51,66 @@ export const TRADER_CONFIG = {
   BTC_GATE_ENABLED: true,
   TRAIL_TP_ENABLED: false,
   CIRCUIT_BREAKER_ENABLED: false,
-  isAutoTradingEnabled: false
+  ENABLED: false // Standardized naming to match API
 };
 
-// Persistence
+// Canonical Mapping Funnel: Funnels any JSON case into master runtime
+export function applyConfig(c: any) {
+  if (c.riskPerTrade !== undefined || c.RISK_PER_TRADE !== undefined) 
+      TRADER_CONFIG.RISK_PER_TRADE = c.riskPerTrade ?? c.RISK_PER_TRADE;
+  if (c.maxConcurrent !== undefined || c.MAX_CONCURRENT_TRADES !== undefined)
+      TRADER_CONFIG.MAX_CONCURRENT_TRADES = c.maxConcurrent ?? c.MAX_CONCURRENT_TRADES;
+  if (c.leverage !== undefined || c.LEVERAGE !== undefined)
+      TRADER_CONFIG.LEVERAGE = c.leverage ?? c.LEVERAGE;
+  if (c.slEnabled !== undefined || c.SL_ENABLED !== undefined)
+      TRADER_CONFIG.SL_ENABLED = c.slEnabled ?? c.SL_ENABLED;
+  if (c.tpEnabled !== undefined || c.TP_ENABLED !== undefined)
+      TRADER_CONFIG.TP_ENABLED = c.tpEnabled ?? c.TP_ENABLED;
+  if (c.tp1Only !== undefined || c.TP1_ONLY !== undefined)
+      TRADER_CONFIG.TP1_ONLY = c.tp1Only ?? c.TP1_ONLY;
+  if (c.tp1RR !== undefined || c.TP1_RR !== undefined)
+      TRADER_CONFIG.TP1_RR = c.tp1RR ?? c.TP1_RR;
+  if (c.tp2RR !== undefined || c.TP2_RR !== undefined)
+      TRADER_CONFIG.TP2_RR = c.tp2RR ?? c.TP2_RR;
+  if (c.minScore !== undefined || c.MIN_SCORE !== undefined)
+      TRADER_CONFIG.MIN_SCORE = c.minScore ?? c.MIN_SCORE;
+  if (c.btcGateEnabled !== undefined || c.BTC_GATE_ENABLED !== undefined || c.btcGate !== undefined)
+      TRADER_CONFIG.BTC_GATE_ENABLED = c.btcGateEnabled ?? c.BTC_GATE_ENABLED ?? c.btcGate;
+  if (c.trailTpEnabled !== undefined || c.TRAIL_TP_ENABLED !== undefined || c.trailTp !== undefined)
+      TRADER_CONFIG.TRAIL_TP_ENABLED = c.trailTpEnabled ?? c.TRAIL_TP_ENABLED ?? c.trailTp;
+  if (c.circuitBreakerEnabled !== undefined || c.CIRCUIT_BREAKER_ENABLED !== undefined || c.circuitBreaker !== undefined)
+      TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED = c.circuitBreakerEnabled ?? c.CIRCUIT_BREAKER_ENABLED ?? c.circuitBreaker;
+  
+  if (c.enabled !== undefined || c.ENABLED !== undefined || c.isAutoTradingEnabled !== undefined)
+      TRADER_CONFIG.ENABLED = c.enabled ?? c.ENABLED ?? c.isAutoTradingEnabled;
+}
+
+// Hardened Persistence Helper (Heals disk case drift)
+const saveState = () => {
+  try {
+    const canonicalExport = { ...TRADER_CONFIG };
+    fs.writeFileSync(STATE_FILE, JSON.stringify(canonicalExport, null, 2));
+  } catch (_) {}
+};
+
+// Initialization: Funneled load
 try {
   if (fs.existsSync(STATE_FILE)) {
     const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    Object.assign(TRADER_CONFIG, saved);
+    applyConfig(saved);
+    console.log('[Persistence] Master configuration hydrated from VPS disk.');
   }
 } catch { console.warn('[Persistence] Loading config failed.'); }
 
-const saveState = () => {
-  try { fs.writeFileSync(STATE_FILE, JSON.stringify(TRADER_CONFIG, null, 2)); } catch (_) {}
-};
 
 export function updateTraderConfig(c: any) { 
-  // Strict Case-Mapping: Link lowercase incoming JSON to uppercase master runtime
-  if (c.riskPerTrade !== undefined)   TRADER_CONFIG.RISK_PER_TRADE = c.riskPerTrade;
-  if (c.maxConcurrent !== undefined)  TRADER_CONFIG.MAX_CONCURRENT_TRADES = c.maxConcurrent;
-  if (c.leverage !== undefined)       TRADER_CONFIG.LEVERAGE = c.leverage;
-  if (c.slEnabled !== undefined)      TRADER_CONFIG.SL_ENABLED = c.slEnabled;
-  if (c.tpEnabled !== undefined)      TRADER_CONFIG.TP_ENABLED = c.tpEnabled;
-  if (c.tp1Only !== undefined)        TRADER_CONFIG.TP1_ONLY = c.tp1Only;
-  if (c.tp1RR !== undefined)          TRADER_CONFIG.TP1_RR = c.tp1RR;
-  if (c.tp2RR !== undefined)          TRADER_CONFIG.TP2_RR = c.tp2RR;
-  if (c.minScore !== undefined)       TRADER_CONFIG.MIN_SCORE = c.minScore;
-  if (c.btcGateEnabled !== undefined) TRADER_CONFIG.BTC_GATE_ENABLED = c.btcGateEnabled;
-  if (c.trailTpEnabled !== undefined) TRADER_CONFIG.TRAIL_TP_ENABLED = c.trailTpEnabled;
-  if (c.circuitBreakerEnabled !== undefined) TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED = c.circuitBreakerEnabled;
-  
-  // Explicitly handle enabled flag if present in body
-  if (c.enabled !== undefined)        TRADER_CONFIG.isAutoTradingEnabled = !!c.enabled;
-
+  applyConfig(c);
   saveState(); 
-  logMsg(`Config updated: MIN_SCORE=${TRADER_CONFIG.MIN_SCORE} AUTO=${TRADER_CONFIG.isAutoTradingEnabled}`);
+  logMsg(`Config updated: MIN_SCORE=${TRADER_CONFIG.MIN_SCORE} AUTO=${TRADER_CONFIG.ENABLED}`);
 }
 
 export function toggleAutoTrade(e: boolean) { 
-  TRADER_CONFIG.isAutoTradingEnabled = e; 
+  TRADER_CONFIG.ENABLED = e; 
   saveState(); 
   logMsg(`AutoTrade: ${e ? 'ON' : 'OFF'}`);
 }
@@ -129,10 +150,9 @@ async function startAutoScanner() {
       latestMarketState.lastScanAt      = Date.now();
       latestMarketState.scanProgress    = 100;
 
-      // Diagnostic Heartbeat
       console.log(`[AutoTrader] Scan Cycle End. Signals: ${latestMarketState.pipelineSignals.length} | Traces: ${latestMarketState.pipelineTraces.length} | Regime: ${latestMarketState.regime}`);
 
-      if (TRADER_CONFIG.isAutoTradingEnabled && result.pipelineSignals.length > 0) {
+      if (TRADER_CONFIG.ENABLED && result.pipelineSignals.length > 0) {
         await evaluateFrontendSignals(result.pipelineSignals);
       }
     } catch (e: any) {
@@ -148,7 +168,7 @@ startAutoScanner().catch(console.error);
 
 // ─── Execution Engine ─────────────────────────────────────────────────────────
 export async function evaluateFrontendSignals(signals: any[]) {
-  if (!TRADER_CONFIG.isAutoTradingEnabled) return backendSignalCache;
+  if (!TRADER_CONFIG.ENABLED) return backendSignalCache;
 
   // Sync cache
   signals.forEach(s => {

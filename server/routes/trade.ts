@@ -20,8 +20,8 @@ function resolveBaseUrl(): string {
 
 tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
   res.json({
-    enabled: TRADER_CONFIG.isAutoTradingEnabled,
-    autoTrading: TRADER_CONFIG.isAutoTradingEnabled,
+    enabled: TRADER_CONFIG.ENABLED,
+    autoTrading: TRADER_CONFIG.ENABLED,
     logs: tradeLogs,
     config: {
       riskPerTrade: TRADER_CONFIG.RISK_PER_TRADE,
@@ -59,9 +59,9 @@ tradeRouter.get('/logs', requireAuth, (req: any, res: any) => {
 
 tradeRouter.post('/toggle', requireAuth, (req: any, res: any) => {
   // Use explicit value from body when provided; otherwise flip current state
-  const desired = req.body?.enabled !== undefined ? !!req.body.enabled : !TRADER_CONFIG.isAutoTradingEnabled;
+  const desired = req.body?.enabled !== undefined ? !!req.body.enabled : !TRADER_CONFIG.ENABLED;
   toggleAutoTrade(desired);
-  res.json({ enabled: TRADER_CONFIG.isAutoTradingEnabled });
+  res.json({ enabled: TRADER_CONFIG.ENABLED });
 });
 
 tradeRouter.get('/config', requireAuth, (req: any, res: any) => {

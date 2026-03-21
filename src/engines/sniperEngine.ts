@@ -58,7 +58,8 @@ export function evaluateSniperSignal(
   activeMode: ModeConfig,
   balance: number,
   regime?: MarketRegime,
-  regimeScoreBonus?: number,
+  regimeScoreBonusLong?: number,
+  regimeScoreBonusShort?: number,
   orderFlow?: OrderFlowSnapshot,
   btc4hTrend?: 'UP' | 'DOWN' | 'RANGING',
   btcRegimeLabel?: string,
@@ -89,7 +90,7 @@ export function evaluateSniperSignal(
   
   try {
     const result = evaluateSniperSignalInner(
-      tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, 
+      tf1h, tf15m, activeMode, balance, regime, regimeScoreBonusLong, regimeScoreBonusShort, 
       orderFlow, btc4hTrend, btcRegimeLabel, symbol, debugLog, diag
     );
     
@@ -123,7 +124,8 @@ function evaluateSniperSignalInner(
   activeMode: ModeConfig,
   balance: number,
   regime?: MarketRegime,
-  regimeScoreBonus?: number,
+  regimeScoreBonusLong?: number,
+  regimeScoreBonusShort?: number,
   orderFlow?: OrderFlowSnapshot,
   btc4hTrend?: 'UP' | 'DOWN' | 'RANGING',
   btcRegimeLabel?: string,
@@ -248,7 +250,7 @@ function evaluateSniperSignalInner(
     // Mode-aware rejection of massive counter-wicks
     if (candle.close <= candle.open || (candle.close - candle.low)/range < candleThresh) { debugLog.push('REJECT: Weak candle'); return null; }
     if (candle.close <= Math.max(prev.open, prev.close) && modeKey !== 'AGGRESSIVE') { debugLog.push('REJECT: No displacement'); return null; }
-    score += 2 + (regimeScoreBonus || 0);
+    score += 2 + (regimeScoreBonusLong || 0);
 
     if (score < cfg.scoreMin) { debugLog.push(`REJECT: Score ${score}`); return null; }
 
@@ -283,7 +285,7 @@ function evaluateSniperSignalInner(
     // Mode-aware rejection of massive counter-wicks
     if (candle.close >= candle.open || (candle.high - candle.close)/range < candleThresh) { debugLog.push('REJECT: Weak bear'); return null; }
     if (candle.close >= Math.min(prev.open, prev.close) && modeKey !== 'AGGRESSIVE') { debugLog.push('REJECT: No short displacement'); return null; }
-    score += 2 + (regimeScoreBonus || 0);
+    score += 2 + (regimeScoreBonusShort || 0);
 
     if (score < cfg.scoreMin) { debugLog.push(`REJECT: Score ${score}`); return null; }
 

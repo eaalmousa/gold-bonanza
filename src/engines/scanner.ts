@@ -43,7 +43,8 @@ export async function runBonanzaCore(
 
   // ─── STEP 1: Detect Market Regime using BTC ──────────────────
   let regime: MarketRegime = 'RANGING';
-  let regimeScoreBonus     = 0;
+  let regimeScoreBonusLong  = 0;
+  let regimeScoreBonusShort = 0;
   let btc4hTrend: 'UP' | 'DOWN' | 'RANGING' = 'RANGING';
   let regimeLabel          = 'RANGING';
 
@@ -55,10 +56,11 @@ export async function runBonanzaCore(
     const detection   = detectMarketRegime(btc1h, btc4h);
     regime            = detection.regime;
     btc4hTrend        = detection.btc4hTrend;
-    regimeScoreBonus  = detection.scoreBonus;
+    regimeScoreBonusLong  = detection.scoreBonusLong;
+    regimeScoreBonusShort = detection.scoreBonusShort;
     regimeLabel       = `${detection.regime} (${detection.reason})`;
     onRegimeUpdate?.(regime, detection.reason);
-    console.log(`[Scanner] Regime: ${regime} | BTC4H: ${btc4hTrend} | Bonus: ${regimeScoreBonus} | ${detection.reason}`);
+    console.log(`[Scanner] Regime: ${regime} | BTC4H: ${btc4hTrend} | Bonus(L/S): ${regimeScoreBonusLong}/${regimeScoreBonusShort} | ${detection.reason}`);
   } catch (e: any) {
     console.warn('[Scanner] Regime detection failed:', e?.message);
   }
@@ -180,10 +182,10 @@ export async function runBonanzaCore(
 
           const symbolFlow = orderFlowSnapshots?.[symbol];
           const sniperLogStart = sniperLogs.length;
-          const sniper  = evaluateSniperSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, symbolFlow, btc4hTrend, regimeLabel, symbol);
+          const sniper  = evaluateSniperSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonusLong, regimeScoreBonusShort, symbolFlow, btc4hTrend, regimeLabel, symbol);
           const currentSniperLogs = sniperLogs.slice(sniperLogStart).find(l => l[0]?.includes(symbol)) || (sniper?.debugLog || []);
           
-          const breakout = evaluateBreakoutSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, symbolFlow, btc4hTrend, regimeLabel, symbol);
+          const breakout = evaluateBreakoutSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonusLong, regimeScoreBonusShort, symbolFlow, btc4hTrend, regimeLabel, symbol);
           const currentBreakoutLogs = breakout?.debugLog || [];
 
           return {

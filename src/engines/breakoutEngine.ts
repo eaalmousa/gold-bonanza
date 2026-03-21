@@ -14,7 +14,8 @@ export function evaluateBreakoutSignal(
   activeMode: ModeConfig,
   balance: number,
   regime?: MarketRegime,
-  regimeScoreBonus?: number,
+  regimeScoreBonusLong?: number,
+  regimeScoreBonusShort?: number,
   orderFlow?: OrderFlowSnapshot,
   btc4hTrend?: 'UP' | 'DOWN' | 'RANGING',
   btcRegimeLabel?: string,
@@ -25,7 +26,7 @@ export function evaluateBreakoutSignal(
   const MAX_RETEST_WAIT = 4;
   
   // First, check if the current closed candle is a brand new breakout
-  const currentBreakout = evaluateCoreBreakout(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonus, orderFlow, btc4hTrend, btcRegimeLabel, symbol);
+  const currentBreakout = evaluateCoreBreakout(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonusLong, regimeScoreBonusShort, orderFlow, btc4hTrend, btcRegimeLabel, symbol);
   if (currentBreakout) {
     currentBreakout.entryType = 'PENDING_BREAKOUT' as any;
     return currentBreakout;
@@ -39,7 +40,7 @@ export function evaluateBreakoutSignal(
     // Evaluate the slice of candles that existed `lookback` candles ago
     const pastSliceLength = tf15m.length - lookback;
     const pastSliceArr = tf15m.slice(0, pastSliceLength);
-    const pastBreakout = evaluateCoreBreakout(tf1h, pastSliceArr, activeMode, balance, regime, regimeScoreBonus, orderFlow, btc4hTrend, btcRegimeLabel, symbol);
+    const pastBreakout = evaluateCoreBreakout(tf1h, pastSliceArr, activeMode, balance, regime, regimeScoreBonusLong, regimeScoreBonusShort, orderFlow, btc4hTrend, btcRegimeLabel, symbol);
 
     if (pastBreakout) {
       const bLevel = (pastBreakout as any).breakLevel;
@@ -170,7 +171,8 @@ function evaluateCoreBreakout(
   activeMode: ModeConfig,
   balance: number,
   regime?: MarketRegime,
-  regimeScoreBonus?: number,
+  regimeScoreBonusLong?: number,
+  regimeScoreBonusShort?: number,
   orderFlow?: OrderFlowSnapshot,
   btc4hTrend?: 'UP' | 'DOWN' | 'RANGING',
   btcRegimeLabel?: string,
@@ -380,9 +382,8 @@ function evaluateCoreBreakout(
 
     score += 1; // 1H trend gate bonus
     reasons.push('1H trend confirmed');
-
-    score += (regimeScoreBonus || 0);
-    if (regimeScoreBonus && regimeScoreBonus > 0) reasons.push('Regime supportive');
+    score += (regimeScoreBonusLong || 0);
+    if (regimeScoreBonusLong && regimeScoreBonusLong > 0) reasons.push('Regime supportive');
 
     const effectiveScoreMin = cfg.scoreMin + missingFlowPenalty;
     if (score < effectiveScoreMin) return null;
@@ -512,9 +513,8 @@ function evaluateCoreBreakout(
 
     score += 1;
     reasons.push('1H trend confirmed (bearish)');
-
-    const shortRegimeBonus = regime === 'TRENDING_DOWN' ? Math.abs(regimeScoreBonus || 0) : -(regimeScoreBonus || 0);
-    score += shortRegimeBonus;
+    score += (regimeScoreBonusShort || 0);
+    if (regimeScoreBonusShort && regimeScoreBonusShort > 0) reasons.push('Regime supportive');
 
     const effectiveScoreMin = cfg.scoreMin + missingFlowPenalty;
     if (score < effectiveScoreMin) return null;

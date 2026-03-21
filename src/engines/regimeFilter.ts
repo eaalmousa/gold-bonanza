@@ -15,7 +15,8 @@ import { calcEMA, calcATR, calcRSI } from './indicators';
 export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
   regime: MarketRegime;
   btc4hTrend: 'UP' | 'DOWN' | 'RANGING';
-  scoreBonus: number;
+  scoreBonusLong: number;
+  scoreBonusShort: number;
   reason: string;
   btcRsi?: number;
 } {
@@ -41,7 +42,7 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
   }
 
   if (!btc1h || btc1h.length < 210) {
-    return { regime: 'RANGING', btc4hTrend, scoreBonus: 0, reason: 'Insufficient BTC data' };
+    return { regime: 'RANGING', btc4hTrend, scoreBonusLong: 0, scoreBonusShort: 0, reason: 'Insufficient BTC data' };
   }
 
   const closes = btc1h.map(c => c.close);
@@ -63,7 +64,7 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
   const btcRsi = rsi14[idx] ?? undefined;
 
   if ([e20, e50, e200, atr].some(v => v == null)) {
-    return { regime: 'RANGING', btc4hTrend, scoreBonus: 0, reason: 'EMA not ready' };
+    return { regime: 'RANGING', btc4hTrend, scoreBonusLong: 0, scoreBonusShort: 0, reason: 'EMA not ready' };
   }
 
   // ─── CRASH DETECTION (Tightened for earlier detection) ─────────────────
@@ -77,7 +78,8 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
     return {
       regime: 'CRASH',
       btc4hTrend, btcRsi,
-      scoreBonus: -10,
+      scoreBonusLong: -10,
+      scoreBonusShort: -10,
       reason: `BTC crash detected: ${drop3h.toFixed(2)}% (3h) / ${drop10h.toFixed(2)}% (10h)`
     };
   }
@@ -97,7 +99,8 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
     return {
       regime: 'CHOP',
       btc4hTrend, btcRsi,
-      scoreBonus: -5,
+      scoreBonusLong: -2,
+      scoreBonusShort: -2,
       reason: `BTC CHOP: EMA20/50 spread=${(emaDelta * 100).toFixed(2)}%, 8h range ratio=${atrRatio.toFixed(2)}x ATR`
     };
   }
@@ -111,11 +114,12 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
 
   if (emaAlignedUp && aboveEma200 && e20SlopeUp && e50SlopeUp) {
     const recentGain = ((close - close10h) / close10h) * 100;
-    const isStrong   = recentGain > 2.0; // tighter definition of strong
+    const isStrong   = recentGain > 2.0; 
     return {
       regime: 'TRENDING_UP',
       btc4hTrend, btcRsi,
-      scoreBonus: isStrong ? 3 : 1,
+      scoreBonusLong: isStrong ? 4 : 2,
+      scoreBonusShort: -5, 
       reason: `BTC active uptrend: EMA aligned, steep slope, +${recentGain.toFixed(1)}% (10h)`
     };
   }
@@ -130,7 +134,8 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
     return {
       regime: 'TRENDING_DOWN',
       btc4hTrend, btcRsi,
-      scoreBonus: -3,
+      scoreBonusLong: -5,
+      scoreBonusShort: 3, 
       reason: `BTC active downtrend: EMA aligned bearish, steep slope`
     };
   }
@@ -141,15 +146,17 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
     return {
       regime: 'RANGING',
       btc4hTrend, btcRsi,
-      scoreBonus: -1,
+      scoreBonusLong: -1,
+      scoreBonusShort: -1,
       reason: `BTC ranging: ${distFromE200.toFixed(1)}% from EMA200`
     };
   }
-
+  
   return {
     regime: aboveEma200 ? 'TRENDING_UP' : 'TRENDING_DOWN',
     btc4hTrend, btcRsi,
-    scoreBonus: 0,
+    scoreBonusLong: 0,
+    scoreBonusShort: 0,
     reason: `BTC ambiguous: above EMA200=${aboveEma200}`
   };
 }

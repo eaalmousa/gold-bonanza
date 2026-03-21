@@ -14,8 +14,13 @@ import path from 'path';
 // Inject Hardened Fetcher for Server Lifecycle
 setKlinesFetchOverride(getKlinesResilient);
 
-const STATE_FILE = path.resolve(__dirname, '../../trader_state.json');
-const SIGNALS_FILE = path.resolve(__dirname, '../../backend_signals.json');
+// Enforce Absolute Path Sovereignty (Prevents PM2 CWD Drift & Phantom Shadow Files)
+let rootPath = process.cwd();
+if (rootPath.endsWith('server') || rootPath.endsWith('server\\')) {
+    rootPath = path.join(rootPath, '..');
+}
+export const STATE_FILE = path.join(rootPath, 'trader_state.json');
+export const SIGNALS_FILE = path.join(rootPath, 'backend_signals.json');
 
 // ─── Backend Singleton State ──────────────────────────────────────────────────
 export let latestMarketState = {

@@ -6,7 +6,7 @@ process.env.BINANCE_API_SECRET = 'mock';
 const autoTrader = require('../lib/autoTrader');
 const binance = require('../lib/binance');
 
-autoTrader.updateTraderConfig({ circuitBreakerEnabled: false, maxConcurrent: 8 });
+autoTrader.updateTraderConfig({ CIRCUIT_BREAKER_ENABLED: false, MAX_CONCURRENT_TRADES: 8 });
 
 // Mock dependencies
 // @ts-ignore
@@ -43,7 +43,7 @@ scanner.runBonanzaCore = async () => {
                 signal: {
                     score: 20,
                     side: 'LONG',
-                    entryType: 'PULLBACK',
+                    entryType: 'CONTINUATION',
                     entryPrice: 150,
                     stopLoss: 140,
                     takeProfit: 160,
@@ -72,13 +72,11 @@ async function runTest() {
     // Hack the toggle to ON so the engine runs its internal iteration
     autoTrader.toggleAutoTrade(true);
 
-    // Call inner iteration directly
-    // @ts-ignore
-    await autoTrader.runTraderLoop();
+    // await autoTrader.runTraderLoop();
 
     // Check logs
     console.log("\n--- TRADER LOGS ---");
-    autoTrader.tradeLogs.slice(0, 5).forEach(l => console.log(l));
+    autoTrader.tradeLogs.slice(0, 5).forEach((l: string) => console.log(l));
     console.log("-----------------------------------");
 }
 

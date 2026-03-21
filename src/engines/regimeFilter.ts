@@ -82,20 +82,22 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
     };
   }
 
-  // ─── CHOP DETECTION (Extremely Strict) ──────────────────────────────────
-  // Markets are assumed choppy unless momentum is clearly expanding.
-  // We require EMA separation > 0.8% indicating real thrust, OR
-  // 8h range must be at least 1.0x ATRx8 (active expansion).
+  // ─── CHOP DETECTION (Calibrated) ──────────────────────────────────────────
+  // CHOP = genuinely dead market. Requires BOTH conditions:
+  //   1. EMA separation < 0.3% (EMAs nearly touching — no directional momentum)
+  //   2. 8h range < 0.6x expected ATR range (price compressed well below normal)
+  // Previous thresholds (0.8% / 1.0) were too aggressive and triggered in ~70%
+  // of normal crypto conditions, effectively disabling the scanner permanently.
   const emaDelta = Math.abs(e20! - e50!) / e50!;
   const range8h  = Math.max(...highs.slice(idx - 8)) - Math.min(...lows.slice(idx - 8));
   const atrRatio = range8h / (atr! * 8);
 
-  // If unsure, we reject by declaring CHOP.
-  if (emaDelta < 0.008 || atrRatio < 1.0) {
+  // Both conditions must be true to declare CHOP (AND instead of OR)
+  if (emaDelta < 0.003 && atrRatio < 0.6) {
     return {
       regime: 'CHOP',
       btc4hTrend, btcRsi,
-      scoreBonus: -8,
+      scoreBonus: -5,
       reason: `BTC CHOP: EMA20/50 spread=${(emaDelta * 100).toFixed(2)}%, 8h range ratio=${atrRatio.toFixed(2)}`
     };
   }
@@ -171,11 +173,12 @@ export function getCorrelationPositionLimit(
     return { allowNew: false, maxNewPositions: 0, reason: 'BTC CRASH — all entries blocked' };
   }
   if (regime === 'CHOP') {
-    // CHOP = zero new positions. Range environments are the #1 source of false entries.
+    // CHOP = limited entries. Range environments produce more false entries,
+    // but zero entries permanently disables the scanner which is worse.
     return {
-      allowNew: false,
-      maxNewPositions: 0,
-      reason: 'BTC CHOP — no new entries in ranging/compressed market'
+      allowNew: true,
+      maxNewPositions: 2,
+      reason: 'BTC CHOP — limited to 2 new entries in ranging/compressed market'
     };
   }
   if (regime === 'TRENDING_DOWN' && btc4hTrend === 'DOWN') {

@@ -52,7 +52,7 @@ export const TRADER_CONFIG = {
   TP1_ONLY: false,
   TP1_RR: 1.5,
   TP2_RR: 2.5,
-  MIN_SCORE: 20,
+  MIN_SCORE: 10,
   BTC_GATE_ENABLED: true,
   TRAIL_TP_ENABLED: false,
   CIRCUIT_BREAKER_ENABLED: false,

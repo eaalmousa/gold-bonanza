@@ -4,7 +4,7 @@ import * as autoTrader from '../lib/autoTrader';
 
 async function diagnose() {
     console.log("--- BACKEND SIGNAL TRUTH DIAGNOSTICS ---");
-    console.log(`AutoTrade Active: ${autoTrader.TRADER_CONFIG.isAutoTradingEnabled}`);
+    console.log(`AutoTrade Active: ${autoTrader.TRADER_CONFIG.ENABLED}`);
     console.log(`Max Concurrent: ${autoTrader.TRADER_CONFIG.MAX_CONCURRENT_TRADES}`);
     console.log(`Circuit Breaker: ${autoTrader.TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED}`);
     console.log("\n--- BACKEND SIGNAL CACHE ---");

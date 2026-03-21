@@ -6,11 +6,11 @@ const FETCH_INTERVAL_MS = 10_000; // Poll backend every 10s
 
 export function useScanner() {
   const {
-    setPipelineSignals, setPipelineTraces,
     setMarketRows, setDataLive, setScannerRunning,
     setMarketRegime, setLastScanAt,
     isScannerActive, lastScanAt,
-    setBackendSignals
+    setBackendSignals, setAutoTradeActive, setBalance, setBinanceStatus,
+    setPipelineSignals, setPipelineTraces
   } = useTradingStore();
 
   const [scanProgress, setScanProgress] = useState(0);
@@ -20,7 +20,15 @@ export function useScanner() {
     try {
       const state = await api.getAutoTradeStatus(); 
       
-      // Update deployment truth
+      // Update Core Store Truth from Scout-Node
+      if (state.enabled !== undefined) setAutoTradeActive(state.enabled);
+      if (state.balance !== undefined) setBalance(state.balance);
+      
+      // Binance Connection Truth (derived from rateLimit availability)
+      const isConnected = !!state.rateLimit && Object.keys(state.rateLimit).length > 0;
+      setBinanceStatus(isConnected ? 'CONNECTED' : 'ERROR');
+
+      // Update deployment signals
       if (state.signals) setBackendSignals(state.signals);
       
       // Update latest scan results
@@ -30,7 +38,7 @@ export function useScanner() {
         // 1. Update Market Metrics
         setMarketRows(ms.marketRows || []);
         
-        // Truth-Alignment: Sync symbols universe from active rows if local is empty
+        // Truth-Alignment: Sync symbols universe
         if (ms.marketRows?.length > 0) {
             const syms = ms.marketRows.map((r: any) => r.symbol);
             useTradingStore.getState().setSymbols(syms);
@@ -39,25 +47,23 @@ export function useScanner() {
         setMarketRegime(ms.regime || 'RANGING');
         setScanProgress(ms.scanProgress || 100);
         setLastScanAt(ms.lastScanAt || Date.now());
-        setDataLive(ms.marketRows?.length > 0);
+
+        // Liveness: Heartbeat success + scanner config means we are LIVE
+        setDataLive(true); 
         setScannerRunning(ms.scanProgress < 100);
 
-        // 2. Update Signals
-        setPipelineSignals(ms.pipelineSignals || []);
-
-        // 3. Update Unified Traces (Forensics)
-        // Diagnostic Log:
-        const traceCount = ms.pipelineTraces?.length || 0;
-        if (traceCount > 0) {
-            console.log(`[useScanner] API handoff received ${traceCount} traces.`);
-        }
         setPipelineTraces(ms.pipelineTraces || []);
+        setPipelineSignals(ms.pipelineSignals || []);
       }
 
     } catch (e: any) {
       console.warn('[Scanner:Poll] Failed to fetch backend state:', e.message);
     }
-  }, [setPipelineSignals, setPipelineTraces, setMarketRows, setMarketRegime, setDataLive, setScannerRunning, setBackendSignals]);
+  }, [
+    setPipelineSignals, setPipelineTraces, setMarketRows, setMarketRegime, 
+    setDataLive, setScannerRunning, setBackendSignals, setAutoTradeActive, 
+    setBalance, setBinanceStatus, setLastScanAt
+  ]);
 
   useEffect(() => {
     if (isScannerActive) {

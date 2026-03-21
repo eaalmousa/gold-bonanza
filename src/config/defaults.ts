@@ -14,7 +14,7 @@ export const CANONICAL_DEFAULTS = {
   tp1Only:        false,  //      — must match TP1_ONLY=false in autoTrader.ts
   tp1RR:          1.50,   // 1.5R — raised from 1.25, requires better reward minimum
   tp2RR:          2.50,   //      — must match TP2_RR=2.50 in autoTrader.ts
-  minScore:       20,     // 20   — raised from 15, key false-entry reduction lever
+  minScore:       10,     // 10   — max achievable sniper score ≈ 12; 20 was unachievable
   btcGate:        true,   //      — must match BTC_GATE_ENABLED=true in autoTrader.ts
   trailTp:        false,  //      — must match TRAIL_TP_ENABLED=false in autoTrader.ts
   circuitBreaker: false,  //      — must match CIRCUIT_BREAKER_ENABLED=false in autoTrader.ts

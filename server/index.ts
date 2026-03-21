@@ -21,8 +21,9 @@ app.set('trust proxy', 1);
 
 app.use(express.json());
 
-// Explicit Preflight Handler
-app.options('/*', cors() as express.RequestHandler);
+// [GUARDRAIL] Express 5.0+ / path-to-regexp v8 strictly forbids '*' or '/*' routes.
+// DO NOT revert this to app.options('*', cors()) as it will fatally crash the VPS on boot.
+app.options('/{*any}', cors() as express.RequestHandler);
 
 app.use('/api/auth', authRouter);
 app.use('/api/trade', tradeRouter);

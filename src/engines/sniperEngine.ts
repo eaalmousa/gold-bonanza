@@ -139,7 +139,8 @@ function evaluateSniperSignalInner(
   }
 
   if (regime === 'CRASH') { debugLog.push('REJECT: CRASH regime'); return null; }
-  if (regime === 'CHOP' && modeKey !== 'AGGRESSIVE') { debugLog.push('REJECT: CHOP regime'); return null; }
+  // Removed global CHOP rejection so mean-reversion pullbacks (the sniper edge) can fire in sideways regimes,
+  // structurally throttling volume via Correlation Limiter limits instead of blanket freezing the pipeline.
 
   const closes1h  = tf1h.map(c => c.close);
   const ema50_1h  = calcEMA(closes1h, 50);

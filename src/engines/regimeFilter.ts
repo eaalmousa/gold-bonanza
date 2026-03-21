@@ -85,20 +85,20 @@ export function detectMarketRegime(btc1h: Kline[], btc4h?: Kline[]): {
   // ─── CHOP DETECTION (Calibrated) ──────────────────────────────────────────
   // CHOP = genuinely dead market. Requires BOTH conditions:
   //   1. EMA separation < 0.3% (EMAs nearly touching — no directional momentum)
-  //   2. 8h range < 0.6x expected ATR range (price compressed well below normal)
-  // Previous thresholds (0.8% / 1.0) were too aggressive and triggered in ~70%
-  // of normal crypto conditions, effectively disabling the scanner permanently.
+  //   2. 8h range < 2.5x 1h-ATR (price compressed well below normal multi-hour bounds)
   const emaDelta = Math.abs(e20! - e50!) / e50!;
   const range8h  = Math.max(...highs.slice(idx - 8)) - Math.min(...lows.slice(idx - 8));
-  const atrRatio = range8h / (atr! * 8);
+  // Random walk expects distance ~ sqrt(8) * ATR ~= 2.82 ATR.
+  // Less than 2.0 or 2.2 is true compression.
+  const atrRatio = range8h / atr!;
 
-  // Both conditions must be true to declare CHOP (AND instead of OR)
-  if (emaDelta < 0.003 && atrRatio < 0.6) {
+  // Both conditions must be true to declare CHOP
+  if (emaDelta < 0.003 && atrRatio < 2.2) {
     return {
       regime: 'CHOP',
       btc4hTrend, btcRsi,
       scoreBonus: -5,
-      reason: `BTC CHOP: EMA20/50 spread=${(emaDelta * 100).toFixed(2)}%, 8h range ratio=${atrRatio.toFixed(2)}`
+      reason: `BTC CHOP: EMA20/50 spread=${(emaDelta * 100).toFixed(2)}%, 8h range ratio=${atrRatio.toFixed(2)}x ATR`
     };
   }
 

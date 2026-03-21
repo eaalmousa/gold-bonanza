@@ -196,8 +196,8 @@ export async function runBonanzaCore(
         } catch (e: any) {
           return {
             symbol,
-            sniperTrace: { id: `${symbol}-SNIPER-FAIL-${now}`, symbol, engine: 'SNIPER', status: 'INVALIDATED' as const, lastRejectReason: `KLINE_FETCH_FAILED: ${e.message}`, timestamp: now },
-            breakoutTrace: { id: `${symbol}-BRAK-FAIL-${now}`, symbol, engine: 'BREAKOUT', status: 'INVALIDATED' as const, lastRejectReason: `KLINE_FETCH_FAILED: ${e.message}`, timestamp: now },
+            sniperTrace: { id: `${symbol}-SNIPER-FAIL-${now}`, symbol, engine: 'SNIPER', status: 'INVALIDATED' as const, lastRejectReason: `KLINE_FETCH_FAILED: ${e.message}`, timestamp: now } as UnifiedTrace,
+            breakoutTrace: { id: `${symbol}-BRAK-FAIL-${now}`, symbol, engine: 'BREAKOUT', status: 'INVALIDATED' as const, lastRejectReason: `KLINE_FETCH_FAILED: ${e.message}`, timestamp: now } as UnifiedTrace,
             sniper: undefined,
             breakout: undefined
           };

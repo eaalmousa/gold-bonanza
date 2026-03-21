@@ -93,9 +93,25 @@ export function applyConfig(c: any) {
 // Hardened Persistence Helper (Heals disk case drift)
 const saveState = () => {
   try {
-    const canonicalExport = { ...TRADER_CONFIG };
+    const canonicalExport = {
+      RISK_PER_TRADE: Number(TRADER_CONFIG.RISK_PER_TRADE),
+      MAX_CONCURRENT_TRADES: Number(TRADER_CONFIG.MAX_CONCURRENT_TRADES),
+      LEVERAGE: Number(TRADER_CONFIG.LEVERAGE),
+      SL_ENABLED: Boolean(TRADER_CONFIG.SL_ENABLED),
+      TP_ENABLED: Boolean(TRADER_CONFIG.TP_ENABLED),
+      TP1_ONLY: Boolean(TRADER_CONFIG.TP1_ONLY),
+      TP1_RR: Number(TRADER_CONFIG.TP1_RR),
+      TP2_RR: Number(TRADER_CONFIG.TP2_RR),
+      MIN_SCORE: Number(TRADER_CONFIG.MIN_SCORE),
+      BTC_GATE_ENABLED: Boolean(TRADER_CONFIG.BTC_GATE_ENABLED),
+      TRAIL_TP_ENABLED: Boolean(TRADER_CONFIG.TRAIL_TP_ENABLED),
+      CIRCUIT_BREAKER_ENABLED: Boolean(TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED),
+      ENABLED: Boolean(TRADER_CONFIG.ENABLED)
+    };
     fs.writeFileSync(STATE_FILE, JSON.stringify(canonicalExport, null, 2));
-  } catch (_) {}
+  } catch (err) {
+    console.error('[Persistence] Error saving state:', err);
+  }
 };
 
 // Initialization: Funneled load

@@ -22,13 +22,13 @@ app.set('trust proxy', 1);
 app.use(express.json());
 
 // Explicit Preflight Handler
-app.options('*', cors());
+app.options('/*', cors() as express.RequestHandler);
 
 app.use('/api/auth', authRouter);
 app.use('/api/trade', tradeRouter);
 
 // Deployment Health Check
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (req: any, res: any) => {
   res.json({ 
     ok: true, 
     mode: process.env.NODE_ENV || 'development',

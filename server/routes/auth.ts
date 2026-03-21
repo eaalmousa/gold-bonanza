@@ -19,7 +19,7 @@ export function requireAuth(req: any, res: any, next: any) {
   }
 }
 
-authRouter.post('/login', async (req, res) => {
+authRouter.post('/login', async (req: any, res: any) => {
   console.log(`[Auth] Login attempt received. Body keys: ${Object.keys(req.body || {})}`);
   const { password } = req.body;
   

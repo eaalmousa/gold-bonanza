@@ -257,8 +257,17 @@ export async function evaluateFrontendSignals(signals: any[]) {
 
       if (TRADER_CONFIG.TP_ENABLED) {
         const riskDist = Math.abs(sig.entryPrice - sig.stopLoss);
-        const tp1Price = sig.side === 'LONG' ? sig.entryPrice + riskDist * TRADER_CONFIG.TP1_RR : sig.entryPrice - riskDist * TRADER_CONFIG.TP1_RR;
-        await placeTakeProfitMarket(sym, closeSide, tp1Price);
+        const isLong = sig.side === 'LONG';
+        const calcTp1 = isLong ? sig.entryPrice + riskDist * TRADER_CONFIG.TP1_RR : sig.entryPrice - riskDist * TRADER_CONFIG.TP1_RR;
+        const calcTp2 = isLong ? sig.entryPrice + riskDist * TRADER_CONFIG.TP2_RR : sig.entryPrice - riskDist * TRADER_CONFIG.TP2_RR;
+
+        if (TRADER_CONFIG.TP1_ONLY) {
+          await placeTakeProfitMarket(sym, closeSide, calcTp1);
+        } else {
+          const halfQty = qty * 0.5;
+          await placeTakeProfitMarket(sym, closeSide, calcTp1, halfQty);
+          await placeTakeProfitMarket(sym, closeSide, calcTp2, halfQty);
+        }
       }
 
       backendSignalCache[sigId].backendDecision = 'DEPLOYED_BACKEND';

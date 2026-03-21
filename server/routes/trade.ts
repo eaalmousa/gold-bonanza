@@ -108,11 +108,8 @@ tradeRouter.get('/balance', requireAuth, async (req: any, res: any) => {
 
 tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
   const {
-    symbol, side, entryPrice, stopLoss, takeProfit, takeProfit2,
-    qty:         frontendQty,
-    sizeUSDT:    frontendSize,
-    leverage:    frontendLeverage,
-    score, entryType, entryTiming, reasons
+    symbol, side, entryPrice, stopLoss, qty: frontendQty, sizeUSDT: frontendSize, 
+    leverage: frontendLeverage, score, entryType, entryTiming, reasons
   } = req.body;
 
   // ── Live-only guard ──────────────────────────────────────────────────────────
@@ -123,8 +120,8 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
   }
 
   // ── Validate required fields ─────────────────────────────────────────────────
-  if (!symbol || !side || !entryPrice || !stopLoss || !takeProfit) {
-    return res.status(400).json({ error: 'Missing required fields: symbol, side, entryPrice, stopLoss, takeProfit' });
+  if (!symbol || !side || !entryPrice || !stopLoss) {
+    return res.status(400).json({ error: 'Missing required fields: symbol, side, entryPrice, stopLoss' });
   }
 
   const baseUrl = resolveBaseUrl();
@@ -197,30 +194,57 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
     }, baseUrl);
     console.log('[Trade:open] SL order response:', JSON.stringify(stopOrder));
 
-    // 4. Take-profit 1
-    const tp1Order = await binanceRequest('POST', '/fapi/v1/order', {
-      symbol,
-      side:          side === 'LONG' ? 'SELL' : 'BUY',
-      type:          'TAKE_PROFIT_MARKET',
-      stopPrice:     roundTo(takeProfit, pricePrec),
-      closePosition: 'true',
-      timeInForce:   'GTE_GTC'
-    }, baseUrl);
-    console.log('[Trade:open] TP1 order response:', JSON.stringify(tp1Order));
-
-    // 5. Take-profit 2 (optional)
+    // ── DYNAMIC TP CALCULATION (Respects Live UI Settings) ──
+    let tp1Order = null;
     let tp2Order = null;
-    if (takeProfit2 && takeProfit2 > 0) {
-      tp2Order = await binanceRequest('POST', '/fapi/v1/order', {
-        symbol,
-        side:          side === 'LONG' ? 'SELL' : 'BUY',
-        type:          'TAKE_PROFIT_MARKET',
-        stopPrice:     roundTo(takeProfit2, pricePrec),
-        quantity:      roundTo(qty * 0.5, qtyPrec), // 50% of position at TP2
-        reduceOnly:    'true',
-        timeInForce:   'GTE_GTC'
-      }, baseUrl);
-      console.log('[Trade:open] TP2 order response:', JSON.stringify(tp2Order));
+
+    if (TRADER_CONFIG.TP_ENABLED) {
+      const riskDist = Math.abs(entryPrice - stopLoss);
+      const isLong = side === 'LONG';
+      const closeSide = isLong ? 'SELL' : 'BUY';
+
+      // Re-calculate exactly per config multipliers
+      const calcTp1 = isLong ? entryPrice + (riskDist * TRADER_CONFIG.TP1_RR) : entryPrice - (riskDist * TRADER_CONFIG.TP1_RR);
+      const calcTp2 = isLong ? entryPrice + (riskDist * TRADER_CONFIG.TP2_RR) : entryPrice - (riskDist * TRADER_CONFIG.TP2_RR);
+
+      if (TRADER_CONFIG.TP1_ONLY) {
+        // CLOSE 100% AT TP1
+        tp1Order = await binanceRequest('POST', '/fapi/v1/order', {
+          symbol,
+          side:          closeSide,
+          type:          'TAKE_PROFIT_MARKET',
+          stopPrice:     roundTo(calcTp1, pricePrec),
+          closePosition: 'true',
+          timeInForce:   'GTE_GTC'
+        }, baseUrl);
+        console.log('[Trade:open] TP1 Full order response:', JSON.stringify(tp1Order));
+      } else {
+        // TWO-STAGE TP (50% each)
+        // Note: For partial exits, DO NOT use closePosition='true'. Use quantity + reduceOnly.
+        const halfQty = roundTo(qty * 0.5, qtyPrec);
+
+        tp1Order = await binanceRequest('POST', '/fapi/v1/order', {
+          symbol,
+          side:          closeSide,
+          type:          'TAKE_PROFIT_MARKET',
+          stopPrice:     roundTo(calcTp1, pricePrec),
+          quantity:      halfQty,
+          reduceOnly:    'true',
+          timeInForce:   'GTE_GTC'
+        }, baseUrl);
+        console.log('[Trade:open] TP1 (50%) order response:', JSON.stringify(tp1Order));
+
+        tp2Order = await binanceRequest('POST', '/fapi/v1/order', {
+          symbol,
+          side:          closeSide,
+          type:          'TAKE_PROFIT_MARKET',
+          stopPrice:     roundTo(calcTp2, pricePrec),
+          quantity:      halfQty, // other 50%
+          reduceOnly:    'true',
+          timeInForce:   'GTE_GTC'
+        }, baseUrl);
+        console.log('[Trade:open] TP2 (50%) order response:', JSON.stringify(tp2Order));
+      }
     }
 
     tradeLogs.unshift(`[${new Date().toISOString()}] [LIVE] ✅ SUBMITTED: ${symbol} ${side} orderId=${entryOrder.orderId}`);

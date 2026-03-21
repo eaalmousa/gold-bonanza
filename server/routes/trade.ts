@@ -160,7 +160,7 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
 
   // ── Audit log BEFORE any submission ──────────────────────────────────────────
   const auditPayload = {
-    symbol, side, entryPrice, stopLoss, takeProfit, takeProfit2,
+    symbol, side, entryPrice, stopLoss, 
     qty: roundTo(qty, qtyPrec), leverage: lev, mode: 'LIVE', baseUrl,
     score, entryType, entryTiming, reasons
   };

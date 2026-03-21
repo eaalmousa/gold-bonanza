@@ -23,8 +23,10 @@ export default function AutoTraderConsole() {
         const resolvedLogs = Array.isArray(res?.logs) ? res.logs : [];
         const safeRes: AutoTraderStatus = { enabled: resolvedEnabled, logs: resolvedLogs };
         setStatus(safeRes);
-        if (safeRes.enabled !== isAutoTradeActive) {
-          setAutoTradeActive(safeRes.enabled);
+        
+        // Stabilized Sync: Only update store if cloud differs from local
+        if (resolvedEnabled !== isAutoTradeActive) {
+          setAutoTradeActive(resolvedEnabled);
         }
       } catch (e) {
         console.warn('Failed to fetch auto-trader status:', e);
@@ -60,7 +62,17 @@ export default function AutoTraderConsole() {
     if (!match) return { time: '', msg: log, type: 'info' };
     
     const [, timeStr, msgRaw] = match;
-    const time = new Date(timeStr).toLocaleTimeString();
+    
+    // SAFE PARSE: Handle raw time strings like "12:01:24 PM" vs ISO Dates
+    let time = timeStr;
+    try {
+      const parsed = new Date(timeStr);
+      if (!isNaN(parsed.getTime())) {
+        time = parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      }
+    } catch {
+      time = timeStr; // Fallback to raw match if date constructor throws
+    }
     let msg = msgRaw.replace('[AutoTrader] ', '');
 
     let type = 'info';

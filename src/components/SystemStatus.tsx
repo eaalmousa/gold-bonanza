@@ -13,13 +13,15 @@ export default function SystemStatus() {
     symbols: rawSymbols,
     isScannerActive, setScannerActive,
     binancePositions: rawPositions,
-    pipelineSignals: rawSignals
+    pipelineSignals: rawSignals,
+    marketRows: rawRows
   } = useTradingStore();
 
   const activeTrades    = Array.isArray(rawTrades)    ? rawTrades    : [];
   const symbols         = Array.isArray(rawSymbols)   ? rawSymbols   : [];
   const binancePositions = Array.isArray(rawPositions) ? rawPositions : [];
   const pipelineSignals  = Array.isArray(rawSignals)   ? rawSignals   : [];
+  const marketRows       = Array.isArray(rawRows)      ? rawRows      : [];
 
   // CANONICAL count — same formula used in Header.tsx and CommandSyncHub.tsx
   const counts = getCanonicalPositionCount(binancePositions, activeTrades, pipelineSignals);
@@ -119,7 +121,7 @@ export default function SystemStatus() {
             {!isLoaded ? 'SYNCING WITH CLOUD...' : 'SYSTEM STATUS'}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
-            {symbols.length} Pairs Monitored
+            {Math.max(symbols.length, marketRows.length)} Pairs Monitored
           </div>
         </div>
 

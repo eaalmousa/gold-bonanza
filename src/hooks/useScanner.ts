@@ -29,6 +29,13 @@ export function useScanner() {
         
         // 1. Update Market Metrics
         setMarketRows(ms.marketRows || []);
+        
+        // Truth-Alignment: Sync symbols universe from active rows if local is empty
+        if (ms.marketRows?.length > 0) {
+            const syms = ms.marketRows.map((r: any) => r.symbol);
+            useTradingStore.getState().setSymbols(syms);
+        }
+
         setMarketRegime(ms.regime || 'RANGING');
         setScanProgress(ms.scanProgress || 100);
         setLastScanAt(ms.lastScanAt || Date.now());

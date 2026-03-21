@@ -304,7 +304,7 @@ export const MODES: Record<string, ModeConfig> = {
     maxTrades: 2,
     leverage: 3,
     pullback: {
-      rsiMin: 25, rsiMax: 60, volMult: 1.10, // Mean reversion doesn't strictly need 1.5x volume
+      rsiMin: 20, rsiMax: 70, volMult: 0.90, // Pullbacks pivot on decelerated volume
       minDollarVol15m: 500000, volSpikeMult: 1.25,
       accelPctMin: 0.00040, atrPctMin: 0.25, atrPctMax: 2.00,
       valueZoneSlack: 0.0030, scoreMin: 14 // Extremely strict scoring
@@ -322,7 +322,7 @@ export const MODES: Record<string, ModeConfig> = {
     maxTrades: 3,
     leverage: 5,
     pullback: {
-      rsiMin: 20, rsiMax: 65, volMult: 1.00, // Average volume is fine for pullbacks
+      rsiMin: 15, rsiMax: 75, volMult: 0.75, // Allow pivots on sub-mean volume (typical for compressions)
       minDollarVol15m: 250000, volSpikeMult: 1.15,
       accelPctMin: 0.00030, atrPctMin: 0.20, atrPctMax: 3.00,
       valueZoneSlack: 0.0050, scoreMin: 11 // Moderately strict scoring
@@ -340,7 +340,7 @@ export const MODES: Record<string, ModeConfig> = {
     maxTrades: 8,
     leverage: 7,
     pullback: {
-      rsiMin: 15, rsiMax: 70, volMult: 1.0,
+      rsiMin: 10, rsiMax: 85, volMult: 0.60, // Permissive volume constraint
       minDollarVol15m: 50000, volSpikeMult: 1.0,
       accelPctMin: 0.00010, atrPctMin: 0.10, atrPctMax: 5.00,
       valueZoneSlack: 0.008, // Hard cap at 0.8% — 2% was meaningless

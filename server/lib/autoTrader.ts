@@ -1,14 +1,18 @@
 import { 
   getPositions, getBalance, setLeverage, 
   placeMarketOrder, placeStopMarket, placeTakeProfitMarket, 
-  placeTrailingStopMarket, getRateLimitStatus, getExchangeInfo 
+  placeTrailingStopMarket, getRateLimitStatus, getExchangeInfo,
+  getKlinesResilient
 } from './binance';
 import { MODES } from '../../src/types/trading';
 import { runBonanzaCore } from '../../src/engines/scanner';
-import { initializeSymbolUniverse } from '../../src/services/binanceApi';
+import { initializeSymbolUniverse, setKlinesFetchOverride } from '../../src/services/binanceApi';
 
 import fs from 'fs';
 import path from 'path';
+
+// Inject Hardened Fetcher for Server Lifecycle
+setKlinesFetchOverride(getKlinesResilient);
 
 const STATE_FILE = path.resolve(__dirname, '../../trader_state.json');
 const SIGNALS_FILE = path.resolve(__dirname, '../../backend_signals.json');

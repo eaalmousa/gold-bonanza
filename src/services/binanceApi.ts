@@ -5,7 +5,13 @@
 import type { Kline } from '../types/trading';
 import { SPOT_API, FUTURES_API, METAL_SYMBOLS, DEFAULT_SYMBOLS } from '../types/trading';
 
+// ─── Fetcher Injection (for Backend Resilience) ──────────────
+let fetchOverride: typeof fetchKlines | null = null;
+export function setKlinesFetchOverride(over: typeof fetchKlines) { fetchOverride = over; }
+
 export async function fetchKlines(symbol: string, interval: string, limit: number = 200): Promise<Kline[]> {
+  if (fetchOverride) return fetchOverride(symbol, interval, limit);
+
   const isMetal = METAL_SYMBOLS.includes(symbol);
   const base = FUTURES_API; // Use Futures API for all for better cloud consistency
   const path = isMetal ? '/fapi/v1/klines' : '/fapi/v1/klines';

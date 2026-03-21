@@ -36,7 +36,7 @@ function sign(queryString: string, url?: string): string {
 }
 
 // ─── Request Gatekeeper ────────────────────────────────────────────────────────
-export async function binanceRequest(method: string, endpoint: string, data: Record<string, any> = {}, overrideBaseUrl?: string) {
+export async function binanceRequest(method: string, endpoint: string, data: Record<string, any> = {}, overrideBaseUrl?: string, isSigned = true) {
   const now = Date.now();
   if (now < cooldownUntil) {
     const minLeft = Math.ceil((cooldownUntil - now) / 60000);
@@ -48,15 +48,15 @@ export async function binanceRequest(method: string, endpoint: string, data: Rec
   const key = getApiKey(targetBaseUrl);
   if (!key) throw new Error('BINANCE_API_KEY is not set');
 
-  // Algorithm for signed requests
-  const payload = { ...data, timestamp: Date.now() };
+  // Algorithm for signed vs unsigned
+  const payload = isSigned ? { ...data, timestamp: Date.now() } : { ...data };
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(payload)) {
     if (v !== undefined && v !== null) params.append(k, String(v));
   }
   params.sort();
   const queryString = params.toString();
-  const signature = sign(queryString, targetBaseUrl);
+  const signature = isSigned ? sign(queryString, targetBaseUrl) : '';
   const url = `${targetBaseUrl}${endpoint}?${queryString}${signature ? `&signature=${signature}` : ''}`;
 
   try {
@@ -97,6 +97,23 @@ export async function binanceRequest(method: string, endpoint: string, data: Rec
 }
 
 // ─── Core Actions ──────────────────────────────────────────────────────────────
+export async function getKlinesResilient(symbol: string, interval: string, limit: number = 200) {
+  try {
+    const raw = await binanceRequest('GET', '/fapi/v1/klines', { symbol, interval, limit }, undefined, false);
+    return (raw as any[]).map((k: any) => ({
+      openTime: k[0],
+      open: parseFloat(k[1]),
+      high: parseFloat(k[2]),
+      low: parseFloat(k[3]),
+      close: parseFloat(k[4]),
+      volume: parseFloat(k[5]),
+      closeTime: k[6]
+    }));
+  } catch (e: any) {
+    throw e;
+  }
+}
+
 export async function getBalance(): Promise<number> {
   try {
     const res = await binanceRequest('GET', '/fapi/v2/balance');

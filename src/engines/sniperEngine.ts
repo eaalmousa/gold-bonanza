@@ -236,7 +236,7 @@ function evaluateSniperSignalInner(
 
   if (side === 'LONG') {
     diag.svpContext = candle.close > svp5d.poc ? 'ABOVE POC' : (candle.close < svp5d.val ? 'BELOW VAL' : 'INSIDE');
-    if (candle.low > zl15 * (1 + cfg.valueZoneSlack)) { debugLog.push('REJECT: Above zone'); return null; }
+    if (candle.low > zl15 * (1 + cfg.valueZoneSlack) && !isRecovering) { debugLog.push('REJECT: Above zone'); return null; }
     if (candle.close < svp5d.val) { debugLog.push('REJECT: Below VAL'); return null; }
     score += candle.close > svp5d.poc ? 4 : 2;
     if (rsiNow < cfg.rsiMin || rsiNow > cfg.rsiMax || rsiNow <= rsiPrev!) { debugLog.push('REJECT: RSI'); return null; }
@@ -271,7 +271,9 @@ function evaluateSniperSignalInner(
     if (candle.high < zl15 * (1 - cfg.valueZoneSlack) && !isBreakingDown) { debugLog.push('REJECT: Below zone'); return null; }
     if (candle.close > svp5d.vah) { debugLog.push('REJECT: Above VAH'); return null; }
     score += candle.close < svp5d.poc ? 4 : 2;
-    if (rsiNow > (100 - cfg.rsiMin) || rsiNow >= rsiPrev!) { debugLog.push('REJECT: RSI Short'); return null; }
+    const rsiMinShort = 100 - cfg.rsiMax;
+    const rsiMaxShort = 100 - cfg.rsiMin;
+    if (rsiNow < rsiMinShort || rsiNow > rsiMaxShort || rsiNow >= rsiPrev!) { debugLog.push('REJECT: RSI Short'); return null; }
     score += 2;
     if (candle.volume / volAvg < cfg.volMult) { debugLog.push('REJECT: Volume short'); return null; }
     score += 2;

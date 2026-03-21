@@ -160,6 +160,31 @@ export function checkPortfolioExposure(
     }
   }
 
+  // ─── 2.5 BTC REGIME-BASED SHORT THROTTLING ───────────────────────
+  if (side === 'SHORT') {
+    const shortCount = sameDirectionCount;
+
+    if (regime === 'TRENDING_UP' && btc4hTrend === 'UP') {
+      if (shortCount >= MAX_LONGS_IN_DOWNTREND) { // use same variable limit (1)
+        return {
+          allowed: false,
+          reason: `BTC confirmed uptrend — only ${MAX_LONGS_IN_DOWNTREND} SHORT allowed, have ${shortCount}`,
+          sameDirectionCount
+        };
+      }
+    }
+
+    if ((regime === 'RANGING' || regime === 'TRENDING_UP') && btc4hTrend !== 'DOWN') {
+      if (shortCount >= MAX_LONGS_IN_WEAK_BTC) {
+        return {
+          allowed: false,
+          reason: `Strong BTC (${regime}/${btc4hTrend}) — max ${MAX_LONGS_IN_WEAK_BTC} SHORTs, have ${shortCount}`,
+          sameDirectionCount
+        };
+      }
+    }
+  }
+
   // ─── 3. CORRELATION GROUP CAP ─────────────────────────────────────
   const group = getCorrelationGroup(symbol);
   if (group) {

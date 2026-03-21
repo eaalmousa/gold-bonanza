@@ -353,6 +353,13 @@ function evaluateCoreBreakout(
       debugLog.push(`REJECT: Weak anatomy — body:${bodyPct.toFixed(0)}% pos:${closePos.toFixed(2)}`);
       return null;
     }
+
+    const upperWick = high15 - close15;
+    // Selling Wick Penalty (Anti-Stall)
+    if (upperWick > body * 0.40) {
+      debugLog.push(`REJECT: Excessive upper selling wick (${(upperWick/body).toFixed(2)}x body) — breakout stalling`);
+      return null;
+    }
     score += 1;
     reasons.push('Strong breakout candle');
 

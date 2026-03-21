@@ -71,20 +71,26 @@ export default function SystemStatus() {
     const newConf = { ...config, [key]: val };
     setConfig(newConf);
     
-    api.updateAutoTradeConfig({
-      riskPerTrade: newConf.riskPct,
-      maxConcurrent: newConf.maxTrades,
-      leverage: newConf.leverage,
-      slEnabled: newConf.slEnabled,
-      tpEnabled: newConf.tpEnabled,
-      tp1Only: newConf.tp1Only,
-      tp1RR: newConf.tp1RR,
-      tp2RR: newConf.tp2RR,
-      minScore: newConf.minScore,
-      btcGateEnabled: newConf.btcGate,
-      trailTpEnabled: newConf.trailTp,
-      circuitBreakerEnabled: newConf.circuitBreaker,
-    }).catch(console.error);
+    // Partial Update Payload Map
+    const payloadMap: Record<string, string> = {
+        riskPct: 'riskPerTrade',
+        maxTrades: 'maxConcurrent',
+        leverage: 'leverage',
+        slEnabled: 'slEnabled',
+        tpEnabled: 'tpEnabled',
+        tp1Only: 'tp1Only',
+        tp1RR: 'tp1RR',
+        tp2RR: 'tp2RR',
+        minScore: 'minScore',
+        btcGate: 'btcGateEnabled',
+        trailTp: 'trailTpEnabled',
+        circuitBreaker: 'circuitBreakerEnabled'
+    };
+
+    const backendKey = payloadMap[key];
+    if (backendKey) {
+        api.updateAutoTradeConfig({ [backendKey]: val }).catch(console.error);
+    }
   };
 
 

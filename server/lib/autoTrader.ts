@@ -67,7 +67,23 @@ const saveState = () => {
 };
 
 export function updateTraderConfig(c: any) { 
-  Object.assign(TRADER_CONFIG, c); 
+  // Strict Case-Mapping: Link lowercase incoming JSON to uppercase master runtime
+  if (c.riskPerTrade !== undefined)   TRADER_CONFIG.RISK_PER_TRADE = c.riskPerTrade;
+  if (c.maxConcurrent !== undefined)  TRADER_CONFIG.MAX_CONCURRENT_TRADES = c.maxConcurrent;
+  if (c.leverage !== undefined)       TRADER_CONFIG.LEVERAGE = c.leverage;
+  if (c.slEnabled !== undefined)      TRADER_CONFIG.SL_ENABLED = c.slEnabled;
+  if (c.tpEnabled !== undefined)      TRADER_CONFIG.TP_ENABLED = c.tpEnabled;
+  if (c.tp1Only !== undefined)        TRADER_CONFIG.TP1_ONLY = c.tp1Only;
+  if (c.tp1RR !== undefined)          TRADER_CONFIG.TP1_RR = c.tp1RR;
+  if (c.tp2RR !== undefined)          TRADER_CONFIG.TP2_RR = c.tp2RR;
+  if (c.minScore !== undefined)       TRADER_CONFIG.MIN_SCORE = c.minScore;
+  if (c.btcGateEnabled !== undefined) TRADER_CONFIG.BTC_GATE_ENABLED = c.btcGateEnabled;
+  if (c.trailTpEnabled !== undefined) TRADER_CONFIG.TRAIL_TP_ENABLED = c.trailTpEnabled;
+  if (c.circuitBreakerEnabled !== undefined) TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED = c.circuitBreakerEnabled;
+  
+  // Explicitly handle enabled flag if present in body
+  if (c.enabled !== undefined)        TRADER_CONFIG.isAutoTradingEnabled = !!c.enabled;
+
   saveState(); 
   logMsg(`Config updated: MIN_SCORE=${TRADER_CONFIG.MIN_SCORE} AUTO=${TRADER_CONFIG.isAutoTradingEnabled}`);
 }

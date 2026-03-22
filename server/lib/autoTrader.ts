@@ -119,20 +119,41 @@ const saveState = () => {
   }
 };
 
-// Initialization: Funneled load
+// ─── Initialization: Funneled load + Migration ───────────────────────────────
+// TP fields that MUST be present in persisted state for restart safety.
+const TP_REQUIRED_KEYS = ['TP_ENABLED', 'TP1_ONLY', 'TP1_RR', 'TP2_RR'] as const;
+
 try {
   if (fs.existsSync(STATE_FILE)) {
     const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
     applyConfig(saved);
-    console.log('[Persistence] Master configuration hydrated from VPS disk.');
+
+    // ── Migration: detect missing TP fields from older state files ──────
+    const missingKeys = TP_REQUIRED_KEYS.filter(k => saved[k] === undefined);
+    if (missingKeys.length > 0) {
+      console.log(`[Persistence:MIGRATION] Old state file missing: [${missingKeys.join(', ')}]. Backfilling from code defaults and writing upgraded state to disk.`);
+      saveState(); // Write full canonical state back to disk immediately
+      console.log(`[Persistence:MIGRATION] Upgraded trader_state.json written. Missing fields now persisted.`);
+    }
+
+    // ── Startup TP Audit Log ───────────────────────────────────────────
+    const source = missingKeys.length > 0 ? 'MIGRATED' : 'PERSISTED';
+    console.log(`[TP_STARTUP] tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1RR=${TRADER_CONFIG.TP1_RR} | tp2RR=${TRADER_CONFIG.TP2_RR} | source=${source}`);
+  } else {
+    console.log(`[Persistence] No state file found at ${STATE_FILE}. Using code defaults.`);
+    saveState(); // Create initial state file with all fields
+    console.log(`[TP_STARTUP] tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1RR=${TRADER_CONFIG.TP1_RR} | tp2RR=${TRADER_CONFIG.TP2_RR} | source=DEFAULT`);
   }
-} catch { console.warn('[Persistence] Loading config failed.'); }
+} catch (err) {
+  console.warn('[Persistence] Loading config failed:', err);
+  console.log(`[TP_STARTUP] tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1RR=${TRADER_CONFIG.TP1_RR} | tp2RR=${TRADER_CONFIG.TP2_RR} | source=DEFAULT (load failed)`);
+}
 
 
 export function updateTraderConfig(c: any) { 
   applyConfig(c);
   saveState(); 
-  logMsg(`Config updated: MIN_SCORE=${TRADER_CONFIG.MIN_SCORE} AUTO=${TRADER_CONFIG.ENABLED}`);
+  logMsg(`[CONFIG_SAVED] MIN_SCORE=${TRADER_CONFIG.MIN_SCORE} AUTO=${TRADER_CONFIG.ENABLED} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} tp1Only=${TRADER_CONFIG.TP1_ONLY} tp1RR=${TRADER_CONFIG.TP1_RR} tp2RR=${TRADER_CONFIG.TP2_RR}`);
 }
 
 export function toggleAutoTrade(e: boolean) { 
@@ -163,6 +184,9 @@ async function startAutoScanner() {
       const modeProxy = {
         ...activeMode,
         riskPct: TRADER_CONFIG.RISK_PER_TRADE,
+        tp1RR: TRADER_CONFIG.TP1_RR,
+        tp2RR: TRADER_CONFIG.TP2_RR,
+        tp1Only: TRADER_CONFIG.TP1_ONLY,
         pullback: { ...activeMode.pullback, scoreMin: TRADER_CONFIG.MIN_SCORE },
         breakout: { ...activeMode.breakout, scoreMin: TRADER_CONFIG.MIN_SCORE }
       };
@@ -258,16 +282,33 @@ export async function evaluateFrontendSignals(signals: any[]) {
       if (TRADER_CONFIG.TP_ENABLED) {
         const riskDist = Math.abs(sig.entryPrice - sig.stopLoss);
         const isLong = sig.side === 'LONG';
-        const calcTp1 = isLong ? sig.entryPrice + riskDist * TRADER_CONFIG.TP1_RR : sig.entryPrice - riskDist * TRADER_CONFIG.TP1_RR;
-        const calcTp2 = isLong ? sig.entryPrice + riskDist * TRADER_CONFIG.TP2_RR : sig.entryPrice - riskDist * TRADER_CONFIG.TP2_RR;
+
+        // ── TP Safety Checks ──────────────────────────────────────
+        const SAFE_DEFAULT_RR = 1.5;
+        let tp1RR = TRADER_CONFIG.TP1_RR;
+        let tp2RR = TRADER_CONFIG.TP2_RR;
+        if (!tp1RR || !isFinite(tp1RR) || tp1RR <= 0) { logMsg(`⚠️ TP1_RR invalid (${tp1RR}), using safe default ${SAFE_DEFAULT_RR}`); tp1RR = SAFE_DEFAULT_RR; }
+        if (!tp2RR || !isFinite(tp2RR) || tp2RR <= 0) { logMsg(`⚠️ TP2_RR invalid (${tp2RR}), using safe default ${SAFE_DEFAULT_RR * 2}`); tp2RR = SAFE_DEFAULT_RR * 2; }
+
+        const appliedTpStr = TRADER_CONFIG.TP1_ONLY ? `${tp1RR}R (100%)` : `${tp1RR}R & ${tp2RR}R (50/50)`;
+
+        // ── TP Debug Audit Log ─────────────────────────────────────
+        logMsg(`[TP_DEBUG] ${sym} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1RR=${tp1RR} | tp2RR=${tp2RR} | appliedRatios=${appliedTpStr} | riskDist=${riskDist.toFixed(6)}`);
+
+        const calcTp1 = isLong ? sig.entryPrice + riskDist * tp1RR : sig.entryPrice - riskDist * tp1RR;
 
         if (TRADER_CONFIG.TP1_ONLY) {
           await placeTakeProfitMarket(sym, closeSide, calcTp1);
+          logMsg(`[TP_PLACED] ${sym} TP1-ONLY at ${calcTp1.toFixed(6)} (${tp1RR}R)`);
         } else {
+          const calcTp2 = isLong ? sig.entryPrice + riskDist * tp2RR : sig.entryPrice - riskDist * tp2RR;
           const halfQty = qty * 0.5;
           await placeTakeProfitMarket(sym, closeSide, calcTp1, halfQty);
           await placeTakeProfitMarket(sym, closeSide, calcTp2, halfQty);
+          logMsg(`[TP_PLACED] ${sym} TP1=${calcTp1.toFixed(6)} (${tp1RR}R, 50%) TP2=${calcTp2.toFixed(6)} (${tp2RR}R, 50%)`);
         }
+      } else {
+        logMsg(`[TP_DEBUG] ${sym} | tpEnabled=false — NO TP orders placed`);
       }
 
       backendSignalCache[sigId].backendDecision = 'DEPLOYED_BACKEND';

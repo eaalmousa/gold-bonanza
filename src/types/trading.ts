@@ -9,6 +9,9 @@ export interface ModeConfig {
   leverage: number;
   pullback: PullbackConfig;
   breakout: BreakoutConfig;
+  tp1RR?: number;  // Runtime TP1 R:R from live UI config
+  tp2RR?: number;  // Runtime TP2 R:R from live UI config
+  tp1Only?: boolean; // Runtime TP1 ONLY from live UI config
 }
 
 export interface PullbackConfig {

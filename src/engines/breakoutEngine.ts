@@ -181,6 +181,10 @@ function evaluateCoreBreakout(
   const modeKey: string = activeMode.key;
   const debugLog: string[] = [`[BreakoutV3] ${symbol ?? ''}`];
 
+  // ─── RUNTIME TP MULTIPLIERS (from live UI config via activeMode) ───
+  const tp1RR = (activeMode as any).tp1RR ?? 1.5;
+  const tp2RR = (activeMode as any).tp2RR ?? 2.5;
+
   if (!tf1h || tf1h.length < 210 || !tf15m || tf15m.length < 90) return null;
 
   // ─── GATE: REGIME ───────────────────────────────────
@@ -278,7 +282,28 @@ function evaluateCoreBreakout(
   const reasons: string[] = [];
   let score = 0;
 
+  // ─── ENTRY EXHAUSTION FILTER (symmetric for LONG/SHORT breakouts) ──
+  const exhaustionLookback = 12;
+  const recentHighs = highs15.slice(Math.max(0, lastIdx - exhaustionLookback), lastIdx + 1);
+  const recentLows  = lows15.slice(Math.max(0, lastIdx - exhaustionLookback), lastIdx + 1);
+  const swingHigh = Math.max(...recentHighs);
+  const swingLow  = Math.min(...recentLows);
+  const impulseRange = swingHigh - swingLow;
+  const impulseAtrRatio = atr! > 0 ? impulseRange / atr! : 0;
+  const exhaustionThresh = modeKey === 'AGGRESSIVE' ? 3.5 : modeKey === 'CONSERVATIVE' ? 2.0 : 2.5;
+
   if (side === 'LONG') {
+    // Anti-exhaustion: reject longs at the top of an overextended pump
+    const distToSwingHigh = swingHigh - close15;
+    const distToSwingHighAtr = atr! > 0 ? Math.abs(distToSwingHigh) / atr! : 999;
+    // A breakout entry happens *at* the extreme. Thus distToSwingHigh is near 0.
+    const localCoilBars = Math.max(cfg.coilBars, 4);
+    const coilDepthAtr = (swingHigh - Math.min(...lows15.slice(lastIdx - localCoilBars, lastIdx))) / atr!;
+    if (impulseAtrRatio > exhaustionThresh && (distToSwingHighAtr < 0.5 && coilDepthAtr < 1.0)) {
+      debugLog.push(`REJECT: LONG breakout exhaustion trap — impulse ${impulseAtrRatio.toFixed(2)}x ATR with shallow < 1.0 ATR coil depth`);
+      return null;
+    }
+
     // ─── RSI RANGE ──────────────────────────────────────
     if (!(rsiNow! >= cfg.rsiMin && rsiNow! <= cfg.rsiMax)) return null;
     score += 1;
@@ -398,8 +423,8 @@ function evaluateCoreBreakout(
     const stopDistance = Math.max(triggerPrice - stopLoss, triggerPrice * 0.004);
     const stopPctVal   = (stopDistance / triggerPrice) * 100;
     if (modeKey !== 'AGGRESSIVE' && (stopPctVal > 2.5 || stopPctVal < 0.4)) return null;
-    const takeProfit  = triggerPrice + 1.25 * stopDistance;
-    const takeProfit2 = triggerPrice + 2.5  * stopDistance;
+    const takeProfit  = triggerPrice + tp1RR * stopDistance;
+    const takeProfit2 = (activeMode as any).tp1Only ? undefined : triggerPrice + tp2RR * stopDistance;
     const qty         = riskPerTrade / stopDistance;
     const sizeUSDT    = qty * triggerPrice;
 
@@ -421,6 +446,17 @@ function evaluateCoreBreakout(
 
   } else {
     // ─── SHORT BREAKOUT ──────────────────────────────────
+    // Anti-exhaustion: reject shorts at the bottom of an overextended dump
+    const distToSwingLow = close15 - swingLow;
+    const distToSwingLowAtr = atr! > 0 ? Math.abs(distToSwingLow) / atr! : 999;
+    const localCoilBars = Math.max(cfg.coilBars, 4);
+    const coilDepthAtr = (Math.max(...highs15.slice(lastIdx - localCoilBars, lastIdx)) - swingLow) / atr!;
+    
+    if (impulseAtrRatio > exhaustionThresh && (distToSwingLowAtr < 0.5 && coilDepthAtr < 1.0)) {
+      debugLog.push(`REJECT: SHORT breakdown exhaustion trap — impulse ${impulseAtrRatio.toFixed(2)}x ATR with shallow < 1.0 ATR coil depth`);
+      return null;
+    }
+
     const rsiMinShort = 100 - cfg.rsiMax;
     const rsiMaxShort = 100 - cfg.rsiMin;
     if (!(rsiNow! >= rsiMinShort && rsiNow! <= rsiMaxShort)) return null;
@@ -528,8 +564,8 @@ function evaluateCoreBreakout(
     const stopDistance = Math.max(stopLoss - triggerPrice, triggerPrice * 0.004);
     const stopPctVal   = (stopDistance / triggerPrice) * 100;
     if (modeKey !== 'AGGRESSIVE' && (stopPctVal > 2.5 || stopPctVal < 0.4)) return null;
-    const takeProfit  = triggerPrice - 1.25 * stopDistance;
-    const takeProfit2 = triggerPrice - 2.5  * stopDistance;
+    const takeProfit  = triggerPrice - tp1RR * stopDistance;
+    const takeProfit2 = (activeMode as any).tp1Only ? undefined : triggerPrice - tp2RR * stopDistance;
     const qty         = riskPerTrade / stopDistance;
     const sizeUSDT    = qty * triggerPrice;
 

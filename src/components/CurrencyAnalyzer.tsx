@@ -366,10 +366,10 @@ async function runRealAnalysis(symbol: string): Promise<RealAnalysis> {
     checks,
     narrative: narrative.slice(0, 5), // Cap at 5 bullet points
     targets: [
-      { label: 'Current Price',   price: currentPrice, type: 'ENTRY' },
-      { label: 'Target 1 (1.25R)', price: tp1, type: 'TP' },
-      { label: 'Target 2 (2.5R)',  price: tp2, type: 'TP' },
-      { label: 'Invalidation (SL)', price: slLevel, type: 'SL' },
+      { label: 'Current Price',       price: currentPrice, type: 'ENTRY' },
+      { label: 'Target 1 (1.25× ATR)', price: tp1, type: 'TP' },
+      { label: 'Target 2 (2.5× ATR)',  price: tp2, type: 'TP' },
+      { label: 'Invalidation (SL)',     price: slLevel, type: 'SL' },
     ],
     analysisTime: new Date().toLocaleTimeString(),
   };

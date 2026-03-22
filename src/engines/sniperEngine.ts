@@ -238,7 +238,32 @@ function evaluateSniperSignalInner(
   const reasons: string[] = [];
   const candleThresh = modeKey === 'AGGRESSIVE' ? 0.22 : modeKey === 'CONSERVATIVE' ? 0.55 : 0.33;
 
+  // ─── RUNTIME TP MULTIPLIERS (from live UI config via activeMode) ───
+  const tp1RR = (activeMode as any).tp1RR ?? 1.5;
+  const tp2RR = (activeMode as any).tp2RR ?? 2.5;
+
+  // ─── ENTRY EXHAUSTION FILTER (symmetric for LONG/SHORT) ───────────
+  const exhaustionLookback = 12; // 12 candles = 3 hours on 15m
+  const recentHighs15 = highs15.slice(Math.max(0, lastIdx - exhaustionLookback), lastIdx + 1);
+  const recentLows15  = lows15.slice(Math.max(0, lastIdx - exhaustionLookback), lastIdx + 1);
+  const swingHigh = Math.max(...recentHighs15);
+  const swingLow  = Math.min(...recentLows15);
+  const impulseRange = swingHigh - swingLow;
+  // How far has price already traveled in the impulse leg (as ATR multiples)
+  const impulseAtrRatio = atr > 0 ? impulseRange / atr : 0;
+  const exhaustionThresh = modeKey === 'AGGRESSIVE' ? 3.5 : modeKey === 'CONSERVATIVE' ? 2.0 : 2.5;
+
   if (side === 'LONG') {
+    // Anti-exhaustion: reject longs at the top of an overextended pump
+    const distToSwingHigh = swingHigh - candle.close;
+    const distToSwingHighAtr = atr > 0 ? distToSwingHigh / atr : 999;
+    // We require an actual 1.0 ATR structural pullback if the impulse was highly overextended.
+    // Anything less is just a chase entry disguised as a micro-pullback.
+    if (impulseAtrRatio > exhaustionThresh && distToSwingHighAtr < 1.0) {
+      debugLog.push(`REJECT: LONG exhaustion chase — impulse ${impulseAtrRatio.toFixed(2)}x ATR, only ${distToSwingHighAtr.toFixed(2)} ATR from extreme high`);
+      return null;
+    }
+
     diag.svpContext = candle.close > svp5d.poc ? 'ABOVE POC' : (candle.close < svp5d.val ? 'BELOW VAL' : 'INSIDE');
     if (candle.low > zl15 * (1 + cfg.valueZoneSlack) && !isRecovering) { debugLog.push('REJECT: Above zone'); return null; }
     if (candle.close < svp5d.val) { debugLog.push('REJECT: Below VAL'); return null; }
@@ -259,19 +284,31 @@ function evaluateSniperSignalInner(
     const sizing = calculateSafeSizing(symbol || 'UNK', entry, sl);
     if (!sizing) return null;
 
+    const riskDist = entry - sl;
     diag.entryPrice = entry.toFixed(5);
-    diag.targetPrice = (entry + (entry - sl) * 1.5).toFixed(5);
+    diag.targetPrice = (entry + riskDist * tp1RR).toFixed(5);
     diag.ceStopValue = (ceLong[lastIdx] || 0).toFixed(5);
     diag.score = score;
-    diag.netRR = (((entry + (entry - sl) * 1.5) - entry) / (entry - sl)).toFixed(2);
+    diag.netRR = tp1RR.toFixed(2);
+
+    const tp1Only = (activeMode as any).tp1Only === true;
 
     return {
       kind: 'SNIPER', side: 'LONG', score, reasons, entryPrice: entry, stopLoss: sl,
-      takeProfit: entry + (entry - sl) * 1.5, takeProfit2: entry + (entry - sl) * 2.5,
+      takeProfit: entry + riskDist * tp1RR, takeProfit2: tp1Only ? undefined : entry + riskDist * tp2RR,
       qty: sizing.qty, sizeUSDT: sizing.sizeUSDT, atr15: atr, volRatio: candle.volume / volAvg,
       entryType: 'CONTINUATION', zoneDistancePct: 0, btcRegimeAtEntry: btcRegimeLabel || 'UNKNOWN', entryTiming: 'OPTIMAL', debugLog
     };
   } else {
+    // Anti-exhaustion: reject shorts at the bottom of an overextended dump
+    const distToSwingLow = candle.close - swingLow;
+    const distToSwingLowAtr = atr > 0 ? distToSwingLow / atr : 999;
+    // Must form a genuine structural bounce (1.0+ ATR) after capitulation.
+    if (impulseAtrRatio > exhaustionThresh && distToSwingLowAtr < 1.0) {
+      debugLog.push(`REJECT: SHORT exhaustion chase — impulse ${impulseAtrRatio.toFixed(2)}x ATR, only ${distToSwingLowAtr.toFixed(2)} ATR from extreme low`);
+      return null;
+    }
+
     diag.svpContext = candle.close < svp5d.poc ? 'BELOW POC' : (candle.close > svp5d.vah ? 'ABOVE VAH' : 'INSIDE');
     if (candle.high < zl15 * (1 - cfg.valueZoneSlack) && !isBreakingDown) { debugLog.push('REJECT: Below zone'); return null; }
     if (candle.close > svp5d.vah) { debugLog.push('REJECT: Above VAH'); return null; }
@@ -294,15 +331,18 @@ function evaluateSniperSignalInner(
     const sizing = calculateSafeSizing(symbol || 'UNK', entry, sl);
     if (!sizing) return null;
 
+    const riskDist = sl - entry;
     diag.entryPrice = entry.toFixed(5);
-    diag.targetPrice = (entry - (sl - entry) * 1.5).toFixed(5);
+    diag.targetPrice = (entry - riskDist * tp1RR).toFixed(5);
     diag.ceStopValue = (ceShort[lastIdx] || 0).toFixed(5);
     diag.score = score;
-    diag.netRR = ((entry - (entry - (sl - entry) * 1.5)) / (sl - entry)).toFixed(2);
+    diag.netRR = tp1RR.toFixed(2);
+
+    const tp1Only = (activeMode as any).tp1Only === true;
 
     return {
       kind: 'SNIPER', side: 'SHORT', score, reasons, entryPrice: entry, stopLoss: sl,
-      takeProfit: entry - (sl - entry) * 1.5, takeProfit2: entry - (sl - entry) * 2.5,
+      takeProfit: entry - riskDist * tp1RR, takeProfit2: tp1Only ? undefined : entry - riskDist * tp2RR,
       qty: sizing.qty, sizeUSDT: sizing.sizeUSDT, atr15: atr, volRatio: candle.volume / volAvg,
       entryType: 'CONTINUATION', zoneDistancePct: 0, btcRegimeAtEntry: btcRegimeLabel || 'UNKNOWN', entryTiming: 'OPTIMAL', debugLog
     };

@@ -287,6 +287,8 @@ export const useTradingStore = create<TradingState>()(
     const payload = toExecutionPayload(target.signal, symbol);
     payload.signalId = signalId; // Link payload back to original signal
 
+    // ── TP Debug Audit (Frontend) ─────────────────────────────────────────
+    console.log(`[TP_DEBUG:FRONTEND] ${symbol} | tp1=${payload.takeProfit} | tp2=${payload.takeProfit2 ?? 'N/A'} | entry=${payload.entryPrice} | sl=${payload.stopLoss}`);
 
     // ── Mark exact signal instance as DEPLOYED ───────────────────────────────
     set(s => ({

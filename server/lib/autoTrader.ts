@@ -295,13 +295,13 @@ export async function evaluateFrontendSignals(signals: any[]) {
         // ── TP Debug Audit Log ─────────────────────────────────────
         logMsg(`[TP_DEBUG] ${sym} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1RR=${tp1RR} | tp2RR=${tp2RR} | appliedRatios=${appliedTpStr} | riskDist=${riskDist.toFixed(6)}`);
 
-        const calcTp1 = isLong ? sig.entryPrice + riskDist * tp1RR : sig.entryPrice - riskDist * tp1RR;
+        const calcTp1 = sig.takeProfit;
 
         if (TRADER_CONFIG.TP1_ONLY) {
           await placeTakeProfitMarket(sym, closeSide, calcTp1);
           logMsg(`[TP_PLACED] ${sym} TP1-ONLY at ${calcTp1.toFixed(6)} (${tp1RR}R)`);
         } else {
-          const calcTp2 = isLong ? sig.entryPrice + riskDist * tp2RR : sig.entryPrice - riskDist * tp2RR;
+          const calcTp2 = sig.takeProfit2;
           const halfQty = qty * 0.5;
           await placeTakeProfitMarket(sym, closeSide, calcTp1, halfQty);
           await placeTakeProfitMarket(sym, closeSide, calcTp2, halfQty);

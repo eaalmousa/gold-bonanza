@@ -109,7 +109,8 @@ tradeRouter.get('/balance', requireAuth, async (req: any, res: any) => {
 tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
   const {
     symbol, side, entryPrice, stopLoss, qty: frontendQty, sizeUSDT: frontendSize, 
-    leverage: frontendLeverage, score, entryType, entryTiming, reasons
+    leverage: frontendLeverage, score, entryType, entryTiming, reasons,
+    takeProfit, takeProfit2
   } = req.body;
 
   // ── Live-only guard ──────────────────────────────────────────────────────────
@@ -215,8 +216,8 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
       console.log(`[TP_DEBUG:ROUTE] ${symbol} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1RR=${tp1RR} | tp2RR=${tp2RR} | appliedRatios=${appliedTpStr} | riskDist=${riskDist.toFixed(6)}`);
       tradeLogs.unshift(`[TP_DEBUG] ${symbol} tpEnabled=true tp1Only=${TRADER_CONFIG.TP1_ONLY} tp1RR=${tp1RR} tp2RR=${tp2RR} appliedRatios=${appliedTpStr}`);
 
-      // Re-calculate exactly per VALIDATED config multipliers
-      const calcTp1 = isLong ? entryPrice + (riskDist * tp1RR) : entryPrice - (riskDist * tp1RR);
+      // Use exact engine-determined geometry passed via the API payload
+      const calcTp1 = takeProfit;
 
       if (TRADER_CONFIG.TP1_ONLY) {
         // CLOSE 100% AT TP1
@@ -231,7 +232,7 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
         console.log('[Trade:open] TP1 Full order response:', JSON.stringify(tp1Order));
       } else {
         // TWO-STAGE TP (50% each)
-        const calcTp2 = isLong ? entryPrice + (riskDist * tp2RR) : entryPrice - (riskDist * tp2RR);
+        const calcTp2 = takeProfit2;
         // Note: For partial exits, DO NOT use closePosition='true'. Use quantity + reduceOnly.
         const halfQty = roundTo(qty * 0.5, qtyPrec);
 

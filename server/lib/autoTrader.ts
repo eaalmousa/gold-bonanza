@@ -290,10 +290,10 @@ export async function evaluateFrontendSignals(signals: any[]) {
         if (!tp1RR || !isFinite(tp1RR) || tp1RR <= 0) { logMsg(`⚠️ TP1_RR invalid (${tp1RR}), using safe default ${SAFE_DEFAULT_RR}`); tp1RR = SAFE_DEFAULT_RR; }
         if (!tp2RR || !isFinite(tp2RR) || tp2RR <= 0) { logMsg(`⚠️ TP2_RR invalid (${tp2RR}), using safe default ${SAFE_DEFAULT_RR * 2}`); tp2RR = SAFE_DEFAULT_RR * 2; }
 
-        const appliedTpStr = TRADER_CONFIG.TP1_ONLY ? `${tp1RR}R (100%)` : `${tp1RR}R & ${tp2RR}R (50/50)`;
+        const appliedTpStr = TRADER_CONFIG.TP1_ONLY ? `${tp1RR}% (100%)` : `${tp1RR}% & ${tp2RR}% (50/50)`;
 
         // ── TP Debug Audit Log ─────────────────────────────────────
-        logMsg(`[TP_DEBUG] ${sym} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1RR=${tp1RR} | tp2RR=${tp2RR} | appliedRatios=${appliedTpStr} | riskDist=${riskDist.toFixed(6)}`);
+        logMsg(`[TP_DEBUG] ${sym} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1Pct=${tp1RR}% | tp2Pct=${tp2RR}% | appliedRatios=${appliedTpStr}`);
 
         // ── Re-calculate dynamically from ACTUAL Binance Fill ──
         let actualEntryPrice = parseFloat(entryRes.avgPrice);
@@ -301,18 +301,20 @@ export async function evaluateFrontendSignals(signals: any[]) {
           actualEntryPrice = sig.entryPrice;
         }
 
-        const realRiskDist = Math.abs(actualEntryPrice - sig.stopLoss);
-        const calcTp1 = isLong ? actualEntryPrice + (realRiskDist * tp1RR) : actualEntryPrice - (realRiskDist * tp1RR);
+        // Fixed Percentage Target Math (Ignoring Risk/Stop Distance)
+        const tp1Pct = tp1RR / 100;
+        const calcTp1 = isLong ? actualEntryPrice * (1 + tp1Pct) : actualEntryPrice * (1 - tp1Pct);
 
         if (TRADER_CONFIG.TP1_ONLY) {
           await placeTakeProfitMarket(sym, closeSide, calcTp1);
-          logMsg(`[TP_PLACED] ${sym} TP1-ONLY at ${calcTp1.toFixed(6)} (${tp1RR}R)`);
+          logMsg(`[TP_PLACED] ${sym} TP1-ONLY at ${calcTp1.toFixed(6)} (${tp1RR}%)`);
         } else {
-          const calcTp2 = isLong ? actualEntryPrice + (realRiskDist * tp2RR) : actualEntryPrice - (realRiskDist * tp2RR);
+          const tp2Pct = tp2RR / 100;
+          const calcTp2 = isLong ? actualEntryPrice * (1 + tp2Pct) : actualEntryPrice * (1 - tp2Pct);
           const halfQty = qty * 0.5;
           await placeTakeProfitMarket(sym, closeSide, calcTp1, halfQty);
           await placeTakeProfitMarket(sym, closeSide, calcTp2, halfQty);
-          logMsg(`[TP_PLACED] ${sym} TP1=${calcTp1.toFixed(6)} (${tp1RR}R, 50%) TP2=${calcTp2.toFixed(6)} (${tp2RR}R, 50%)`);
+          logMsg(`[TP_PLACED] ${sym} TP1=${calcTp1.toFixed(6)} (${tp1RR}%, 50%) TP2=${calcTp2.toFixed(6)} (${tp2RR}%, 50%)`);
         }
       } else {
         logMsg(`[TP_DEBUG] ${sym} | tpEnabled=false — NO TP orders placed`);

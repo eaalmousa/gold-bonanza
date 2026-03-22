@@ -210,11 +210,11 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
       let tp2RR = TRADER_CONFIG.TP2_RR;
       if (!tp1RR || !isFinite(tp1RR) || tp1RR <= 0) { console.warn(`[Trade:open] TP1_RR invalid (${tp1RR}), using safe default`); tp1RR = SAFE_DEFAULT_RR; }
       if (!tp2RR || !isFinite(tp2RR) || tp2RR <= 0) { console.warn(`[Trade:open] TP2_RR invalid (${tp2RR}), using safe default`); tp2RR = SAFE_DEFAULT_RR * 2; }
-      const appliedTpStr = TRADER_CONFIG.TP1_ONLY ? `${tp1RR}R (100%)` : `${tp1RR}R & ${tp2RR}R (50/50)`;
+      const appliedTpStr = TRADER_CONFIG.TP1_ONLY ? `${tp1RR}% (100%)` : `${tp1RR}% & ${tp2RR}% (50/50)`;
 
       // ── TP Debug Audit Log ─────────────────────────────────────
-      console.log(`[TP_DEBUG:ROUTE] ${symbol} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1RR=${tp1RR} | tp2RR=${tp2RR} | appliedRatios=${appliedTpStr} | riskDist=${riskDist.toFixed(6)}`);
-      tradeLogs.unshift(`[TP_DEBUG] ${symbol} tpEnabled=true tp1Only=${TRADER_CONFIG.TP1_ONLY} tp1RR=${tp1RR} tp2RR=${tp2RR} appliedRatios=${appliedTpStr}`);
+      console.log(`[TP_DEBUG:ROUTE] ${symbol} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1Pct=${tp1RR}% | tp2Pct=${tp2RR}% | appliedRatios=${appliedTpStr}`);
+      tradeLogs.unshift(`[TP_DEBUG] ${symbol} tpEnabled=true tp1Only=${TRADER_CONFIG.TP1_ONLY} tp1Pct=${tp1RR}% tp2Pct=${tp2RR}% appliedRatios=${appliedTpStr}`);
 
       // ── Re-calculate dynamically from ACTUAL Binance Fill ──
       let actualEntryPrice = parseFloat(entryOrder.avgPrice);
@@ -222,8 +222,9 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
         actualEntryPrice = entryPrice; // Fallback if Binance response is delayed
       }
       
-      const realRiskDist = Math.abs(actualEntryPrice - stopLoss);
-      const calcTp1 = isLong ? actualEntryPrice + (realRiskDist * tp1RR) : actualEntryPrice - (realRiskDist * tp1RR);
+      // Fixed Percentage Target Math (Ignoring Risk/Stop Distance)
+      const tp1Pct = tp1RR / 100;
+      const calcTp1 = isLong ? actualEntryPrice * (1 + tp1Pct) : actualEntryPrice * (1 - tp1Pct);
 
       if (TRADER_CONFIG.TP1_ONLY) {
         // CLOSE 100% AT TP1
@@ -238,7 +239,8 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
         console.log('[Trade:open] TP1 Full order response:', JSON.stringify(tp1Order));
       } else {
         // TWO-STAGE TP (50% each)
-        const calcTp2 = isLong ? actualEntryPrice + (realRiskDist * tp2RR) : actualEntryPrice - (realRiskDist * tp2RR);
+        const tp2Pct = tp2RR / 100;
+        const calcTp2 = isLong ? actualEntryPrice * (1 + tp2Pct) : actualEntryPrice * (1 - tp2Pct);
         // Note: For partial exits, DO NOT use closePosition='true'. Use quantity + reduceOnly.
         const halfQty = roundTo(qty * 0.5, qtyPrec);
 

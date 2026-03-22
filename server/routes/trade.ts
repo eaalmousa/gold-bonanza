@@ -216,8 +216,14 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
       console.log(`[TP_DEBUG:ROUTE] ${symbol} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1RR=${tp1RR} | tp2RR=${tp2RR} | appliedRatios=${appliedTpStr} | riskDist=${riskDist.toFixed(6)}`);
       tradeLogs.unshift(`[TP_DEBUG] ${symbol} tpEnabled=true tp1Only=${TRADER_CONFIG.TP1_ONLY} tp1RR=${tp1RR} tp2RR=${tp2RR} appliedRatios=${appliedTpStr}`);
 
-      // Use exact engine-determined geometry passed via the API payload
-      const calcTp1 = takeProfit;
+      // ── Re-calculate dynamically from ACTUAL Binance Fill ──
+      let actualEntryPrice = parseFloat(entryOrder.avgPrice);
+      if (!actualEntryPrice || isNaN(actualEntryPrice) || actualEntryPrice <= 0) {
+        actualEntryPrice = entryPrice; // Fallback if Binance response is delayed
+      }
+      
+      const realRiskDist = Math.abs(actualEntryPrice - stopLoss);
+      const calcTp1 = isLong ? actualEntryPrice + (realRiskDist * tp1RR) : actualEntryPrice - (realRiskDist * tp1RR);
 
       if (TRADER_CONFIG.TP1_ONLY) {
         // CLOSE 100% AT TP1
@@ -232,7 +238,7 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
         console.log('[Trade:open] TP1 Full order response:', JSON.stringify(tp1Order));
       } else {
         // TWO-STAGE TP (50% each)
-        const calcTp2 = takeProfit2;
+        const calcTp2 = isLong ? actualEntryPrice + (realRiskDist * tp2RR) : actualEntryPrice - (realRiskDist * tp2RR);
         // Note: For partial exits, DO NOT use closePosition='true'. Use quantity + reduceOnly.
         const halfQty = roundTo(qty * 0.5, qtyPrec);
 

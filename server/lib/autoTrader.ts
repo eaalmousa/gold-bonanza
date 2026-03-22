@@ -295,13 +295,20 @@ export async function evaluateFrontendSignals(signals: any[]) {
         // ── TP Debug Audit Log ─────────────────────────────────────
         logMsg(`[TP_DEBUG] ${sym} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1RR=${tp1RR} | tp2RR=${tp2RR} | appliedRatios=${appliedTpStr} | riskDist=${riskDist.toFixed(6)}`);
 
-        const calcTp1 = sig.takeProfit;
+        // ── Re-calculate dynamically from ACTUAL Binance Fill ──
+        let actualEntryPrice = parseFloat(entryRes.avgPrice);
+        if (!actualEntryPrice || isNaN(actualEntryPrice) || actualEntryPrice <= 0) {
+          actualEntryPrice = sig.entryPrice;
+        }
+
+        const realRiskDist = Math.abs(actualEntryPrice - sig.stopLoss);
+        const calcTp1 = isLong ? actualEntryPrice + (realRiskDist * tp1RR) : actualEntryPrice - (realRiskDist * tp1RR);
 
         if (TRADER_CONFIG.TP1_ONLY) {
           await placeTakeProfitMarket(sym, closeSide, calcTp1);
           logMsg(`[TP_PLACED] ${sym} TP1-ONLY at ${calcTp1.toFixed(6)} (${tp1RR}R)`);
         } else {
-          const calcTp2 = sig.takeProfit2;
+          const calcTp2 = isLong ? actualEntryPrice + (realRiskDist * tp2RR) : actualEntryPrice - (realRiskDist * tp2RR);
           const halfQty = qty * 0.5;
           await placeTakeProfitMarket(sym, closeSide, calcTp1, halfQty);
           await placeTakeProfitMarket(sym, closeSide, calcTp2, halfQty);

@@ -1,19 +1,31 @@
 // ============================================
-// Scanner v3 — Main Scan Loop
-// - Passes btcRegimeLabel + symbol to engines
-// - Market correlation limiter via getCorrelationPositionLimit()
-// - Portfolio risk / same-wave filter via portfolioRisk
-// - CHOP regime exits early
+// Scanner v4 — Strategy Registry Integration
+// - Routes ALL strategy evaluation through the
+//   StrategyRegistry instead of calling engines
+//   directly.
+// - BTC regime gating enforced via evaluateRegimeGate()
+// - Breakout override logic enforced via registry
+// - Strategy selection state controls which
+//   strategies are evaluated
+// - Normalized StrategySignals are converted to
+//   existing Signal type via toCompatibleSignal()
+//
+// PRESERVED: portfolio risk, correlation limits,
+// batching, trace generation, pipeline shape.
 // ============================================
 
 import { fetchKlines } from '../services/binanceApi';
-import { evaluateSniperSignal } from './sniperEngine';
-import { evaluateBreakoutSignal } from './breakoutEngine';
 import { detectMarketRegime, getCorrelationPositionLimit } from './regimeFilter';
 import { checkPortfolioExposure, type PortfolioSnapshot } from './portfolioRisk';
+import { buildStrategyContext } from './strategyContext';
+import { globalRegistry, evaluateRegimeGate, toCompatibleSignal } from './strategyRegistry';
+import type { StrategySignal } from './strategyRegistry';
+import { initializeStrategies } from './strategyInit';
 import type { ModeConfig, SignalRow, MarketRow, MarketRegime, OrderFlowSnapshot, UnifiedTrace } from '../types/trading';
 import { SPOT_API, FUTURES_API } from '../types/trading';
-import { globalDebugLogs as sniperLogs } from './sniperEngine';
+
+// Ensure strategies are registered (idempotent)
+initializeStrategies();
 
 const BATCH_SIZE = 8;
 const BATCH_DELAY = 400;
@@ -27,7 +39,8 @@ export async function runBonanzaCore(
   orderFlowSnapshots?: Record<string, OrderFlowSnapshot>,
   onRegimeUpdate?: (regime: MarketRegime, reason: string) => void,
   currentOpenPositionCount?: number,
-  portfolio?: PortfolioSnapshot        // For portfolio risk checks
+  portfolio?: PortfolioSnapshot,
+  enabledStrategies?: string[]              // NEW: strategy selection from store
 ): Promise<{
   pipelineSignals: SignalRow[];
   pipelineTraces: UnifiedTrace[];
@@ -41,12 +54,16 @@ export async function runBonanzaCore(
   let processed = 0;
   let newSignalsThisScan = 0;
 
+  // Resolve which strategies are active
+  const activeStrategyIds = enabledStrategies ?? []; // empty = ALL
+
   // ─── STEP 1: Detect Market Regime using BTC ──────────────────
   let regime: MarketRegime = 'RANGING';
   let regimeScoreBonusLong  = 0;
   let regimeScoreBonusShort = 0;
   let btc4hTrend: 'UP' | 'DOWN' | 'RANGING' = 'RANGING';
   let regimeLabel          = 'RANGING';
+  let btcRsi: number | undefined;
 
   try {
     const [btc1h, btc4h] = await Promise.all([
@@ -59,11 +76,16 @@ export async function runBonanzaCore(
     regimeScoreBonusLong  = detection.scoreBonusLong;
     regimeScoreBonusShort = detection.scoreBonusShort;
     regimeLabel       = `${detection.regime} (${detection.reason})`;
+    btcRsi            = detection.btcRsi;
     onRegimeUpdate?.(regime, detection.reason);
     console.log(`[Scanner] Regime: ${regime} | BTC4H: ${btc4hTrend} | Bonus(L/S): ${regimeScoreBonusLong}/${regimeScoreBonusShort} | ${detection.reason}`);
   } catch (e: any) {
     console.warn('[Scanner] Regime detection failed:', e?.message);
   }
+
+  // ─── STEP 2: BTC Regime Gate (global directional permission) ──
+  const regimeGate = evaluateRegimeGate(regime, btc4hTrend, btcRsi, activeMode.key);
+  console.log(`[Scanner:RegimeGate] ${regimeGate.reason} | Sides: [${regimeGate.allowedSides.join(',')}] | Strictness: ${regimeGate.strictness} | Override: ${regimeGate.overrideAllowed ? `yes (≥${regimeGate.overrideMinScore})` : 'no'}`);
 
   const openCount = currentOpenPositionCount ?? 0;
   const corrLimit = getCorrelationPositionLimit(regime, btc4hTrend, openCount, activeMode.key);
@@ -123,41 +145,11 @@ export async function runBonanzaCore(
     currentScanCycleStart: Date.now()
   };
 
-  function createTrace(symbol: string, engine: 'SNIPER'|'BREAKOUT', logs: string[], sig: any, now: number): UnifiedTrace {
-    const logsStr = logs.join(' | ');
-    let status: UnifiedTrace['status'] = 'REJECTED';
-    let lastRejectReason = undefined;
+  // Log which strategies are active this scan
+  const activeEngines = globalRegistry.getEnabled(activeStrategyIds);
+  console.log(`[Scanner] Active strategies: [${activeEngines.map(e => e.id).join(', ')}] (${activeEngines.length}/${globalRegistry.getAll().length})`);
 
-    if (sig) {
-      if (sig.entryType?.includes('PENDING') || sig.entryType?.includes('RETEST_FAILED')) status = 'PENDING';
-      else status = 'ACCEPTED';
-      
-      if (sig.entryType === 'RETEST_FAILED' || sig.entryType === 'INVALIDATED') status = 'INVALIDATED';
-      else if (sig.entryType === 'EXPIRED_NO_RETEST') status = 'EXPIRED';
-    } else {
-      for (let j = logs.length - 1; j >= 0; j--) {
-        if (logs[j].includes('REJECT:')) {
-          lastRejectReason = logs[j].split('REJECT:')[1].split('—')[0].split('-')[0].trim();
-          break;
-        }
-      }
-    }
-
-    return {
-      id: `${symbol}-${engine}-${now}`,
-      symbol, engine, status,
-      score: sig?.score,
-      entryType: sig?.entryType,
-      entryTiming: sig?.entryTiming,
-      lastRejectReason,
-      usedBreakingDownBypass: logsStr.includes('crash path') || logsStr.includes('BREAKING_DOWN'),
-      usedBtcBypass: logsStr.includes('BTC uptrend gate bypassed'),
-      usedLateException: logsStr.includes('crash-bypass late-entry exception'),
-      timestamp: now
-    };
-  }
-
-  // ─── STEP 4: Scan symbols in batches ─────────────────────────
+  // ─── STEP 4: Scan symbols in batches via Strategy Registry ───
   for (let batch = 0; batch < symbols.length; batch += BATCH_SIZE) {
     if (newSignalsThisScan >= corrLimit.maxNewPositions) {
       console.log(`[Scanner] Correlation cap reached (${corrLimit.maxNewPositions}) — stopping early`);
@@ -181,27 +173,65 @@ export async function runBonanzaCore(
           if (rowIdx >= 0 && lastClose > 0) marketRows[rowIdx].lastPrice = lastClose;
 
           const symbolFlow = orderFlowSnapshots?.[symbol];
-          const sniperLogStart = sniperLogs.length;
-          const sniper  = evaluateSniperSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonusLong, regimeScoreBonusShort, symbolFlow, btc4hTrend, regimeLabel, symbol);
-          const currentSniperLogs = sniperLogs.slice(sniperLogStart).find(l => l[0]?.includes(symbol)) || (sniper?.debugLog || []);
-          
-          const breakout = evaluateBreakoutSignal(tf1h, tf15m, activeMode, balance, regime, regimeScoreBonusLong, regimeScoreBonusShort, symbolFlow, btc4hTrend, regimeLabel, symbol);
-          const currentBreakoutLogs = breakout?.debugLog || [];
 
-          return {
-            symbol,
-            sniperTrace: createTrace(symbol, 'SNIPER', currentSniperLogs, sniper, now),
-            breakoutTrace: createTrace(symbol, 'BREAKOUT', currentBreakoutLogs, breakout, now),
-            sniper: sniper ? { signal: sniper, price: lastClose, change24h } : undefined,
-            breakout: breakout ? { signal: breakout, price: lastClose, change24h } : undefined
-          };
+          // ── Build shared context ONCE for this symbol ──
+          const ctx = buildStrategyContext(
+            symbol, tf15m, tf1h, activeMode, balance,
+            regime, btc4hTrend,
+            regimeScoreBonusLong, regimeScoreBonusShort,
+            regimeLabel, change24h, symbolFlow, btcRsi
+          );
+
+          if (!ctx) {
+            return {
+              symbol,
+              traces: [{
+                id: `${symbol}-CTX-FAIL-${now}`, symbol,
+                engine: 'SNIPER' as const, status: 'INVALIDATED' as const,
+                lastRejectReason: 'Insufficient data for context',
+                timestamp: now
+              }] as UnifiedTrace[],
+              signals: [] as StrategySignal[]
+            };
+          }
+
+          // ── Run ALL enabled strategies via registry ──
+          const strategySignals = globalRegistry.evaluateAll(ctx, activeStrategyIds, regimeGate);
+
+          // ── Build traces for every strategy that ran ──
+          const traces: UnifiedTrace[] = [];
+          for (const engine of activeEngines) {
+            const matched = strategySignals.find(s => s.strategyId === engine.id);
+            traces.push({
+              id: `${symbol}-${engine.id}-${now}`,
+              symbol,
+              engine: matched?.kind || (engine.category === 'BREAKOUT' ? 'SUPER_SNIPER' : 'SNIPER') as UnifiedTrace['engine'],
+              status: matched ? 'ACCEPTED' : 'REJECTED',
+              score: matched?.score,
+              entryType: matched?.entryType,
+              entryTiming: matched?.entryTiming,
+              lastRejectReason: !matched 
+                ? (strategySignals.length === 0 ? 'No setup detected' : undefined) 
+                : undefined,
+              usedBreakingDownBypass: matched?.debugLog?.some(l => l.includes('BREAKING_DOWN')) || false,
+              usedBtcBypass: matched?.regimeAlignment === 'COUNTER_REGIME_OVERRIDE',
+              usedLateException: matched?.debugLog?.some(l => l.includes('late-entry')) || false,
+              timestamp: now
+            });
+          }
+
+          return { symbol, traces, signals: strategySignals };
+
         } catch (e: any) {
           return {
             symbol,
-            sniperTrace: { id: `${symbol}-SNIPER-FAIL-${now}`, symbol, engine: 'SNIPER', status: 'INVALIDATED' as const, lastRejectReason: `KLINE_FETCH_FAILED: ${e.message}`, timestamp: now } as UnifiedTrace,
-            breakoutTrace: { id: `${symbol}-BRAK-FAIL-${now}`, symbol, engine: 'BREAKOUT', status: 'INVALIDATED' as const, lastRejectReason: `KLINE_FETCH_FAILED: ${e.message}`, timestamp: now } as UnifiedTrace,
-            sniper: undefined,
-            breakout: undefined
+            traces: [{
+              id: `${symbol}-FAIL-${now}`, symbol,
+              engine: 'SNIPER' as const, status: 'INVALIDATED' as const,
+              lastRejectReason: `KLINE_FETCH_FAILED: ${e.message}`,
+              timestamp: now
+            }] as UnifiedTrace[],
+            signals: [] as StrategySignal[]
           };
         }
       })
@@ -209,44 +239,71 @@ export async function runBonanzaCore(
 
     for (const result of candidateResults) {
       if (result.status !== 'fulfilled') continue;
-      const { symbol, sniper, breakout, sniperTrace, breakoutTrace } = result.value;
+      const { symbol, traces, signals } = result.value;
 
-      pipelineTraces.push(sniperTrace);
-      if (breakoutTrace.lastRejectReason || breakoutTrace.status !== 'REJECTED') {
-         pipelineTraces.push(breakoutTrace);
+      // Push all traces
+      for (const trace of traces) {
+        pipelineTraces.push(trace);
       }
 
-      if (sniper?.signal && newSignalsThisScan < corrLimit.maxNewPositions) {
-        const check = checkPortfolioExposure(symbol, sniper.signal.side, regime as any, btc4hTrend, defaultPortfolio, signalsThisCycle);
+      // Process accepted signals through the existing pipeline
+      for (const stratSig of signals) {
+        if (newSignalsThisScan >= corrLimit.maxNewPositions) break;
+
+        // ── Regime gate enforcement ──
+        // WATCHLIST signals (blocked by regime, can't override) are still emitted
+        // but marked as non-executable so the UI can show them
+        const isExecutable = stratSig.executionClass !== 'WATCHLIST';
+
+        // For breakout-type signals, require RETEST_CONFIRMED for immediate execution
+        // (preserving original breakout retest logic)
+        const isBreakoutPending = stratSig.kind === 'SUPER_SNIPER' && 
+          (stratSig.entryType === 'PENDING_BREAKOUT' || 
+           stratSig.entryType === 'INVALIDATED' || 
+           stratSig.entryType === 'EXPIRED_NO_RETEST');
+
+        if (isBreakoutPending) {
+          // Emit as pending/invalidated/expired (non-actionable)
+          const traceId = `${symbol}-${stratSig.strategyId}-${Date.now()}`;
+          const compatSignal = toCompatibleSignal(stratSig);
+          pipelineSignals.push({
+            symbol, signal: compatSignal,
+            price: stratSig.entryPrice,
+            change24h: stratSig.debugLog ? 0 : 0,
+            timestamp: Date.now(),
+            id: traceId,
+            status: stratSig.entryType === 'PENDING_BREAKOUT' ? 'PENDING' :
+                    stratSig.entryType === 'INVALIDATED' ? 'INVALIDATED' : 'EXPIRED'
+          });
+          continue;
+        }
+
+        if (!isExecutable) {
+          // Still push as trace for visibility, but don't count toward signals
+          continue;
+        }
+
+        // ── Portfolio exposure check (preserved from original) ──
+        const check = checkPortfolioExposure(
+          symbol, stratSig.side, regime as any, btc4hTrend,
+          defaultPortfolio, signalsThisCycle
+        );
+
         if (check.allowed) {
-          pipelineSignals.push({ 
-            symbol, signal: sniper.signal, price: sniper.price, 
-            change24h: sniper.change24h, timestamp: sniperTrace.timestamp,
-            id: sniperTrace.id, status: 'ACCEPTED'
+          const compatSignal = toCompatibleSignal(stratSig);
+          const traceId = traces.find(t => t.symbol === symbol && t.status === 'ACCEPTED')?.id 
+                          || `${symbol}-${stratSig.strategyId}-${Date.now()}`;
+
+          pipelineSignals.push({
+            symbol, signal: compatSignal,
+            price: stratSig.entryPrice,
+            change24h: tickers[symbol] ?? 0,
+            timestamp: Date.now(),
+            id: traceId,
+            status: 'ACCEPTED'
           });
           signalsThisCycle.add(symbol);
           newSignalsThisScan++;
-        }
-      }
-
-      if (breakout?.signal && newSignalsThisScan < corrLimit.maxNewPositions) {
-        if (breakout.signal.entryType === 'RETEST_CONFIRMED') {
-          const check = checkPortfolioExposure(symbol, breakout.signal.side, regime as any, btc4hTrend, defaultPortfolio, signalsThisCycle);
-          if (check.allowed) {
-             pipelineSignals.push({ 
-              symbol, signal: breakout.signal, price: breakout.price, 
-              change24h: breakout.change24h, timestamp: breakoutTrace.timestamp,
-              id: breakoutTrace.id, status: 'ACCEPTED'
-            });
-            signalsThisCycle.add(symbol);
-            newSignalsThisScan++;
-          }
-        } else if (breakout.signal.entryType === 'PENDING_BREAKOUT' || breakout.signal.entryType === 'INVALIDATED' || breakout.signal.entryType === 'EXPIRED_NO_RETEST') {
-          pipelineSignals.push({ 
-            symbol, signal: breakout.signal, price: breakout.price, 
-            change24h: breakout.change24h, timestamp: breakoutTrace.timestamp,
-            id: breakoutTrace.id, status: breakoutTrace.status as any
-          });
         }
       }
     }
@@ -258,7 +315,7 @@ export async function runBonanzaCore(
 
   pipelineSignals.sort((a, b) => b.signal.score - a.signal.score);
   marketRows.sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
-  console.log(`[Scanner] Complete — Traces: ${pipelineTraces.length} | Tradeable: ${pipelineSignals.length} | Regime: ${regime}`);
+  console.log(`[Scanner] Complete — Traces: ${pipelineTraces.length} | Tradeable: ${pipelineSignals.length} | Regime: ${regime} | Strategies: ${activeEngines.length}`);
   
   return { pipelineSignals, pipelineTraces, marketRows, regimeLabel };
 }

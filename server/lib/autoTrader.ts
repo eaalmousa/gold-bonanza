@@ -193,7 +193,12 @@ async function startAutoScanner() {
 
       const result = await runBonanzaCore(
         symbols, modeProxy as any, balance,
-        (pct) => { latestMarketState.scanProgress = pct; }
+        (pct) => { latestMarketState.scanProgress = pct; },
+        undefined,  // orderFlowSnapshots
+        undefined,  // onRegimeUpdate
+        undefined,  // currentOpenPositionCount
+        undefined,  // portfolio
+        []          // enabledStrategies: empty = ALL strategies active on VPS
       );
 
       latestMarketState.pipelineSignals = result.pipelineSignals;

@@ -13,7 +13,8 @@ export default function CommandSyncHub() {
   const { 
     activeTrades: rawTrades, pipelineSignals: rawSignals, 
     removeActiveTrade, deploySignal,
-    binancePositions: rawPositions, setBinancePositions
+    binancePositions: rawPositions, setBinancePositions,
+    accountEnvironment
   } = useTradingStore();
 
   const activeTrades = Array.isArray(rawTrades) ? rawTrades : [];
@@ -110,16 +111,17 @@ export default function CommandSyncHub() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {/* Static LIVE badge — mode switching removed */}
+          {/* Environment badge — synced to System Status selection */}
           <div style={{ 
             padding: '6px 14px', borderRadius: 'var(--radius-full)',
             fontSize: 9, fontWeight: 900,
-            background: 'rgba(239,68,68,0.2)',
-            color: '#f87171',
-            border: '1px solid rgba(239,68,68,0.3)',
-            letterSpacing: '0.15em'
+            background: accountEnvironment === 'LIVE' ? 'rgba(239,68,68,0.2)' : 'rgba(14,165,233,0.15)',
+            color: accountEnvironment === 'LIVE' ? '#f87171' : '#7dd3fc',
+            border: `1px solid ${accountEnvironment === 'LIVE' ? 'rgba(239,68,68,0.3)' : 'rgba(14,165,233,0.3)'}`,
+            letterSpacing: '0.15em',
+            transition: 'all 0.3s'
           }}>
-            ● LIVE
+            ● {accountEnvironment}
           </div>
 
           <div style={{

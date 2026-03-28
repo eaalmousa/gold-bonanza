@@ -7,7 +7,8 @@ export default function Header() {
   const { 
     isDataLive, activeMode, activeTrades, 
     binancePositions, pipelineSignals, binanceStatus, 
-    isAutoTradeActive, setAutoTradeActive
+    isAutoTradeActive, setAutoTradeActive,
+    accountEnvironment
   } = useTradingStore();
 
   // executionMode is always 'LIVE' — no cycle needed
@@ -97,20 +98,21 @@ export default function Header() {
           {activeMode.key}
         </div>
         
-        {/* Execution Mode — always LIVE */}
+        {/* Account Environment Badge — synced to System Status selection */}
         <div
           style={{
             padding: '10px 20px',
             borderRadius: 'var(--radius-full)',
             fontSize: 11, fontWeight: 900,
-            border: '1px solid rgba(239,68,68,0.4)',
-            background: 'rgba(239,68,68,0.1)',
-            color: '#f87171',
+            border: `1px solid ${accountEnvironment === 'LIVE' ? 'rgba(239,68,68,0.4)' : 'rgba(14,165,233,0.4)'}`,
+            background: accountEnvironment === 'LIVE' ? 'rgba(239,68,68,0.1)' : 'rgba(14,165,233,0.1)',
+            color: accountEnvironment === 'LIVE' ? '#f87171' : '#7dd3fc',
             letterSpacing: '0.35em',
-            boxShadow: '0 0 15px rgba(239,68,68,0.2)',
+            boxShadow: accountEnvironment === 'LIVE' ? '0 0 15px rgba(239,68,68,0.2)' : '0 0 15px rgba(14,165,233,0.15)',
+            transition: 'all 0.3s'
           }}
         >
-          ● LIVE
+          ● {accountEnvironment}
         </div>
 
 

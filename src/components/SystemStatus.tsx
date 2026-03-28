@@ -185,7 +185,7 @@ export default function SystemStatus() {
       }}>
         {/* Browser Terminal Mode */}
         <div>
-          <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 8, fontWeight: 700 }}>BROWSER TERMINAL MODE</div>
+          <div title="Controls how trades originated purely from this UI terminal are placed (Paper/Live)." style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 8, fontWeight: 700, cursor: 'help' }}>BROWSER TERMINAL MODE ⓘ</div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <button 
               onClick={() => setAccountEnvironment('LIVE')}
@@ -210,24 +210,19 @@ export default function SystemStatus() {
               }}
             >DEMO</button>
 
-            {/* Mismatch Warning */}
-            {accountEnvironment === 'DEMO' && backendEnvironment && !backendEnvironment.isTestnet && (
+            {/* Sync Status Badge */}
+            {backendEnvironment && (
               <span style={{ 
-                color: '#f87171', background: 'rgba(239,68,68,0.1)', padding: '6px 12px',
-                borderRadius: 'var(--radius-md)', fontSize: 9, fontWeight: 800, border: '1px solid rgba(239,68,68,0.3)',
+                color: (accountEnvironment === 'DEMO' && backendEnvironment.isTestnet) || (accountEnvironment === 'LIVE' && !backendEnvironment.isTestnet) ? 'var(--green)' : '#f87171', 
+                background: (accountEnvironment === 'DEMO' && backendEnvironment.isTestnet) || (accountEnvironment === 'LIVE' && !backendEnvironment.isTestnet) ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', 
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-md)', fontSize: 9, fontWeight: 800, 
+                border: `1px solid ${(accountEnvironment === 'DEMO' && backendEnvironment.isTestnet) || (accountEnvironment === 'LIVE' && !backendEnvironment.isTestnet) ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
                 letterSpacing: '0.05em'
               }}>
-                ⚠️ FRONTEND DEMO / BACKEND LIVE MISMATCH
-              </span>
-            )}
-            
-            {accountEnvironment === 'LIVE' && backendEnvironment?.isTestnet && (
-              <span style={{ 
-                color: '#f87171', background: 'rgba(239,68,68,0.1)', padding: '6px 12px',
-                borderRadius: 'var(--radius-md)', fontSize: 9, fontWeight: 800, border: '1px solid rgba(239,68,68,0.3)',
-                letterSpacing: '0.05em'
-              }}>
-                ⚠️ FRONTEND LIVE / BACKEND DEMO MISMATCH
+                {(accountEnvironment === 'DEMO' && backendEnvironment.isTestnet) || (accountEnvironment === 'LIVE' && !backendEnvironment.isTestnet) 
+                  ? 'SYNCED ✅' 
+                  : (accountEnvironment === 'DEMO' ? '⚠️ FRONTEND DEMO / BACKEND LIVE MISMATCH' : '⚠️ FRONTEND LIVE / BACKEND DEMO MISMATCH')}
               </span>
             )}
           </div>
@@ -235,24 +230,24 @@ export default function SystemStatus() {
 
         {/* VPS Scout Backend Env */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-          <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 700 }}>VPS SCOUT ENVIRONMENT</div>
+          <div title="The real environment the headless backend daemon executing your automated strategy is currently pointing to." style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 700, cursor: 'help' }}>VPS SCOUT ENVIRONMENT ⓘ</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ 
-              fontSize: 11, fontWeight: 900, letterSpacing: '0.2em', padding: '4px 10px', borderRadius: 'var(--radius-full)', 
+            <span title="Prevents accidental live browser executions unless explicitly toggled ON." style={{ 
+              fontSize: 11, fontWeight: 900, letterSpacing: '0.1em', padding: '4px 10px', borderRadius: 'var(--radius-full)', 
               border: `1px solid ${liveExecutionArmed ? 'rgba(16,185,129,0.3)' : 'rgba(244,63,94,0.3)'}`,
               background: liveExecutionArmed ? 'rgba(16,185,129,0.1)' : 'rgba(244,63,94,0.1)',
               color: liveExecutionArmed ? 'var(--green)' : 'var(--red)',
               textShadow: liveExecutionArmed ? '0 0 5px rgba(16,185,129,0.5)' : '0 0 5px rgba(244,63,94,0.5)',
-              transition: 'all 0.3s'
+              transition: 'all 0.3s', cursor: 'help'
             }}>
-              LIVE ARM: {liveExecutionArmed ? 'ON' : 'OFF'}
+              BROWSER REAL ORDER ARM: {liveExecutionArmed ? 'ON' : 'OFF'}
             </span>
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>|</span>
             <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 900, letterSpacing: '0.2em' }}>
               Base: <span style={{ 
-                color: backendEnvironment?.isTestnet ? '#38bdf8' : 'var(--green)',
-                textShadow: backendEnvironment?.isTestnet ? '0 0 5px rgba(56,189,248,0.5)' : '0 0 5px rgba(16,185,129,0.5)'
-              }}>{backendEnvironment?.isTestnet ? 'TESTNET' : 'LIVE'}</span>
+                color: !backendEnvironment ? 'var(--text-muted)' : backendEnvironment.isTestnet ? '#38bdf8' : 'var(--green)',
+                textShadow: !backendEnvironment ? 'none' : backendEnvironment.isTestnet ? '0 0 5px rgba(56,189,248,0.5)' : '0 0 5px rgba(16,185,129,0.5)'
+              }}>{!backendEnvironment ? 'OFFLINE' : backendEnvironment.isTestnet ? 'TESTNET' : 'LIVE'}</span>
             </span>
           </div>
           {backendEnvironment?.baseUrl && (

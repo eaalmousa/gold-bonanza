@@ -15,7 +15,8 @@ export default function SystemStatus() {
     isScannerActive, setScannerActive,
     binancePositions: rawPositions,
     pipelineSignals: rawSignals,
-    marketRows: rawRows
+    marketRows: rawRows,
+    backendEnvironment
   } = useTradingStore();
 
   const activeTrades    = Array.isArray(rawTrades)    ? rawTrades    : [];
@@ -182,48 +183,83 @@ export default function SystemStatus() {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         flexWrap: 'wrap', gap: 20, marginBottom: 24, paddingBottom: 24, borderBottom: '1px solid var(--border-subtle)'
       }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button 
-            onClick={() => setAccountEnvironment('LIVE')}
-            style={{
-              padding: '10px 20px', borderRadius: 'var(--radius-full)', fontSize: 11, fontWeight: 900, letterSpacing: '0.35em',
-              border: `1px solid ${accountEnvironment === 'LIVE' ? 'rgba(16,185,129,0.5)' : 'rgba(255,255,255,0.1)'}`,
-              background: accountEnvironment === 'LIVE' ? 'rgba(16,185,129,0.15)' : 'rgba(0,0,0,0.5)',
-              color: accountEnvironment === 'LIVE' ? '#34d399' : 'var(--text-primary)',
-              boxShadow: accountEnvironment === 'LIVE' ? '0 0 20px rgba(16,185,129,0.2)' : 'none',
-              cursor: 'pointer', transition: 'all 0.3s'
-            }}
-          >LIVE</button>
-          <button 
-            onClick={() => setAccountEnvironment('DEMO')}
-            style={{
-              padding: '10px 20px', borderRadius: 'var(--radius-full)', fontSize: 11, fontWeight: 900, letterSpacing: '0.35em',
-              border: `1px solid ${accountEnvironment === 'DEMO' ? 'rgba(14,165,233,0.5)' : 'rgba(255,255,255,0.1)'}`,
-              background: accountEnvironment === 'DEMO' ? 'rgba(14,165,233,0.15)' : 'rgba(0,0,0,0.5)',
-              color: accountEnvironment === 'DEMO' ? '#7dd3fc' : 'var(--text-primary)',
-              boxShadow: accountEnvironment === 'DEMO' ? '0 0 20px rgba(14,165,233,0.2)' : 'none',
-              cursor: 'pointer', transition: 'all 0.3s'
-            }}
-          >DEMO</button>
+        {/* Browser Terminal Mode */}
+        <div>
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 8, fontWeight: 700 }}>BROWSER TERMINAL MODE</div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button 
+              onClick={() => setAccountEnvironment('LIVE')}
+              style={{
+                padding: '10px 20px', borderRadius: 'var(--radius-full)', fontSize: 11, fontWeight: 900, letterSpacing: '0.35em',
+                border: `1px solid ${accountEnvironment === 'LIVE' ? 'rgba(16,185,129,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                background: accountEnvironment === 'LIVE' ? 'rgba(16,185,129,0.15)' : 'rgba(0,0,0,0.5)',
+                color: accountEnvironment === 'LIVE' ? '#34d399' : 'var(--text-primary)',
+                boxShadow: accountEnvironment === 'LIVE' ? '0 0 20px rgba(16,185,129,0.2)' : 'none',
+                cursor: 'pointer', transition: 'all 0.3s'
+              }}
+            >LIVE</button>
+            <button 
+              onClick={() => setAccountEnvironment('DEMO')}
+              style={{
+                padding: '10px 20px', borderRadius: 'var(--radius-full)', fontSize: 11, fontWeight: 900, letterSpacing: '0.35em',
+                border: `1px solid ${accountEnvironment === 'DEMO' ? 'rgba(14,165,233,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                background: accountEnvironment === 'DEMO' ? 'rgba(14,165,233,0.15)' : 'rgba(0,0,0,0.5)',
+                color: accountEnvironment === 'DEMO' ? '#7dd3fc' : 'var(--text-primary)',
+                boxShadow: accountEnvironment === 'DEMO' ? '0 0 20px rgba(14,165,233,0.2)' : 'none',
+                cursor: 'pointer', transition: 'all 0.3s'
+              }}
+            >DEMO</button>
+
+            {/* Mismatch Warning */}
+            {accountEnvironment === 'DEMO' && backendEnvironment && !backendEnvironment.isTestnet && (
+              <span style={{ 
+                color: '#f87171', background: 'rgba(239,68,68,0.1)', padding: '6px 12px',
+                borderRadius: 'var(--radius-md)', fontSize: 9, fontWeight: 800, border: '1px solid rgba(239,68,68,0.3)',
+                letterSpacing: '0.05em'
+              }}>
+                ⚠️ FRONTEND DEMO / BACKEND LIVE MISMATCH
+              </span>
+            )}
+            
+            {accountEnvironment === 'LIVE' && backendEnvironment?.isTestnet && (
+              <span style={{ 
+                color: '#f87171', background: 'rgba(239,68,68,0.1)', padding: '6px 12px',
+                borderRadius: 'var(--radius-md)', fontSize: 9, fontWeight: 800, border: '1px solid rgba(239,68,68,0.3)',
+                letterSpacing: '0.05em'
+              }}>
+                ⚠️ FRONTEND LIVE / BACKEND DEMO MISMATCH
+              </span>
+            )}
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ 
-            fontSize: 11, fontWeight: 900, letterSpacing: '0.2em', padding: '4px 10px', borderRadius: 'var(--radius-full)', 
-            border: `1px solid ${liveExecutionArmed ? 'rgba(16,185,129,0.3)' : 'rgba(244,63,94,0.3)'}`,
-            background: liveExecutionArmed ? 'rgba(16,185,129,0.1)' : 'rgba(244,63,94,0.1)',
-            color: liveExecutionArmed ? 'var(--green)' : 'var(--red)',
-            textShadow: liveExecutionArmed ? '0 0 5px rgba(16,185,129,0.5)' : '0 0 5px rgba(244,63,94,0.5)',
-            transition: 'all 0.3s'
-          }}>
-            LIVE ARM: {liveExecutionArmed ? 'ON' : 'OFF'}
-          </span>
-          <span style={{ color: 'rgba(255,255,255,0.2)' }}>|</span>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 900, letterSpacing: '0.2em' }}>
-            Environment: <span style={{ 
-              color: accountEnvironment === 'LIVE' ? 'var(--green)' : '#38bdf8',
-              textShadow: accountEnvironment === 'LIVE' ? '0 0 5px rgba(16,185,129,0.5)' : '0 0 5px rgba(56,189,248,0.5)'
-            }}>{accountEnvironment}</span>
-          </span>
+
+        {/* VPS Scout Backend Env */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 700 }}>VPS SCOUT ENVIRONMENT</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ 
+              fontSize: 11, fontWeight: 900, letterSpacing: '0.2em', padding: '4px 10px', borderRadius: 'var(--radius-full)', 
+              border: `1px solid ${liveExecutionArmed ? 'rgba(16,185,129,0.3)' : 'rgba(244,63,94,0.3)'}`,
+              background: liveExecutionArmed ? 'rgba(16,185,129,0.1)' : 'rgba(244,63,94,0.1)',
+              color: liveExecutionArmed ? 'var(--green)' : 'var(--red)',
+              textShadow: liveExecutionArmed ? '0 0 5px rgba(16,185,129,0.5)' : '0 0 5px rgba(244,63,94,0.5)',
+              transition: 'all 0.3s'
+            }}>
+              LIVE ARM: {liveExecutionArmed ? 'ON' : 'OFF'}
+            </span>
+            <span style={{ color: 'rgba(255,255,255,0.2)' }}>|</span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 900, letterSpacing: '0.2em' }}>
+              Base: <span style={{ 
+                color: backendEnvironment?.isTestnet ? '#38bdf8' : 'var(--green)',
+                textShadow: backendEnvironment?.isTestnet ? '0 0 5px rgba(56,189,248,0.5)' : '0 0 5px rgba(16,185,129,0.5)'
+              }}>{backendEnvironment?.isTestnet ? 'TESTNET' : 'LIVE'}</span>
+            </span>
+          </div>
+          {backendEnvironment?.baseUrl && (
+             <div style={{ fontSize: 8, color: 'var(--text-muted)', opacity: 0.7, fontFamily: 'monospace' }}>
+               {backendEnvironment.baseUrl.replace('https://', '')}
+             </div>
+          )}
         </div>
       </div>
 

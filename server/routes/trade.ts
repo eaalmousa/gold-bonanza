@@ -19,9 +19,15 @@ function resolveBaseUrl(): string {
 }
 
 tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
+  const isTest = process.env.BINANCE_BASE_URL?.includes('testnet') || process.env.BINANCE_BASE_URL?.includes('demo-fapi') ? true : false;
+  
   res.json({
     enabled: TRADER_CONFIG.ENABLED,
     autoTrading: TRADER_CONFIG.ENABLED,
+    backendEnvironment: {
+      isTestnet: isTest,
+      baseUrl: process.env.BINANCE_BASE_URL || 'https://fapi.binance.com'
+    },
     logs: tradeLogs,
     config: {
       riskPerTrade: TRADER_CONFIG.RISK_PER_TRADE,

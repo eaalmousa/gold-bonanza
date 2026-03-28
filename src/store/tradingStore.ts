@@ -43,6 +43,10 @@ interface TradingState {
   executionMode: ExecutionMode;
   executionResults: ExecutionResult[];
   
+  // Backend actual environment tracking
+  backendEnvironment: { isTestnet: boolean; baseUrl: string } | null;
+  setBackendEnvironment: (env: { isTestnet: boolean; baseUrl: string }) => void;
+  
   // Account Environment
   accountEnvironment: 'DEMO' | 'LIVE';
   liveExecutionArmed: boolean;
@@ -148,6 +152,9 @@ export const useTradingStore = create<TradingState>()(
   // Execution — hardwired to LIVE
   executionMode: 'LIVE' as ExecutionMode,
   executionResults: [],
+
+  backendEnvironment: null,
+  setBackendEnvironment: (env) => set({ backendEnvironment: env }),
 
   accountEnvironment: 'DEMO' as 'DEMO' | 'LIVE',
   liveExecutionArmed: false,

@@ -32,7 +32,7 @@ function App() {
   const {
     pipelineSignals, marketRows,
     scannerRunning, queueSignal, setBinanceStatus,
-    setAutoTradeActive, setBackendSignals
+    setAutoTradeActive, setBackendSignals, setBackendEnvironment
   } = useTradingStore();
 
   const { scanProgress, lastScanAt, scanError } = useScanner();
@@ -82,6 +82,9 @@ function App() {
         if (typeof status?.enabled === 'boolean') {
           setAutoTradeActive(status.enabled);
         }
+        if (status?.backendEnvironment) {
+          setBackendEnvironment(status.backendEnvironment);
+        }
       } catch (e) {
         // Backend unreachable — silently continue; UI degrades gracefully
       }
@@ -89,7 +92,7 @@ function App() {
     pollBackend();
     const inv = setInterval(pollBackend, 5000);
     return () => clearInterval(inv);
-  }, [setBackendSignals, setAutoTradeActive]);
+  }, [setBackendSignals, setAutoTradeActive, setBackendEnvironment]);
 
 
   // Mount the live websocket feeds

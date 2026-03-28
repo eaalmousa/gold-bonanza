@@ -36,6 +36,7 @@ export function getStrategyManifest() {
     supportedSides: s.supportedSides,
     defaultEnabled: s.defaultEnabled,
     canOverrideBtcRegime: s.canOverrideBtcRegime,
+    metadata:      s.metadata,
   }));
 }
 

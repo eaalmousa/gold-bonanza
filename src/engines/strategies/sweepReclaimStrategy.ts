@@ -24,6 +24,19 @@ export const sweepReclaimStrategy: StrategyEngine = {
   canOverrideBtcRegime: true,  // Sweeps indicate institutional flow reversal
   regimeOverrideMinScore: 15,
 
+  metadata: {
+    indicators: ['Pivot Highs/Lows', 'Volume SMA-20', 'RSI-14', 'ATR-14', 'Session Volume Profile (SVP)', 'Candle Structure Analysis'],
+    howItWorks: 'Detects liquidity sweep patterns where price deliberately takes out a known pivot level (triggering stop orders), then immediately reverses and reclaims above/below that level — classic institutional stop-hunt behavior.',
+    entryLogic: 'A candle must wick beyond a recent pivot low (LONG) or pivot high (SHORT) by the sweep tolerance, then close back above/below that level with a strong body — proving the sweep was absorbed by institutional flow.',
+    confirmationLogic: 'Volume must spike significantly above average on the sweep candle. Body-to-range ratio must confirm strong reclaim (not a weak close). Close position within the candle range must favor the reclaim direction.',
+    stopLossLogic: 'Stop placed below the sweep wick low (LONG) or above sweep wick high (SHORT) with a small buffer. This is the "invalidation" level — if price returns there, the sweep thesis is wrong.',
+    takeProfitLogic: 'R-multiple targets from the risk distance. Default 1.5R and 2.5R. Sweep reclaims often produce sharp moves as trapped traders unwind.',
+    bestConditions: 'Works best near established support/resistance levels with visible liquidity pools. Optimal in choppy or ranging conditions where stop hunts are common. Also effective at trend exhaustion points.',
+    style: 'SMART_MONEY',
+    regimeBehavior: 'CAN override BTC regime for high-confidence sweeps (≥15). Sweep reclaims often mark the exact reversal point against the prevailing trend.',
+    signalClass: 'SNIPER to SUPER_SNIPER depending on sweep depth, volume, and HTF alignment.'
+  },
+
   evaluate(ctx: StrategyContext): StrategySignal | null {
     const debugLog: string[] = [`[SweepReclaim] ${ctx.symbol}`];
     const modeKey = ctx.activeMode.key;

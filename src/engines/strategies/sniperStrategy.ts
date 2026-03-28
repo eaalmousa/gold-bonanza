@@ -20,6 +20,19 @@ export const sniperStrategy: StrategyEngine = {
   canOverrideBtcRegime: false,
   regimeOverrideMinScore: 999,  // Cannot override — pullbacks should respect macro
 
+  metadata: {
+    indicators: ['ZLSMA-20', 'EMA-20/50', 'RSI-14', 'ATR-14', 'Chandelier Exit', 'Session Volume Profile (SVP)', 'Volume SMA-20'],
+    howItWorks: 'Identifies high-probability pullback reversal entries at institutional value zones. Waits for price to retrace into the ZLSMA/EMA confluence zone with volume deceleration, then detects reversal candle patterns confirmed by RSI and Chandelier Exit alignment.',
+    entryLogic: 'Price must pull back into the EMA20/ZLSMA zone on the 15m timeframe while the 1H trend remains intact. A bullish/bearish reversal candle must form at the zone with body ratio and close position confirmation.',
+    confirmationLogic: 'RSI must be in a healthy range (not overbought/oversold extremes). Volume must show deceleration during pullback and acceleration on the reversal candle. SVP point-of-control alignment adds confluence.',
+    stopLossLogic: 'Stop placed below the recent swing low (LONG) or above swing high (SHORT), adjusted by ATR buffer. Safety cap prevents risk inflation beyond 2x intended risk.',
+    takeProfitLogic: 'TP1 and TP2 calculated as R-multiples of the stop distance. Default 1.5R and 2.5R, configurable via mode settings.',
+    bestConditions: 'Works best in trending markets with healthy pullbacks. Optimal during BTC trending regimes with clear EMA structure on the 1H timeframe.',
+    style: 'REVERSAL',
+    regimeBehavior: 'Strictly obeys BTC regime. Will not fire counter-trend signals. Score bonuses/penalties applied based on regime alignment.',
+    signalClass: 'Primarily SNIPER class. Can reach SUPER_SNIPER on high-score pullbacks with multi-factor confluence.'
+  },
+
   evaluate(ctx: StrategyContext): StrategySignal | null {
     // Delegate to existing engine — no logic change
     const signal = evaluateSniperSignal(

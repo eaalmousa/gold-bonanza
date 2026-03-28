@@ -24,6 +24,19 @@ export const trendContinuationStrategy: StrategyEngine = {
   canOverrideBtcRegime: false,  // Trend continuation must align with macro
   regimeOverrideMinScore: 999,
 
+  metadata: {
+    indicators: ['EMA-20/50 (15m)', 'EMA-50/200 (1H)', 'RSI-14', 'ATR-14', 'MACD Histogram', 'Session Volume Profile (SVP)', 'Volume SMA-20'],
+    howItWorks: 'Identifies pullback-to-EMA continuation entries within established trends. Waits for the 1H trend to be confirmed (EMA structure), then looks for 15m pullbacks to the EMA20/50 zone that hold and bounce with confirming candle structure.',
+    entryLogic: 'The 1H trend must be established (EMA50 > EMA200 for LONG, < for SHORT). On 15m, price must pull back and touch the EMA20 or EMA50 zone, then form a bounce candle that closes back above EMA20 (LONG) or below (SHORT).',
+    confirmationLogic: 'Bounce candle must close above the previous candle range (displacement). Volume should show at least average levels. MACD histogram should show momentum turning in the trend direction. RSI in healthy mid-range.',
+    stopLossLogic: 'Stop placed below the pullback low and EMA50 (LONG) or above pullback high and EMA50 (SHORT). Buffer added to avoid premature stops from wicks.',
+    takeProfitLogic: 'R-multiple targets: default 1.5R (TP1) and 2.5R (TP2). Trend continuation trades often have strong follow-through momentum.',
+    bestConditions: 'Best in clearly trending markets with orderly pullbacks. Optimal when BTC regime is trending in the same direction. Avoid during CHOP or CRASH regimes.',
+    style: 'TREND_FOLLOWING',
+    regimeBehavior: 'Strictly obeys BTC regime. Will not produce counter-trend signals. Automatically disabled during CHOP regime in non-aggressive modes.',
+    signalClass: 'SNIPER to EXECUTABLE class. Clean pullback continuations with strong trend structure are reliable entries.'
+  },
+
   evaluate(ctx: StrategyContext): StrategySignal | null {
     const debugLog: string[] = [`[TrendCont] ${ctx.symbol}`];
     const modeKey = ctx.activeMode.key;

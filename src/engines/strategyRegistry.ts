@@ -13,7 +13,7 @@
 // normalized signals for the existing pipeline.
 // ============================================
 
-import type { Signal, MarketRegime, ModeConfig } from '../types/trading';
+import type { Signal, MarketRegime } from '../types/trading';
 import type { StrategyContext } from './strategyContext';
 
 // ─── STRATEGY CATEGORIES ──────────────────────────────────────────────────────
@@ -108,6 +108,21 @@ export interface StrategySignal {
   breakLevel?:      number;
 }
 
+// ─── STRATEGY METADATA (drives description panel) ─────────────────────────────
+
+export interface StrategyMetadata {
+  indicators:         string[];
+  howItWorks:         string;
+  entryLogic:         string;
+  confirmationLogic:  string;
+  stopLossLogic:      string;
+  takeProfitLogic:    string;
+  bestConditions:     string;
+  style:              'TREND_FOLLOWING' | 'BREAKOUT' | 'REVERSAL' | 'SMART_MONEY';
+  regimeBehavior:     string;
+  signalClass:        string;
+}
+
 // ─── STRATEGY ENGINE INTERFACE ────────────────────────────────────────────────
 
 export interface StrategyEngine {
@@ -123,6 +138,9 @@ export interface StrategyEngine {
 
   /** Minimum score required to bypass BTC directional restriction */
   readonly regimeOverrideMinScore: number;
+
+  /** Rich metadata for description panel — auto-drives UI */
+  readonly metadata: StrategyMetadata;
 
   /**
    * Main evaluation entry point.
@@ -151,7 +169,7 @@ export interface RegimeGateResult {
 export function evaluateRegimeGate(
   regime: MarketRegime,
   btc4hTrend: 'UP' | 'DOWN' | 'RANGING',
-  btcRsi?: number,
+  _btcRsi?: number,
   modeKey: string = 'BALANCED'
 ): RegimeGateResult {
   // ── CRASH: Block everything, no overrides ──

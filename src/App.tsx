@@ -4,6 +4,7 @@ import LoginGate from './components/LoginGate';
 import Header from './components/Header';
 import SystemStatus from './components/SystemStatus';
 import StrategySelector from './components/StrategySelector';
+import BacktestPanel from './components/BacktestPanel';
 import AutoTraderConsole from './components/AutoTraderConsole';
 import PipelineSignals from './components/PipelineSignals';
 import MarketIntelligence from './components/MarketIntelligence';
@@ -101,6 +102,7 @@ function App() {
         <Header />
         <SystemStatus />
         <StrategySelector />
+        <BacktestPanel />
 
       <div className="terminal-panel" style={{ padding: '32px' }}>
         <AutoTraderConsole />

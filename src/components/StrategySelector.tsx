@@ -2,18 +2,17 @@
 // Strategy Selector — Gold Bonanza
 //
 // Compact, premium UI for selecting trading
-// strategies. Supports presets and individual
-// strategy toggling.
-//
-// Designed to sit inside the terminal without
-// disrupting the existing layout or identity.
+// strategies. Supports presets, individual
+// strategy toggling, and inline description
+// panel powered by registry metadata.
 // ============================================
 
 import { useState } from 'react';
 import { useTradingStore } from '../store/tradingStore';
 import { getStrategyManifest } from '../engines/strategyInit';
 import { STRATEGY_PRESETS } from '../engines/strategyRegistry';
-import { Layers, ChevronDown, ChevronUp, Zap, Target, TrendingUp, Crosshair } from 'lucide-react';
+import { Layers, ChevronDown, ChevronUp, Zap, Target, TrendingUp, Crosshair, BookOpen } from 'lucide-react';
+import StrategyDescription from './StrategyDescription';
 
 const CATEGORY_ICONS: Record<string, any> = {
   PULLBACK: Target,
@@ -36,6 +35,7 @@ export default function StrategySelector() {
   } = useTradingStore();
 
   const [expanded, setExpanded] = useState(false);
+  const [viewingDescId, setViewingDescId] = useState<string | null>(null);
   const manifest = getStrategyManifest();
 
   // Determine which strategies are currently enabled
@@ -171,88 +171,133 @@ export default function StrategySelector() {
                 const catColor = CATEGORY_COLORS[strategy.category] || '#94a3b8';
 
                 return (
-                  <div
-                    key={strategy.id}
-                    onClick={() => handleToggleStrategy(strategy.id)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-md)',
-                      border: `1px solid ${active ? catColor + '30' : 'rgba(255,255,255,0.04)'}`,
-                      background: active ? catColor + '08' : 'rgba(255,255,255,0.01)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      opacity: active ? 1 : 0.5
-                    }}
-                  >
-                    {/* Status indicator */}
-                    <div style={{
-                      width: 8, height: 8, borderRadius: '50%',
-                      background: active ? catColor : 'rgba(255,255,255,0.15)',
-                      boxShadow: active ? `0 0 8px ${catColor}40` : 'none',
-                      transition: 'all 0.3s'
-                    }} />
+                  <div key={strategy.id}>
+                    <div
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '10px 14px',
+                        borderRadius: viewingDescId === strategy.id ? 'var(--radius-md) var(--radius-md) 0 0' : 'var(--radius-md)',
+                        border: `1px solid ${active ? catColor + '30' : 'rgba(255,255,255,0.04)'}`,
+                        borderBottom: viewingDescId === strategy.id ? 'none' : undefined,
+                        background: active ? catColor + '08' : 'rgba(255,255,255,0.01)',
+                        transition: 'all 0.2s',
+                        opacity: active ? 1 : 0.5
+                      }}
+                    >
+                      {/* Toggle area */}
+                      <div
+                        onClick={() => handleToggleStrategy(strategy.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, cursor: 'pointer', minWidth: 0 }}
+                      >
+                        {/* Status indicator */}
+                        <div style={{
+                          width: 8, height: 8, borderRadius: '50%',
+                          background: active ? catColor : 'rgba(255,255,255,0.15)',
+                          boxShadow: active ? `0 0 8px ${catColor}40` : 'none',
+                          flexShrink: 0,
+                          transition: 'all 0.3s'
+                        }} />
 
-                    {/* Icon */}
-                    <IconComp size={14} color={active ? catColor : 'var(--text-muted)'} />
+                        {/* Icon */}
+                        <IconComp size={14} color={active ? catColor : 'var(--text-muted)'} />
 
-                    {/* Info */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        display: 'flex', alignItems: 'center', gap: 8
-                      }}>
-                        <span style={{
-                          fontSize: 11, fontWeight: 700,
-                          color: active ? 'var(--text-primary)' : 'var(--text-muted)'
-                        }}>
-                          {strategy.name}
-                        </span>
-                        <span style={{
-                          fontSize: 8, fontWeight: 700,
-                          padding: '2px 6px',
-                          borderRadius: 'var(--radius-full)',
-                          background: catColor + '15',
-                          color: catColor,
-                          letterSpacing: '0.1em'
-                        }}>
-                          {strategy.category}
-                        </span>
-                        {strategy.canOverrideBtcRegime && (
-                          <span style={{
+                        {/* Info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: 8
+                          }}>
+                            <span style={{
+                              fontSize: 11, fontWeight: 700,
+                              color: active ? 'var(--text-primary)' : 'var(--text-muted)'
+                            }}>
+                              {strategy.name}
+                            </span>
+                            <span style={{
+                              fontSize: 8, fontWeight: 700,
+                              padding: '2px 6px',
+                              borderRadius: 'var(--radius-full)',
+                              background: catColor + '15',
+                              color: catColor,
+                              letterSpacing: '0.1em'
+                            }}>
+                              {strategy.category}
+                            </span>
+                            {strategy.canOverrideBtcRegime && (
+                              <span style={{
+                                fontSize: 7, fontWeight: 800,
+                                padding: '2px 5px',
+                                borderRadius: 'var(--radius-full)',
+                                background: 'rgba(245,158,11,0.1)',
+                                color: '#f59e0b',
+                                letterSpacing: '0.1em'
+                              }}>
+                                REGIME OVERRIDE
+                              </span>
+                            )}
+                          </div>
+                          <div style={{
+                            fontSize: 9, color: 'var(--text-muted)',
+                            marginTop: 2, lineHeight: 1.3,
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                          }}>
+                            {strategy.description}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Sides */}
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {strategy.supportedSides.map(s => (
+                          <span key={s} style={{
                             fontSize: 7, fontWeight: 800,
                             padding: '2px 5px',
                             borderRadius: 'var(--radius-full)',
-                            background: 'rgba(245,158,11,0.1)',
-                            color: '#f59e0b',
-                            letterSpacing: '0.1em'
+                            background: s === 'LONG' ? 'rgba(52,211,153,0.1)' : 'rgba(244,63,94,0.1)',
+                            color: s === 'LONG' ? '#34d399' : '#f43f5e'
                           }}>
-                            REGIME OVERRIDE
+                            {s}
                           </span>
-                        )}
+                        ))}
                       </div>
-                      <div style={{
-                        fontSize: 9, color: 'var(--text-muted)',
-                        marginTop: 2, lineHeight: 1.3,
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                      }}>
-                        {strategy.description}
-                      </div>
+
+                      {/* Info button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewingDescId(viewingDescId === strategy.id ? null : strategy.id);
+                        }}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          width: 26, height: 26, borderRadius: 'var(--radius-full)',
+                          background: viewingDescId === strategy.id ? 'rgba(201,176,119,0.15)' : 'rgba(255,255,255,0.03)',
+                          border: `1px solid ${viewingDescId === strategy.id ? 'rgba(201,176,119,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                          color: viewingDescId === strategy.id ? 'var(--gold)' : 'var(--text-muted)',
+                          cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0
+                        }}
+                        title="View strategy details"
+                      >
+                        <BookOpen size={11} />
+                      </button>
                     </div>
 
-                    {/* Sides */}
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {strategy.supportedSides.map(s => (
-                        <span key={s} style={{
-                          fontSize: 7, fontWeight: 800,
-                          padding: '2px 5px',
-                          borderRadius: 'var(--radius-full)',
-                          background: s === 'LONG' ? 'rgba(52,211,153,0.1)' : 'rgba(244,63,94,0.1)',
-                          color: s === 'LONG' ? '#34d399' : '#f43f5e'
-                        }}>
-                          {s}
-                        </span>
-                      ))}
-                    </div>
+                    {/* Inline Description Panel */}
+                    {viewingDescId === strategy.id && strategy.metadata && (
+                      <div style={{
+                        borderRadius: '0 0 var(--radius-md) var(--radius-md)',
+                        border: `1px solid ${catColor}30`,
+                        borderTop: `1px solid ${catColor}15`,
+                        overflow: 'hidden'
+                      }}>
+                        <StrategyDescription
+                          name={strategy.name}
+                          category={strategy.category}
+                          description={strategy.description}
+                          canOverrideBtcRegime={strategy.canOverrideBtcRegime}
+                          metadata={strategy.metadata}
+                          onClose={() => setViewingDescId(null)}
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })}

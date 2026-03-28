@@ -87,6 +87,7 @@ export interface BacktestTrade {
   exitBar: number;
   holdBars: number;
   regime: string;
+  regimeAlignment: string; // V2 Analytics: e.g. 'ALIGNED' or 'COUNTER_REGIME_OVERRIDE'
   tp1Hit?: boolean;       // V2: whether TP1 was reached
   trailingExit?: boolean; // V2: whether trailing stop closed remaining
 }
@@ -265,7 +266,6 @@ function simulateTradeEnhanced(
   let phase: 'PRE_TP1' | 'TRAILING' = 'PRE_TP1';
   let remainingQty = qty;
   let totalFees = entryFee;
-  let tp1Pnl = 0;
   let trailingStop = stopLoss; // starts at SL, moves to breakeven on TP1 hit
   let bestPrice = entryPrice;  // tracks best favorable price for trail tightening
   const trailStepThreshold = atr * 0.5; // tighten every 0.5 ATR of favorable move
@@ -294,7 +294,6 @@ function simulateTradeEnhanced(
         // TP1 hit: close 50%, enter trailing phase
         const closeQty = qty * 0.5;
         const tp1Fee = takeProfit1 * closeQty * (feePct / 100);
-        tp1Pnl = (takeProfit1 - entryPrice) * dir * closeQty - tp1Fee;
         totalFees += tp1Fee;
         remainingQty = qty - closeQty;
         phase = 'TRAILING';
@@ -331,8 +330,6 @@ function simulateTradeEnhanced(
       if (trailHit && tp2Hit) {
         // Both hit same candle — use trail stop (conservative for remaining)
         const exitFee = trailingStop * remainingQty * (feePct / 100);
-        const trailPnl = (trailingStop - entryPrice) * dir * remainingQty - exitFee;
-        const netPnl = tp1Pnl + trailPnl;
         totalFees += exitFee;
         const weightedExit = (takeProfit1 + trailingStop) / 2;
         return { exitPrice: weightedExit, exitBar: i, outcome: 'PARTIAL_WIN', feePaid: totalFees, tp1Hit: true, trailingExit: true };
@@ -365,7 +362,6 @@ function simulateTradeEnhanced(
   if (phase === 'TRAILING') {
     // TP1 was hit, timeout on remaining
     const weightedExit = (takeProfit1 + exitPrice) / 2;
-    const trailPnl = (exitPrice - entryPrice) * dir * remainingQty - exitFee;
     return { exitPrice: weightedExit, exitBar: lastBar, outcome: 'PARTIAL_WIN', feePaid: totalFees, tp1Hit: true, trailingExit: false };
   }
   // Never hit TP1
@@ -431,7 +427,7 @@ export async function runBacktest(
   const openTrades: Map<string, {
     entryBar: number; side: 'LONG' | 'SHORT'; entryPrice: number;
     sl: number; tp1: number; tp2: number; qty: number;
-    strategyId: string; regime: string; atr: number;
+    strategyId: string; regime: string; regimeAlignment: string; atr: number;
   }> = new Map();
   let globalBarCounter = 0;
 
@@ -502,6 +498,7 @@ export async function runBacktest(
           pnl: netPnl, pnlPct: (netPnl / balance) * 100, feePaid: result.feePaid,
           outcome: result.outcome, entryBar: trade.entryBar, exitBar: result.exitBar,
           holdBars: result.exitBar - trade.entryBar, regime: trade.regime,
+          regimeAlignment: trade.regimeAlignment,
           tp1Hit: result.tp1Hit, trailingExit: result.trailingExit
         });
 
@@ -579,7 +576,8 @@ export async function runBacktest(
         openTrades.set(sym, {
           entryBar: entryBarIdx, side: sig.side, entryPrice: fillPrice,
           sl: sig.stopLoss, tp1: sig.takeProfit, tp2: tp2,
-          qty: sig.qty, strategyId: sig.strategyId, regime: regimeLabel, atr
+          qty: sig.qty, strategyId: sig.strategyId, regime: regimeLabel,
+          regimeAlignment: sig.regimeAlignment, atr
         });
         break;
       }
@@ -609,7 +607,8 @@ export async function runBacktest(
       takeProfit: trade.tp1, qty: trade.qty, pnl: netPnl,
       pnlPct: (netPnl / balance) * 100, feePaid: fee,
       outcome: 'TIMEOUT', entryBar: trade.entryBar, exitBar: lastBar,
-      holdBars: lastBar - trade.entryBar, regime: trade.regime
+      holdBars: lastBar - trade.entryBar, regime: trade.regime,
+      regimeAlignment: trade.regimeAlignment
     });
     equity.push({ bar: lastBar, balance, time: symKlines[lastBar]?.openTime || 0 });
   }

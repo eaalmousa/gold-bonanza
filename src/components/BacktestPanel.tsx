@@ -12,6 +12,7 @@ import { getStrategyManifest } from '../engines/strategyInit';
 import { runBacktest, DEFAULT_BACKTEST_CONFIG, SYMBOL_PRESETS } from '../engines/backtestEngine';
 import type { BacktestResult, BacktestConfig, SymbolPresetKey, EntryModel, ExitMode } from '../engines/backtestEngine';
 import { BarChart3, Play, Loader2, AlertTriangle, Info, Settings2, ChevronDown, ChevronUp } from 'lucide-react';
+import BacktestAnalytics from './BacktestAnalytics';
 
 export default function BacktestPanel() {
   const { enabledStrategies, strategyPreset } = useTradingStore();
@@ -278,6 +279,9 @@ export default function BacktestPanel() {
               </div>
             )}
           </div>
+
+          {/* Additive Analytics Layer */}
+          <BacktestAnalytics trades={result.trades} />
         </div>
       )}
     </div>

@@ -11,9 +11,10 @@ import { useTradingStore } from '../store/tradingStore';
 import { getStrategyManifest } from '../engines/strategyInit';
 import { runBacktest, DEFAULT_BACKTEST_CONFIG, SYMBOL_PRESETS } from '../engines/backtestEngine';
 import type { BacktestResult, BacktestConfig, SymbolPresetKey, EntryModel, ExitMode } from '../engines/backtestEngine';
-import { BarChart3, Play, Loader2, AlertTriangle, Info, Settings2, ChevronDown, ChevronUp, Save, Library, CheckSquare, Square, Trash2 } from 'lucide-react';
+import { BarChart3, Play, Loader2, AlertTriangle, Info, Settings2, ChevronDown, ChevronUp, Save, Library } from 'lucide-react';
 import BacktestAnalytics from './BacktestAnalytics';
 import BacktestComparison from './BacktestComparison';
+import BacktestLeaderboard from './BacktestLeaderboard';
 import { useBacktestStore } from '../store/backtestStore';
 
 export default function BacktestPanel() {
@@ -207,73 +208,12 @@ export default function BacktestPanel() {
             )}
           </div>
           
-          {snapshots.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 10 }}>No saved snapshots found. Run a backtest and click "Save Snapshot".</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {snapshots.map(snap => {
-                const sStats = snap.result.stats;
-                const isSelected = selectedSnaps.includes(snap.id);
-                const disabledForSelect = !isSelected && selectedSnaps.length >= 2;
-                return (
-                  <div key={snap.id} style={{
-                    display: 'flex', alignItems: 'center', padding: '12px 16px',
-                    borderRadius: 'var(--radius-md)', background: isSelected ? 'rgba(201,176,119,0.03)' : 'rgba(255,255,255,0.02)',
-                    border: `1px solid ${isSelected ? 'rgba(201,176,119,0.2)' : 'rgba(255,255,255,0.04)'}`,
-                    transition: 'all 0.2s', gap: 16
-                  }}>
-                    <button
-                      onClick={() => toggleSnapSelect(snap.id)}
-                      disabled={disabledForSelect}
-                      style={{
-                        background: 'transparent', border: 'none', cursor: disabledForSelect ? 'not-allowed' : 'pointer',
-                        color: isSelected ? 'var(--gold)' : disabledForSelect ? 'rgba(255,255,255,0.1)' : 'var(--text-muted)',
-                        display: 'flex', alignItems: 'center'
-                      }}
-                    >
-                      {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
-                    </button>
-                    
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{snap.name}</div>
-                      <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>{new Date(snap.timestamp).toLocaleString()} • {snap.result.config.symbolPreset} • {snap.result.config.entryModel} • {snap.result.config.exitMode}</div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 24, paddingRight: 16, borderRight: '1px solid rgba(255,255,255,0.05)' }}>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 8, color: 'var(--text-muted)', marginBottom: 2 }}>P&L</div>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: sStats.netPnl >= 0 ? '#34d399' : '#f43f5e' }}>${sStats.netPnl.toFixed(2)}</div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 8, color: 'var(--text-muted)', marginBottom: 2 }}>WIN RATE</div>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: sStats.winRate >= 50 ? '#34d399' : '#f59e0b' }}>{sStats.winRate.toFixed(1)}%</div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 8, color: 'var(--text-muted)', marginBottom: 2 }}>TRADES</div>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-primary)' }}>{sStats.totalTrades}</div>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        deleteSnapshot(snap.id);
-                        setSelectedSnaps(selectedSnaps.filter(id => id !== snap.id));
-                      }}
-                      style={{
-                        background: 'transparent', border: 'none', color: '#f43f5e', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', opacity: 0.7
-                      }}
-                      onMouseOver={e => e.currentTarget.style.opacity = '1'}
-                      onMouseOut={e => e.currentTarget.style.opacity = '0.7'}
-                      title="Delete Snapshot"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <BacktestLeaderboard 
+            snapshots={snapshots}
+            selectedSnaps={selectedSnaps}
+            toggleSnapSelect={toggleSnapSelect}
+            deleteSnapshot={deleteSnapshot}
+          />
 
           {/* Comparison View Mount */}
           {selectedSnaps.length === 2 && (

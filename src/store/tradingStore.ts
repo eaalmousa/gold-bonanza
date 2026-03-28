@@ -49,6 +49,12 @@ interface TradingState {
   setAccountEnvironment: (env: 'DEMO' | 'LIVE') => void;
   setLiveExecutionArmed: (armed: boolean) => void;
 
+  // Strategy Selection
+  enabledStrategies: string[];
+  strategyPreset: string;
+  setEnabledStrategies: (ids: string[]) => void;
+  setStrategyPreset: (preset: string) => void;
+
   // Deal status
   dealStatus: Record<string, string>;
 
@@ -146,6 +152,10 @@ export const useTradingStore = create<TradingState>()(
   accountEnvironment: 'DEMO' as 'DEMO' | 'LIVE',
   liveExecutionArmed: false,
 
+  // Strategy selection defaults — all strategies ON
+  enabledStrategies: [] as string[],  // empty = ALL enabled
+  strategyPreset: 'ALL',
+
 
   setBalance: (balance) => set({ balance }),
 
@@ -162,6 +172,9 @@ export const useTradingStore = create<TradingState>()(
 
   setAccountEnvironment: (env) => set({ accountEnvironment: env, liveExecutionArmed: false }),
   setLiveExecutionArmed: (armed) => set({ liveExecutionArmed: armed }),
+
+  setEnabledStrategies: (ids) => set({ enabledStrategies: ids }),
+  setStrategyPreset: (preset) => set({ strategyPreset: preset }),
 
   setSymbols: (symbols) => set({ symbols }),
   setDataLive: (isDataLive) => set({ isDataLive }),
@@ -520,7 +533,9 @@ export const useTradingStore = create<TradingState>()(
         isAutoTradeActive: state.isAutoTradeActive,
         isScannerActive: state.isScannerActive,
         balance: state.balance,
-        accountEnvironment: state.accountEnvironment
+        accountEnvironment: state.accountEnvironment,
+        enabledStrategies: state.enabledStrategies,
+        strategyPreset: state.strategyPreset
       }),
       onRehydrateStorage: () => (state) => {
         if (state && (state as any).activeModeId) {

@@ -41,7 +41,7 @@ export interface BreakoutConfig {
 }
 
 export interface Signal {
-  kind: 'SNIPER' | 'SUPER_SNIPER' | 'BREAKOUT' | 'PREDICTIVE';
+  kind: 'SNIPER' | 'SUPER_SNIPER' | 'BREAKOUT' | 'PREDICTIVE' | 'SWEEP' | 'TREND';
   side: 'LONG' | 'SHORT';
   score: number;
   reasons: string[];
@@ -87,7 +87,7 @@ export interface SignalRow {
 export interface UnifiedTrace {
   id: string;
   symbol: string;
-  engine: 'SNIPER' | 'SUPER_SNIPER' | 'BREAKOUT' | 'PREDICTIVE';
+  engine: 'SNIPER' | 'SUPER_SNIPER' | 'BREAKOUT' | 'PREDICTIVE' | 'SWEEP' | 'TREND';
   status: 'ACCEPTED' | 'REJECTED' | 'PENDING' | 'INVALIDATED' | 'EXPIRED';
   score?: number;
   entryType?: string;

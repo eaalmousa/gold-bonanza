@@ -3,6 +3,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import LoginGate from './components/LoginGate';
 import Header from './components/Header';
 import SystemStatus from './components/SystemStatus';
+import StrategySelector from './components/StrategySelector';
 import AutoTraderConsole from './components/AutoTraderConsole';
 import PipelineSignals from './components/PipelineSignals';
 import MarketIntelligence from './components/MarketIntelligence';
@@ -21,6 +22,10 @@ import { useLiveFeeds } from './hooks/useLiveFeeds';
 import { useTradingStore } from './store/tradingStore';
 import { Activity, AlertTriangle, Loader2 } from 'lucide-react';
 import { api } from './services/api';
+import { initializeStrategies } from './engines/strategyInit';
+
+// Initialize strategy registry on module load
+initializeStrategies();
 
 function App() {
   const {
@@ -95,6 +100,7 @@ function App() {
       <div className="sections-stack" style={{ maxWidth: 1600, margin: '0 auto' }}>
         <Header />
         <SystemStatus />
+        <StrategySelector />
 
       <div className="terminal-panel" style={{ padding: '32px' }}>
         <AutoTraderConsole />

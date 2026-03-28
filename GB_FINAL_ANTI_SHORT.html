@@ -416,6 +416,24 @@
             وضع المخاطرة (Conservative / Balanced / Aggressive)
           </div>
         </div>
+
+        <div class="mt-4 flex flex-col md:flex-row items-center justify-between gap-6">
+          <div class="flex gap-3 flex-row-reverse">
+            <button id="env-live"
+              class="px-6 py-3 rounded-full text-[11px] font-black tracking-[0.35em] uppercase border border-white/10 bg-black/50 hover:bg-emerald-500/15 transition">
+              LIVE
+            </button>
+            <button id="env-demo"
+              class="px-6 py-3 rounded-full text-[11px] font-black tracking-[0.35em] uppercase border border-white/10 bg-black/50 hover:bg-sky-500/15 transition">
+              DEMO
+            </button>
+          </div>
+          <div class="text-[11px] text-slate-500 font-black tracking-widest flex items-center gap-2">
+            <span id="live-arm-status" class="px-2 py-0.5 rounded-full border border-rose-500/30 text-rose-500 bg-rose-500/10 mr-1 tracking-[0.2em] font-mono shadow-[0_0_10px_rgba(244,63,94,0.15)] transition-all">LIVE ARM: OFF</span>
+            <span class="text-white/20 mx-1">|</span>
+            Environment: <span id="env-display-text" class="text-sky-400">DEMO</span>
+          </div>
+        </div>
       </div>
 
       <div class="w-full lg:w-1/3 grid grid-cols-2 gap-8 text-right font-black uppercase tracking-tighter">
@@ -576,8 +594,55 @@ const DEFAULT_SYMBOLS = [
 let SYMBOLS = [...DEFAULT_SYMBOLS];
 
 const METAL_SYMBOLS = ['XAUUSDT', 'XAGUSDT'];
+    const ACCOUNT_ENVIRONMENTS = {
+      LIVE: {
+        key: 'LIVE',
+        label: 'LIVE ACCOUNT',
+        badgeClass: 'emerald',
+        spotBase: 'https://api.binance.com',
+        futuresBase: 'https://fapi.binance.com'
+      },
+      DEMO: {
+        key: 'DEMO',
+        label: 'DEMO ACCOUNT',
+        badgeClass: 'sky',
+        spotBase: 'https://demo-api.binance.com',
+        futuresBase: 'https://demo-fapi.binance.com'
+      }
+    };
+    let ACTIVE_ACCOUNT = ACCOUNT_ENVIRONMENTS.DEMO;
+    let LIVE_EXECUTION_ARMED = false;
+
+    // Hard execution routing guard (scaffolding for future execution layers)
+    function canExecuteLiveOrder() {
+      if (ACTIVE_ACCOUNT.key === 'LIVE') {
+        if (LIVE_EXECUTION_ARMED !== true) {
+          console.warn("EXECUTION BLOCKED: ACTIVE_ACCOUNT is LIVE but LIVE_EXECUTION_ARMED is false. Real execution prevented.");
+          return false;
+        }
+      }
+      return true;
+    }
+
     const SPOT_API = 'https://api.binance.com';
     const FUTURES_API = 'https://fapi.binance.com';
+
+    function setAccountEnvironment(envKey) {
+      const env = ACCOUNT_ENVIRONMENTS[envKey];
+      if (!env) return;
+      ACTIVE_ACCOUNT = env;
+      
+      // Auto-disarm execution when switching environment
+      LIVE_EXECUTION_ARMED = false;
+      
+      try {
+        localStorage.setItem('gb_account_environment', envKey);
+      } catch (e) {
+        console.warn('localStorage not available', e);
+      }
+      
+      syncGlobalSystem();
+    }
 
     // Risk modes: thresholds tuned for more signals (Aggressive) vs safer (Conservative)
     const MODES = {
@@ -1978,6 +2043,64 @@ function renderActiveOps() {
       if (ACTIVE_MODE.key === 'AGGRESSIVE' && btnA) btnA.className = activeClass;
       if (ACTIVE_MODE.key === 'BALANCED' && btnB) btnB.className = activeClass;
       if (ACTIVE_MODE.key === 'CONSERVATIVE' && btnC) btnC.className = activeClass;
+
+      // Environment button styling
+      const btnLive = document.getElementById('env-live');
+      const btnDemo = document.getElementById('env-demo');
+      const resetEnvBtn = (b) => {
+        if (!b) return;
+        b.className = "px-6 py-3 rounded-full text-[11px] font-black tracking-[0.35em] uppercase border border-white/10 bg-black/50 transition";
+      };
+      resetEnvBtn(btnLive); resetEnvBtn(btnDemo);
+
+      if (ACTIVE_ACCOUNT.key === 'LIVE' && btnLive) {
+        btnLive.className = "px-6 py-3 rounded-full text-[11px] font-black tracking-[0.35em] uppercase border border-emerald-500/40 bg-emerald-500/20 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.25)] transition";
+      }
+      if (ACTIVE_ACCOUNT.key === 'DEMO' && btnDemo) {
+        btnDemo.className = "px-6 py-3 rounded-full text-[11px] font-black tracking-[0.35em] uppercase border border-sky-500/40 bg-sky-500/20 text-sky-300 shadow-[0_0_20px_rgba(14,165,233,0.25)] transition";
+      }
+
+      const envDisplay = document.getElementById('env-display-text');
+      if (envDisplay) {
+        envDisplay.innerText = ACTIVE_ACCOUNT.key === 'LIVE' ? 'LIVE' : 'DEMO';
+        envDisplay.className = ACTIVE_ACCOUNT.key === 'LIVE' ? 'text-emerald-400 drop-shadow-[0_0_5px_rgba(16,185,129,0.8)]' : 'text-sky-400 drop-shadow-[0_0_5px_rgba(14,165,233,0.8)]';
+      }
+
+      // Live Arm Indicator styling
+      const armStatus = document.getElementById('live-arm-status');
+      if (armStatus) {
+        if (LIVE_EXECUTION_ARMED) {
+          armStatus.innerText = 'LIVE ARM: ON';
+          armStatus.className = 'px-2 py-0.5 rounded-full border border-emerald-500/40 text-emerald-400 bg-emerald-500/20 mr-1 tracking-[0.2em] font-mono shadow-[0_0_15px_rgba(16,185,129,0.35)] transition-all';
+        } else {
+          armStatus.innerText = 'LIVE ARM: OFF';
+          armStatus.className = 'px-2 py-0.5 rounded-full border border-rose-500/30 text-rose-500 bg-rose-500/10 mr-1 tracking-[0.2em] font-mono shadow-[0_0_10px_rgba(244,63,94,0.15)] transition-all';
+        }
+      }
+
+      // Status Badge Update
+      const statusBadge = document.getElementById('status-badge');
+      if (statusBadge) {
+        if (ACTIVE_ACCOUNT.key === 'LIVE') {
+          statusBadge.className = "px-6 py-3 rounded-full bg-emerald-500/5 text-emerald-400 text-[11px] font-black border border-emerald-500/20 flex items-center gap-4 shadow-lg transition-all";
+          statusBadge.innerHTML = `
+            <span class="relative flex h-3 w-3">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-600 shadow-[0_0_15px_#10b981]"></span>
+            </span>
+            ${ACTIVE_ACCOUNT.label}
+          `;
+        } else {
+          statusBadge.className = "px-6 py-3 rounded-full bg-sky-500/5 text-sky-400 text-[11px] font-black border border-sky-500/20 flex items-center gap-4 shadow-lg transition-all";
+          statusBadge.innerHTML = `
+            <span class="relative flex h-3 w-3">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-3 w-3 bg-sky-600 shadow-[0_0_15px_#0ea5e9]"></span>
+            </span>
+            ${ACTIVE_ACCOUNT.label}
+          `;
+        }
+      }
     }
 
     // =========================
@@ -2091,6 +2214,21 @@ function renderActiveOps() {
   if (bA) bA.addEventListener('click', () => setMode('AGGRESSIVE'));
   if (bB) bB.addEventListener('click', () => setMode('BALANCED'));
   if (bC) bC.addEventListener('click', () => setMode('CONSERVATIVE'));
+
+  // Account Environment Init
+  const bLive = document.getElementById('env-live');
+  const bDemo = document.getElementById('env-demo');
+  if (bLive) bLive.addEventListener('click', () => setAccountEnvironment('LIVE'));
+  if (bDemo) bDemo.addEventListener('click', () => setAccountEnvironment('DEMO'));
+
+  try {
+    const savedEnv = localStorage.getItem('gb_account_environment');
+    if (savedEnv && ACCOUNT_ENVIRONMENTS[savedEnv]) {
+      ACTIVE_ACCOUNT = ACCOUNT_ENVIRONMENTS[savedEnv];
+    }
+  } catch (e) {
+    console.warn('Could not read account env from localStorage', e);
+  }
 
   // Balance input
   const balanceInput = document.getElementById('balance');

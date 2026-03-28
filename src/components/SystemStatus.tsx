@@ -9,6 +9,7 @@ import { getCanonicalPositionCount } from '../utils/positionCount';
 export default function SystemStatus() {
   const { 
     activeMode, setMode,
+    accountEnvironment, setAccountEnvironment, liveExecutionArmed,
     activeTrades: rawTrades,
     symbols: rawSymbols,
     isScannerActive, setScannerActive,
@@ -173,6 +174,56 @@ export default function SystemStatus() {
               </span>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Middle row: Environment Switch */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        flexWrap: 'wrap', gap: 20, marginBottom: 24, paddingBottom: 24, borderBottom: '1px solid var(--border-subtle)'
+      }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button 
+            onClick={() => setAccountEnvironment('LIVE')}
+            style={{
+              padding: '10px 20px', borderRadius: 'var(--radius-full)', fontSize: 11, fontWeight: 900, letterSpacing: '0.35em',
+              border: `1px solid ${accountEnvironment === 'LIVE' ? 'rgba(16,185,129,0.5)' : 'rgba(255,255,255,0.1)'}`,
+              background: accountEnvironment === 'LIVE' ? 'rgba(16,185,129,0.15)' : 'rgba(0,0,0,0.5)',
+              color: accountEnvironment === 'LIVE' ? '#34d399' : 'var(--text-primary)',
+              boxShadow: accountEnvironment === 'LIVE' ? '0 0 20px rgba(16,185,129,0.2)' : 'none',
+              cursor: 'pointer', transition: 'all 0.3s'
+            }}
+          >LIVE</button>
+          <button 
+            onClick={() => setAccountEnvironment('DEMO')}
+            style={{
+              padding: '10px 20px', borderRadius: 'var(--radius-full)', fontSize: 11, fontWeight: 900, letterSpacing: '0.35em',
+              border: `1px solid ${accountEnvironment === 'DEMO' ? 'rgba(14,165,233,0.5)' : 'rgba(255,255,255,0.1)'}`,
+              background: accountEnvironment === 'DEMO' ? 'rgba(14,165,233,0.15)' : 'rgba(0,0,0,0.5)',
+              color: accountEnvironment === 'DEMO' ? '#7dd3fc' : 'var(--text-primary)',
+              boxShadow: accountEnvironment === 'DEMO' ? '0 0 20px rgba(14,165,233,0.2)' : 'none',
+              cursor: 'pointer', transition: 'all 0.3s'
+            }}
+          >DEMO</button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ 
+            fontSize: 11, fontWeight: 900, letterSpacing: '0.2em', padding: '4px 10px', borderRadius: 'var(--radius-full)', 
+            border: `1px solid ${liveExecutionArmed ? 'rgba(16,185,129,0.3)' : 'rgba(244,63,94,0.3)'}`,
+            background: liveExecutionArmed ? 'rgba(16,185,129,0.1)' : 'rgba(244,63,94,0.1)',
+            color: liveExecutionArmed ? 'var(--green)' : 'var(--red)',
+            textShadow: liveExecutionArmed ? '0 0 5px rgba(16,185,129,0.5)' : '0 0 5px rgba(244,63,94,0.5)',
+            transition: 'all 0.3s'
+          }}>
+            LIVE ARM: {liveExecutionArmed ? 'ON' : 'OFF'}
+          </span>
+          <span style={{ color: 'rgba(255,255,255,0.2)' }}>|</span>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 900, letterSpacing: '0.2em' }}>
+            Environment: <span style={{ 
+              color: accountEnvironment === 'LIVE' ? 'var(--green)' : '#38bdf8',
+              textShadow: accountEnvironment === 'LIVE' ? '0 0 5px rgba(16,185,129,0.5)' : '0 0 5px rgba(56,189,248,0.5)'
+            }}>{accountEnvironment}</span>
+          </span>
         </div>
       </div>
 

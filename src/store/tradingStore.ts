@@ -42,6 +42,12 @@ interface TradingState {
   // Execution — always LIVE
   executionMode: ExecutionMode;
   executionResults: ExecutionResult[];
+  
+  // Account Environment
+  accountEnvironment: 'DEMO' | 'LIVE';
+  liveExecutionArmed: boolean;
+  setAccountEnvironment: (env: 'DEMO' | 'LIVE') => void;
+  setLiveExecutionArmed: (armed: boolean) => void;
 
   // Deal status
   dealStatus: Record<string, string>;
@@ -137,6 +143,9 @@ export const useTradingStore = create<TradingState>()(
   executionMode: 'LIVE' as ExecutionMode,
   executionResults: [],
 
+  accountEnvironment: 'DEMO' as 'DEMO' | 'LIVE',
+  liveExecutionArmed: false,
+
 
   setBalance: (balance) => set({ balance }),
 
@@ -150,6 +159,9 @@ export const useTradingStore = create<TradingState>()(
     }
     set({ activeMode: mode, activeTrades: trades });
   },
+
+  setAccountEnvironment: (env) => set({ accountEnvironment: env, liveExecutionArmed: false }),
+  setLiveExecutionArmed: (armed) => set({ liveExecutionArmed: armed }),
 
   setSymbols: (symbols) => set({ symbols }),
   setDataLive: (isDataLive) => set({ isDataLive }),
@@ -507,7 +519,8 @@ export const useTradingStore = create<TradingState>()(
         activeModeId: state.activeMode.key,
         isAutoTradeActive: state.isAutoTradeActive,
         isScannerActive: state.isScannerActive,
-        balance: state.balance
+        balance: state.balance,
+        accountEnvironment: state.accountEnvironment
       }),
       onRehydrateStorage: () => (state) => {
         if (state && (state as any).activeModeId) {

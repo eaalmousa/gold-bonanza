@@ -153,22 +153,29 @@ function simulateTrade(
   for (let i = entryBarIdx + 1; i < Math.min(entryBarIdx + maxHoldBars, klines15m.length); i++) {
     const candle = klines15m[i];
 
-    // Check SL hit
-    if (side === 'LONG' && candle.low <= stopLoss) {
-      const exitFee = stopLoss * qty * (feePct / 100);
-      return { exitPrice: stopLoss, exitBar: i, outcome: 'LOSS', feePaid: entryFee + exitFee };
-    }
-    if (side === 'SHORT' && candle.high >= stopLoss) {
+    // ── CANDLE CONFLICT RULE ──────────────────────────────────────
+    // If a single candle touches BOTH SL and TP, we must choose one.
+    // Rule: SL is assumed to be hit first (pessimistic/conservative).
+    // Rationale: in real markets, adverse moves tend to happen faster
+    // than favorable ones (gap risk, liquidation cascades). This
+    // avoids overfitting to optimistic backtest outcomes.
+    // ──────────────────────────────────────────────────────────────
+
+    const slHit = side === 'LONG' ? candle.low <= stopLoss : candle.high >= stopLoss;
+    const tpHit = side === 'LONG' ? candle.high >= takeProfit : candle.low <= takeProfit;
+
+    if (slHit && tpHit) {
+      // Both touched on same candle — SL wins (conservative)
       const exitFee = stopLoss * qty * (feePct / 100);
       return { exitPrice: stopLoss, exitBar: i, outcome: 'LOSS', feePaid: entryFee + exitFee };
     }
 
-    // Check TP hit
-    if (side === 'LONG' && candle.high >= takeProfit) {
-      const exitFee = takeProfit * qty * (feePct / 100);
-      return { exitPrice: takeProfit, exitBar: i, outcome: 'WIN', feePaid: entryFee + exitFee };
+    if (slHit) {
+      const exitFee = stopLoss * qty * (feePct / 100);
+      return { exitPrice: stopLoss, exitBar: i, outcome: 'LOSS', feePaid: entryFee + exitFee };
     }
-    if (side === 'SHORT' && candle.low <= takeProfit) {
+
+    if (tpHit) {
       const exitFee = takeProfit * qty * (feePct / 100);
       return { exitPrice: takeProfit, exitBar: i, outcome: 'WIN', feePaid: entryFee + exitFee };
     }
@@ -301,11 +308,9 @@ export async function runBacktest(
           holdBars: result.exitBar - trade.entryBar, regime: trade.regime
         });
 
-        if (config.compounding) {
-          balance += netPnl;
-        } else {
-          balance += netPnl;
-        }
+        // Balance always updates — compounding means next trade sizes from new balance
+        // (which happens naturally since balance is passed to buildStrategyContext)
+        balance += netPnl;
 
         if (balance > peakBalance) peakBalance = balance;
         const dd = peakBalance - balance;
@@ -438,23 +443,29 @@ function computeStats(
 function buildAssumptions(config: BacktestConfig): string[] {
   return [
     `Lookback: ${config.lookbackDays} days`,
-    `Symbols tested: ${config.symbols.length}`,
-    `Timeframes: 15m (entry), 1H (context/bias)`,
-    `Entry: at signal price (no slippage model beyond flat %)`,
-    `Stop-loss: as computed by strategy engine`,
-    `Take-profit: TP1 at ${config.tp1RR}R`,
-    `Trailing stop: not simulated in backtest`,
-    `Fee: ${config.feePct}% per side (${config.feePct * 2}% round trip)`,
-    `Slippage: ${config.slippagePct}% per side`,
-    `Leverage: ${config.leverage}x (affects sizing, not PnL calc)`,
-    `Compounding: ${config.compounding ? 'ON' : 'OFF'}`,
+    `Symbols tested: ${config.symbols.length} (${config.symbols.slice(0, 5).join(', ')}${config.symbols.length > 5 ? '...' : ''})`,
+    `Timeframes: 15m (entry signals), 1H (context/bias)`,
+    `Evaluation: every 4×15m bars (1 hour intervals)`,
+    `Entry: at strategy signal price on evaluation bar (not next-bar open)`,
+    `Exit: fixed TP1/SL only — live exit engine NOT replicated`,
+    `Candle conflict: if SL and TP both touched on same candle, SL wins (conservative)`,
+    `Stop-loss: as computed by strategy engine per signal`,
+    `Take-profit: TP1 at ${config.tp1RR}R (TP2 not simulated)`,
+    `Trailing stop: NOT simulated`,
+    `Fee: ${config.feePct}% per side (${(config.feePct * 2).toFixed(2)}% round trip)`,
+    `Slippage: ${config.slippagePct}% per side (flat model, not orderbook-based)`,
+    `Leverage: ${config.leverage}x (config only — PnL = notional × price move, not margin ROE)`,
+    `Sizing: qty = (balance × ${config.riskPct}%) / stopDistance — leverage not in qty formula`,
+    `Compounding: ${config.compounding ? 'ON — next trade sizes from updated balance' : 'OFF — balance still drifts with PnL'}`,
     `Max concurrent trades: ${config.maxConcurrentTrades}`,
-    `Max hold: ${config.maxHoldBars} bars (${(config.maxHoldBars * 15 / 60).toFixed(0)}h) before forced exit`,
-    `BTC regime filter: ${config.btcRegimeEnabled ? 'ENABLED' : 'DISABLED'}`,
-    `Breakout override: ${config.breakoutOverrideEnabled ? 'ENABLED' : 'DISABLED'}`,
+    `Max hold: ${config.maxHoldBars} bars (${(config.maxHoldBars * 15 / 60).toFixed(0)}h) before forced exit at last close`,
+    `BTC regime filter: ${config.btcRegimeEnabled ? 'ENABLED (same evaluateRegimeGate as live)' : 'DISABLED'}`,
+    `Breakout override: ${config.breakoutOverrideEnabled ? 'ENABLED (same canOverrideBtcRegime check as live)' : 'DISABLED'}`,
     `Risk per trade: ${config.riskPct}%`,
     `Mode: ${config.modeKey}`,
-    `⚠ This is a simulated historical backtest, not live execution history`,
+    `⚠ This is a SIMULATED historical backtest, NOT live execution history`,
+    `⚠ No partial fills, no orderbook depth, no funding rates`,
+    `⚠ Live exit engine (trailing, partial TP, CE-based) is NOT replicated`,
   ];
 }
 

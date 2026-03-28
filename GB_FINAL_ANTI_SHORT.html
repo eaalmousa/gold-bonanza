@@ -624,6 +624,80 @@ const METAL_SYMBOLS = ['XAUUSDT', 'XAGUSDT'];
       return true;
     }
 
+    // ============================================
+    // EXECUTION ADAPTER (BINANCE ROUTING SCAFFOLD)
+    // ============================================
+    function getExecutionConfig() {
+      return {
+        mode: ACTIVE_ACCOUNT.key,
+        spotBase: ACTIVE_ACCOUNT.spotBase,
+        futuresBase: ACTIVE_ACCOUNT.futuresBase,
+        isArmed: ACTIVE_ACCOUNT.key === 'LIVE' ? LIVE_EXECUTION_ARMED : true
+      };
+    }
+
+    function buildBinanceOrderPayload(symbol, side, qty, price, sl, t1, leverage) {
+      return {
+        symbol: String(symbol).toUpperCase(),
+        side: String(side).toUpperCase() === 'SHORT' ? 'SELL' : 'BUY',
+        positionSide: String(side).toUpperCase() === 'SHORT' ? 'SHORT' : 'LONG',
+        type: 'MARKET',
+        quantity: String(qty),
+        // Scaffolding metadata for future REST serialization
+        __meta: { price, sl, t1, leverage, timestamp: Date.now() }
+      };
+    }
+
+    function validateExecutionRequest(payload) {
+      if (!payload.symbol || !payload.side || !payload.quantity || Number(payload.quantity) <= 0) {
+        return { valid: false, reason: "Invalid payload geometry or zero quantity." };
+      }
+      return { valid: true };
+    }
+
+    async function routeExecutionRequest(rawPayload) {
+      const config = getExecutionConfig();
+      const payload = buildBinanceOrderPayload(
+        rawPayload.symbol, rawPayload.side, rawPayload.qty,
+        rawPayload.price, rawPayload.sl, rawPayload.tp, rawPayload.leverage
+      );
+
+      const validation = validateExecutionRequest(payload);
+      if (!validation.valid) {
+         return { ok: false, mode: config.mode, dryRun: true, endpoint: 'NONE', payload, reason: validation.reason };
+      }
+
+      if (config.mode === 'LIVE' && !canExecuteLiveOrder()) {
+         return {
+           ok: false,
+           mode: 'LIVE',
+           dryRun: true,
+           endpoint: 'BLOCKED',
+           payload,
+           reason: 'Hard execution block: LIVE_EXECUTION_ARMED is false.'
+         };
+      }
+
+      // Safe dry-run behavior
+      const targetEndpoint = `${config.futuresBase}/fapi/v1/order`;
+      console.log(`[EXECUTION ADAPTER - ${config.mode}] DRY RUN ROUTING`);
+      console.log(`Target Endpoint: ${targetEndpoint}`);
+      console.log(`Prepared Payload:`, payload);
+
+      return {
+        ok: true,
+        mode: config.mode,
+        dryRun: true,
+        endpoint: targetEndpoint,
+        payload,
+        reason: 'Simulated successful dry-run routing.'
+      };
+    }
+
+    async function executeBinanceOrder(orderPayload) {
+      return await routeExecutionRequest(orderPayload);
+    }
+
     const SPOT_API = 'https://api.binance.com';
     const FUTURES_API = 'https://fapi.binance.com';
 
@@ -1807,6 +1881,24 @@ function renderSniperSignals(sniperSignals) {
       } else {
         myActiveTrades.unshift(payload);
       }
+
+      // --- OPTIONAL BRIDGE: Execution Scaffold (Non-blocking dry-run) ---
+      setTimeout(() => {
+        executeBinanceOrder({
+          symbol: payload.symbol,
+          side: payload.intendedSide,
+          qty: payload.qtyBase,
+          price: payload.entryPrice,
+          sl: payload.sl,
+          tp: payload.t1,
+          leverage: payload.leverage
+        }).then(res => {
+          console.log("[Execution Bridge Report]", res);
+        }).catch(err => {
+          console.error("[Execution Bridge Error]", err);
+        });
+      }, 0);
+      // ------------------------------------------------------------------
 
       if (typeof window.gbCardBridgeForceRender === 'function') {
         window.gbCardBridgeForceRender();

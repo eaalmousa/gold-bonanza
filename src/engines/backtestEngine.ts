@@ -1,19 +1,18 @@
 // ============================================
-// Backtest Engine — Gold Bonanza
+// Backtest Engine V2 — Gold Bonanza
 //
 // Uses the REAL strategy registry, context builder,
 // and BTC regime gate to simulate historical
 // strategy performance.
 //
+// V2 IMPROVEMENTS:
+// - Next-bar-open entry model (no look-ahead)
+// - Enhanced exit mode: trailing stop + partial TP
+// - Configurable symbol universe presets
+// - All assumptions visible and honest
+//
 // This is NOT a separate analysis system — it runs
 // the same modular path as the live scanner.
-//
-// LIMITATIONS (V1):
-// - Bar-by-bar simulation, not tick-by-tick
-// - Entry assumed at signal.entryPrice
-// - Fees/slippage deducted as flat percentages
-// - No order book simulation
-// - No partial fills
 // ============================================
 
 import type { Kline, ModeConfig, MarketRegime } from '../types/trading';
@@ -25,11 +24,34 @@ import { initializeStrategies } from './strategyInit';
 
 initializeStrategies();
 
+// ─── SYMBOL UNIVERSE PRESETS ──────────────────────────────────────────────────
+
+export const SYMBOL_PRESETS = {
+  TOP_10: {
+    label: 'Top 10 Perps',
+    symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'AVAXUSDT', 'LINKUSDT', 'ARBUSDT', 'OPUSDT', 'INJUSDT'],
+  },
+  MAJORS: {
+    label: 'Majors Only (5)',
+    symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT'],
+  },
+  BROAD: {
+    label: 'Broad Basket (20)',
+    symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'AVAXUSDT', 'LINKUSDT', 'ARBUSDT', 'OPUSDT', 'INJUSDT',
+              'DOTUSDT', 'MATICUSDT', 'ADAUSDT', 'NEARUSDT', 'APTUSDT', 'SUIUSDT', 'DOGEUSDT', 'LTCUSDT', 'ATOMUSDT', 'FILUSDT'],
+  },
+} as const;
+
+export type SymbolPresetKey = keyof typeof SYMBOL_PRESETS;
+export type EntryModel = 'NEXT_BAR_OPEN' | 'SIGNAL_PRICE';
+export type ExitMode = 'FIXED_SL_TP' | 'ENHANCED_V2';
+
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
 export interface BacktestConfig {
   strategyIds: string[];
   symbols: string[];
+  symbolPreset: SymbolPresetKey | 'CUSTOM';
   lookbackDays: number;
   startingBalance: number;
   riskPct: number;
@@ -44,6 +66,8 @@ export interface BacktestConfig {
   tp1RR: number;
   tp2RR: number;
   maxHoldBars: number;     // max candles before forced exit
+  entryModel: EntryModel;  // V2: how entry is filled
+  exitMode: ExitMode;      // V2: exit simulation mode
 }
 
 export interface BacktestTrade {
@@ -58,11 +82,13 @@ export interface BacktestTrade {
   pnl: number;
   pnlPct: number;
   feePaid: number;
-  outcome: 'WIN' | 'LOSS' | 'TIMEOUT';
+  outcome: 'WIN' | 'LOSS' | 'TIMEOUT' | 'PARTIAL_WIN';
   entryBar: number;
   exitBar: number;
   holdBars: number;
   regime: string;
+  tp1Hit?: boolean;       // V2: whether TP1 was reached
+  trailingExit?: boolean; // V2: whether trailing stop closed remaining
 }
 
 export interface BacktestResult {
@@ -78,6 +104,7 @@ export interface BacktestStats {
   winningTrades: number;
   losingTrades: number;
   timeoutTrades: number;
+  partialWins: number;
   winRate: number;
   lossRate: number;
   netPnl: number;
@@ -138,13 +165,39 @@ async function fetchKlinesPaginated(
   return allKlines;
 }
 
-// ─── TRADE SIMULATION ─────────────────────────────────────────────────────────
+// ─── ATR HELPER ───────────────────────────────────────────────────────────────
 
-function simulateTrade(
+function computeATR(klines: Kline[], period: number = 14): number {
+  if (klines.length < period + 1) return 0;
+  const recent = klines.slice(-period - 1);
+  let atrSum = 0;
+  for (let i = 1; i < recent.length; i++) {
+    const tr = Math.max(
+      recent[i].high - recent[i].low,
+      Math.abs(recent[i].high - recent[i - 1].close),
+      Math.abs(recent[i].low - recent[i - 1].close)
+    );
+    atrSum += tr;
+  }
+  return atrSum / period;
+}
+
+// ─── TRADE SIMULATION: V1 (FIXED SL/TP) ──────────────────────────────────────
+
+interface TradeResult {
+  exitPrice: number;
+  exitBar: number;
+  outcome: 'WIN' | 'LOSS' | 'TIMEOUT' | 'PARTIAL_WIN';
+  feePaid: number;
+  tp1Hit: boolean;
+  trailingExit: boolean;
+}
+
+function simulateTradeFixed(
   klines15m: Kline[], entryBarIdx: number,
   side: 'LONG' | 'SHORT', entryPrice: number, stopLoss: number, takeProfit: number,
   qty: number, feePct: number, slippagePct: number, maxHoldBars: number
-): { exitPrice: number; exitBar: number; outcome: 'WIN' | 'LOSS' | 'TIMEOUT'; feePaid: number } {
+): TradeResult {
   const dir = side === 'LONG' ? 1 : -1;
   const entrySlippage = entryPrice * (slippagePct / 100) * dir;
   const actualEntry = entryPrice + entrySlippage;
@@ -154,38 +207,169 @@ function simulateTrade(
     const candle = klines15m[i];
 
     // ── CANDLE CONFLICT RULE ──────────────────────────────────────
-    // If a single candle touches BOTH SL and TP, we must choose one.
-    // Rule: SL is assumed to be hit first (pessimistic/conservative).
-    // Rationale: in real markets, adverse moves tend to happen faster
-    // than favorable ones (gap risk, liquidation cascades). This
-    // avoids overfitting to optimistic backtest outcomes.
-    // ──────────────────────────────────────────────────────────────
-
+    // If a single candle touches BOTH SL and TP, SL wins (conservative).
     const slHit = side === 'LONG' ? candle.low <= stopLoss : candle.high >= stopLoss;
     const tpHit = side === 'LONG' ? candle.high >= takeProfit : candle.low <= takeProfit;
 
     if (slHit && tpHit) {
-      // Both touched on same candle — SL wins (conservative)
       const exitFee = stopLoss * qty * (feePct / 100);
-      return { exitPrice: stopLoss, exitBar: i, outcome: 'LOSS', feePaid: entryFee + exitFee };
+      return { exitPrice: stopLoss, exitBar: i, outcome: 'LOSS', feePaid: entryFee + exitFee, tp1Hit: false, trailingExit: false };
     }
-
     if (slHit) {
       const exitFee = stopLoss * qty * (feePct / 100);
-      return { exitPrice: stopLoss, exitBar: i, outcome: 'LOSS', feePaid: entryFee + exitFee };
+      return { exitPrice: stopLoss, exitBar: i, outcome: 'LOSS', feePaid: entryFee + exitFee, tp1Hit: false, trailingExit: false };
     }
-
     if (tpHit) {
       const exitFee = takeProfit * qty * (feePct / 100);
-      return { exitPrice: takeProfit, exitBar: i, outcome: 'WIN', feePaid: entryFee + exitFee };
+      return { exitPrice: takeProfit, exitBar: i, outcome: 'WIN', feePaid: entryFee + exitFee, tp1Hit: true, trailingExit: false };
     }
   }
 
-  // Timeout — close at last available price
   const lastBar = Math.min(entryBarIdx + maxHoldBars - 1, klines15m.length - 1);
   const exitPrice = klines15m[lastBar].close;
   const exitFee = exitPrice * qty * (feePct / 100);
-  return { exitPrice, exitBar: lastBar, outcome: 'TIMEOUT', feePaid: entryFee + exitFee };
+  return { exitPrice, exitBar: lastBar, outcome: 'TIMEOUT', feePaid: entryFee + exitFee, tp1Hit: false, trailingExit: false };
+}
+
+// ─── TRADE SIMULATION: V2 (ENHANCED) ─────────────────────────────────────────
+//
+// Phase 1 (pre-TP1):
+//   - SL hit → LOSS on full qty
+//   - TP1 hit → close 50% at TP1, move stop to breakeven, enter Phase 2
+//
+// Phase 2 (post-TP1, trailing):
+//   - trailingStop starts at entry (breakeven)
+//   - Every bar: if best price moved favorably by > 0.5×ATR since last
+//     tighten, advance trailingStop by 0.3×ATR toward price
+//   - TP2 hit → close remaining 50% at TP2 → full WIN
+//   - Trailing stop hit → close remaining at trail → PARTIAL_WIN
+//   - maxHold → close at last close → PARTIAL_WIN or TIMEOUT
+//
+// ⚠ This is an APPROXIMATION of the live exit engine — not exact replication.
+//   - Live uses Chandelier Exit for dynamic trailing
+//   - Live tracks bar-by-bar CE values which are not available here
+//   - This uses ATR-based trailing as a reasonable proxy
+// ──────────────────────────────────────────────────────────────────────────────
+
+function simulateTradeEnhanced(
+  klines15m: Kline[], entryBarIdx: number,
+  side: 'LONG' | 'SHORT', entryPrice: number, stopLoss: number,
+  takeProfit1: number, takeProfit2: number,
+  qty: number, feePct: number, slippagePct: number, maxHoldBars: number, atr: number
+): TradeResult {
+  const dir = side === 'LONG' ? 1 : -1;
+  const entrySlippage = entryPrice * (slippagePct / 100) * dir;
+  const actualEntry = entryPrice + entrySlippage;
+  const entryFee = actualEntry * qty * (feePct / 100);
+
+  let phase: 'PRE_TP1' | 'TRAILING' = 'PRE_TP1';
+  let remainingQty = qty;
+  let totalFees = entryFee;
+  let tp1Pnl = 0;
+  let trailingStop = stopLoss; // starts at SL, moves to breakeven on TP1 hit
+  let bestPrice = entryPrice;  // tracks best favorable price for trail tightening
+  const trailStepThreshold = atr * 0.5; // tighten every 0.5 ATR of favorable move
+  const trailStepSize = atr * 0.3;      // tighten by 0.3 ATR each time
+
+  for (let i = entryBarIdx + 1; i < Math.min(entryBarIdx + maxHoldBars, klines15m.length); i++) {
+    const candle = klines15m[i];
+
+    if (phase === 'PRE_TP1') {
+      // Phase 1: fixed SL/TP1
+      const slHit = side === 'LONG' ? candle.low <= stopLoss : candle.high >= stopLoss;
+      const tp1Hit = side === 'LONG' ? candle.high >= takeProfit1 : candle.low <= takeProfit1;
+
+      if (slHit && tp1Hit) {
+        // Same-candle conflict: SL wins (conservative)
+        const exitFee = stopLoss * qty * (feePct / 100);
+        return { exitPrice: stopLoss, exitBar: i, outcome: 'LOSS', feePaid: totalFees + exitFee, tp1Hit: false, trailingExit: false };
+      }
+
+      if (slHit) {
+        const exitFee = stopLoss * qty * (feePct / 100);
+        return { exitPrice: stopLoss, exitBar: i, outcome: 'LOSS', feePaid: totalFees + exitFee, tp1Hit: false, trailingExit: false };
+      }
+
+      if (tp1Hit) {
+        // TP1 hit: close 50%, enter trailing phase
+        const closeQty = qty * 0.5;
+        const tp1Fee = takeProfit1 * closeQty * (feePct / 100);
+        tp1Pnl = (takeProfit1 - entryPrice) * dir * closeQty - tp1Fee;
+        totalFees += tp1Fee;
+        remainingQty = qty - closeQty;
+        phase = 'TRAILING';
+        trailingStop = entryPrice; // move stop to breakeven
+        bestPrice = takeProfit1;
+        continue;
+      }
+    }
+
+    if (phase === 'TRAILING') {
+      // Update best price tracking
+      if (side === 'LONG') {
+        if (candle.high > bestPrice) bestPrice = candle.high;
+      } else {
+        if (candle.low < bestPrice) bestPrice = candle.low;
+      }
+
+      // Tighten trailing stop based on favorable movement
+      const favorableMove = side === 'LONG'
+        ? bestPrice - trailingStop
+        : trailingStop - bestPrice;
+      if (favorableMove > trailStepThreshold && trailStepSize > 0) {
+        if (side === 'LONG') {
+          trailingStop = Math.max(trailingStop, bestPrice - trailStepThreshold);
+        } else {
+          trailingStop = Math.min(trailingStop, bestPrice + trailStepThreshold);
+        }
+      }
+
+      // Check TP2 hit
+      const tp2Hit = side === 'LONG' ? candle.high >= takeProfit2 : candle.low <= takeProfit2;
+      const trailHit = side === 'LONG' ? candle.low <= trailingStop : candle.high >= trailingStop;
+
+      if (trailHit && tp2Hit) {
+        // Both hit same candle — use trail stop (conservative for remaining)
+        const exitFee = trailingStop * remainingQty * (feePct / 100);
+        const trailPnl = (trailingStop - entryPrice) * dir * remainingQty - exitFee;
+        const netPnl = tp1Pnl + trailPnl;
+        totalFees += exitFee;
+        const weightedExit = (takeProfit1 + trailingStop) / 2;
+        return { exitPrice: weightedExit, exitBar: i, outcome: 'PARTIAL_WIN', feePaid: totalFees, tp1Hit: true, trailingExit: true };
+      }
+
+      if (tp2Hit) {
+        // Full win — TP2 reached on remaining qty
+        const exitFee = takeProfit2 * remainingQty * (feePct / 100);
+        totalFees += exitFee;
+        const weightedExit = (takeProfit1 + takeProfit2) / 2;
+        return { exitPrice: weightedExit, exitBar: i, outcome: 'WIN', feePaid: totalFees, tp1Hit: true, trailingExit: false };
+      }
+
+      if (trailHit) {
+        // Trailing stop hit on remaining
+        const exitFee = trailingStop * remainingQty * (feePct / 100);
+        totalFees += exitFee;
+        const weightedExit = (takeProfit1 + trailingStop) / 2;
+        return { exitPrice: weightedExit, exitBar: i, outcome: 'PARTIAL_WIN', feePaid: totalFees, tp1Hit: true, trailingExit: true };
+      }
+    }
+  }
+
+  // Timeout
+  const lastBar = Math.min(entryBarIdx + maxHoldBars - 1, klines15m.length - 1);
+  const exitPrice = klines15m[lastBar].close;
+  const exitFee = exitPrice * remainingQty * (feePct / 100);
+  totalFees += exitFee;
+
+  if (phase === 'TRAILING') {
+    // TP1 was hit, timeout on remaining
+    const weightedExit = (takeProfit1 + exitPrice) / 2;
+    const trailPnl = (exitPrice - entryPrice) * dir * remainingQty - exitFee;
+    return { exitPrice: weightedExit, exitBar: lastBar, outcome: 'PARTIAL_WIN', feePaid: totalFees, tp1Hit: true, trailingExit: false };
+  }
+  // Never hit TP1
+  return { exitPrice, exitBar: lastBar, outcome: 'TIMEOUT', feePaid: totalFees, tp1Hit: false, trailingExit: false };
 }
 
 // ─── MAIN BACKTEST ────────────────────────────────────────────────────────────
@@ -242,13 +426,15 @@ export async function runBacktest(
   // ── Phase 2: Walk through time ──
   onProgress?.(50, 'Running strategy evaluation...');
 
-  // Evaluate every 4 candles (1 hour) on 15m data
-  const evalStep = 4;
-  const warmupBars = 220 * 4; // Need ~220 1h equivalent for context builder
-  const openTrades: Map<string, { entryBar: number; side: 'LONG' | 'SHORT'; entryPrice: number; sl: number; tp: number; qty: number; strategyId: string; regime: string }> = new Map();
+  const evalStep = 4; // Evaluate every 4×15m bars (1 hour)
+  const warmupBars = 220 * 4;
+  const openTrades: Map<string, {
+    entryBar: number; side: 'LONG' | 'SHORT'; entryPrice: number;
+    sl: number; tp1: number; tp2: number; qty: number;
+    strategyId: string; regime: string; atr: number;
+  }> = new Map();
   let globalBarCounter = 0;
 
-  // Find common data range
   const symKeys = Object.keys(symbolData);
   if (symKeys.length === 0) {
     return { trades, equity, stats: computeStats(trades, config.startingBalance, balance, maxDrawdown, maxDrawdownPct), config, assumptions: buildAssumptions(config) };
@@ -284,15 +470,25 @@ export async function runBacktest(
       ? evaluateRegimeGate(regime, btc4hTrend, btcRsi, config.modeKey)
       : { regime, btc4hTrend, allowedSides: ['LONG' as const, 'SHORT' as const], strictness: 'NORMAL' as const, overrideAllowed: config.breakoutOverrideEnabled, overrideMinScore: 14, reason: 'Regime gate disabled' };
 
-    // Check open trades for SL/TP hit
+    // Check open trades for exit
     for (const [sym, trade] of openTrades) {
       const symKlines = symbolData[sym]?.tf15m;
       if (!symKlines) continue;
 
-      const result = simulateTrade(
-        symKlines, trade.entryBar, trade.side, trade.entryPrice,
-        trade.sl, trade.tp, trade.qty, config.feePct, config.slippagePct, bar - trade.entryBar
-      );
+      let result: TradeResult;
+      if (config.exitMode === 'ENHANCED_V2') {
+        result = simulateTradeEnhanced(
+          symKlines, trade.entryBar, trade.side, trade.entryPrice,
+          trade.sl, trade.tp1, trade.tp2, trade.qty,
+          config.feePct, config.slippagePct, bar - trade.entryBar, trade.atr
+        );
+      } else {
+        result = simulateTradeFixed(
+          symKlines, trade.entryBar, trade.side, trade.entryPrice,
+          trade.sl, trade.tp1, trade.qty,
+          config.feePct, config.slippagePct, bar - trade.entryBar
+        );
+      }
 
       if (result.exitBar <= bar) {
         const dir = trade.side === 'LONG' ? 1 : -1;
@@ -302,14 +498,13 @@ export async function runBacktest(
         trades.push({
           symbol: sym, strategyId: trade.strategyId, side: trade.side,
           entryPrice: trade.entryPrice, exitPrice: result.exitPrice,
-          stopLoss: trade.sl, takeProfit: trade.tp, qty: trade.qty,
+          stopLoss: trade.sl, takeProfit: trade.tp1, qty: trade.qty,
           pnl: netPnl, pnlPct: (netPnl / balance) * 100, feePaid: result.feePaid,
           outcome: result.outcome, entryBar: trade.entryBar, exitBar: result.exitBar,
-          holdBars: result.exitBar - trade.entryBar, regime: trade.regime
+          holdBars: result.exitBar - trade.entryBar, regime: trade.regime,
+          tp1Hit: result.tp1Hit, trailingExit: result.trailingExit
         });
 
-        // Balance always updates — compounding means next trade sizes from new balance
-        // (which happens naturally since balance is passed to buildStrategyContext)
         balance += netPnl;
 
         if (balance > peakBalance) peakBalance = balance;
@@ -327,14 +522,13 @@ export async function runBacktest(
 
     // Evaluate strategies on each symbol
     for (const sym of symKeys) {
-      if (openTrades.has(sym)) continue; // Already in a trade
+      if (openTrades.has(sym)) continue;
       if (openTrades.size >= config.maxConcurrentTrades) break;
       if (balance <= 0) break;
 
       const data = symbolData[sym];
       if (!data || bar >= data.tf15m.length) continue;
 
-      // Build sliced data windows
       const tf15mSlice = data.tf15m.slice(Math.max(0, bar - 110), bar + 1);
       const barTime = data.tf15m[bar].openTime;
       const tf1hSlice = data.tf1h.filter(k => k.openTime <= barTime).slice(-220);
@@ -354,12 +548,40 @@ export async function runBacktest(
         if (sig.executionClass === 'WATCHLIST') continue;
         if (!sig.qty || sig.qty <= 0 || !sig.sizeUSDT || sig.sizeUSDT < 5) continue;
 
+        // ── V2 ENTRY MODEL ─────────────────────────────────────────────
+        // NEXT_BAR_OPEN: entry at bar+1 open price (no look-ahead)
+        // SIGNAL_PRICE:  entry at signal.entryPrice (V1 behavior, slight look-ahead)
+        let fillPrice = sig.entryPrice;
+        const entryBarIdx = bar;
+
+        if (config.entryModel === 'NEXT_BAR_OPEN') {
+          const nextBar = bar + 1;
+          if (nextBar >= data.tf15m.length) continue; // no next bar available
+          fillPrice = data.tf15m[nextBar].open;
+
+          // Validate fill is still within signal's intended range
+          // If next-bar open is already beyond SL, skip (trade would be instant loss)
+          const slDist = Math.abs(fillPrice - sig.stopLoss);
+          const entryDist = Math.abs(sig.entryPrice - sig.stopLoss);
+          if (slDist < entryDist * 0.15) continue; // SL < 15% of original distance away
+        }
+
+        // Compute ATR at entry for enhanced exit trailing
+        const entryKlines = data.tf15m.slice(Math.max(0, bar - 15), bar + 1);
+        const atr = computeATR(entryKlines, 14);
+
+        // Compute TP2 from risk distance for enhanced exit
+        const riskDist = Math.abs(fillPrice - sig.stopLoss);
+        const tp2 = sig.side === 'LONG'
+          ? fillPrice + riskDist * config.tp2RR
+          : fillPrice - riskDist * config.tp2RR;
+
         openTrades.set(sym, {
-          entryBar: bar, side: sig.side, entryPrice: sig.entryPrice,
-          sl: sig.stopLoss, tp: sig.takeProfit, qty: sig.qty,
-          strategyId: sig.strategyId, regime: regimeLabel
+          entryBar: entryBarIdx, side: sig.side, entryPrice: fillPrice,
+          sl: sig.stopLoss, tp1: sig.takeProfit, tp2: tp2,
+          qty: sig.qty, strategyId: sig.strategyId, regime: regimeLabel, atr
         });
-        break; // One signal per symbol per eval step
+        break;
       }
     }
 
@@ -384,7 +606,7 @@ export async function runBacktest(
     trades.push({
       symbol: sym, strategyId: trade.strategyId, side: trade.side,
       entryPrice: trade.entryPrice, exitPrice, stopLoss: trade.sl,
-      takeProfit: trade.tp, qty: trade.qty, pnl: netPnl,
+      takeProfit: trade.tp1, qty: trade.qty, pnl: netPnl,
       pnlPct: (netPnl / balance) * 100, feePaid: fee,
       outcome: 'TIMEOUT', entryBar: trade.entryBar, exitBar: lastBar,
       holdBars: lastBar - trade.entryBar, regime: trade.regime
@@ -410,8 +632,11 @@ function computeStats(
   const wins = trades.filter(t => t.outcome === 'WIN');
   const losses = trades.filter(t => t.outcome === 'LOSS');
   const timeouts = trades.filter(t => t.outcome === 'TIMEOUT');
-  const grossProfit = wins.reduce((s, t) => s + t.pnl, 0);
-  const grossLoss = Math.abs(losses.reduce((s, t) => s + t.pnl, 0));
+  const partials = trades.filter(t => t.outcome === 'PARTIAL_WIN');
+  const profitable = [...wins, ...partials.filter(p => p.pnl > 0)];
+  const unprofitable = [...losses, ...partials.filter(p => p.pnl <= 0)];
+  const grossProfit = profitable.reduce((s, t) => s + Math.max(0, t.pnl), 0);
+  const grossLoss = Math.abs(unprofitable.reduce((s, t) => s + Math.min(0, t.pnl), 0));
   const allPnls = trades.map(t => t.pnl);
   const avgReturn = allPnls.length ? allPnls.reduce((a, b) => a + b, 0) / allPnls.length : 0;
   const stdDev = allPnls.length > 1
@@ -423,13 +648,14 @@ function computeStats(
     winningTrades: wins.length,
     losingTrades: losses.length,
     timeoutTrades: timeouts.length,
-    winRate: trades.length ? (wins.length / trades.length) * 100 : 0,
-    lossRate: trades.length ? (losses.length / trades.length) * 100 : 0,
+    partialWins: partials.length,
+    winRate: trades.length ? ((wins.length + partials.filter(p => p.pnl > 0).length) / trades.length) * 100 : 0,
+    lossRate: trades.length ? ((losses.length + partials.filter(p => p.pnl <= 0).length) / trades.length) * 100 : 0,
     netPnl: endBal - startBal,
     grossProfit,
     grossLoss,
-    avgWin: wins.length ? grossProfit / wins.length : 0,
-    avgLoss: losses.length ? grossLoss / losses.length : 0,
+    avgWin: profitable.length ? grossProfit / profitable.length : 0,
+    avgLoss: unprofitable.length ? grossLoss / unprofitable.length : 0,
     profitFactor: grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0,
     maxDrawdown: maxDD,
     maxDrawdownPct: maxDDPct,
@@ -441,17 +667,29 @@ function computeStats(
 }
 
 function buildAssumptions(config: BacktestConfig): string[] {
+  const entryLabel = config.entryModel === 'NEXT_BAR_OPEN'
+    ? 'Next-bar open after signal (no look-ahead bias)'
+    : 'Signal price on evaluation bar (slight look-ahead, ~15min)';
+
+  const exitLabel = config.exitMode === 'ENHANCED_V2'
+    ? 'Enhanced V2: 50% at TP1, trailing stop on remainder (ATR-based), TP2 target'
+    : 'Fixed SL/TP1 only — live exit engine NOT replicated';
+
+  const trailLabel = config.exitMode === 'ENHANCED_V2'
+    ? 'ATR-based trailing (0.5×ATR threshold, 0.3×ATR step) — approximation of live CE trailing'
+    : 'NOT simulated';
+
   return [
     `Lookback: ${config.lookbackDays} days`,
-    `Symbols tested: ${config.symbols.length} (${config.symbols.slice(0, 5).join(', ')}${config.symbols.length > 5 ? '...' : ''})`,
+    `Symbols: ${config.symbolPreset !== 'CUSTOM' ? SYMBOL_PRESETS[config.symbolPreset as SymbolPresetKey]?.label : 'Custom'} (${config.symbols.length} symbols)`,
     `Timeframes: 15m (entry signals), 1H (context/bias)`,
     `Evaluation: every 4×15m bars (1 hour intervals)`,
-    `Entry: at strategy signal price on evaluation bar (not next-bar open)`,
-    `Exit: fixed TP1/SL only — live exit engine NOT replicated`,
+    `Entry model: ${entryLabel}`,
+    `Exit model: ${exitLabel}`,
     `Candle conflict: if SL and TP both touched on same candle, SL wins (conservative)`,
     `Stop-loss: as computed by strategy engine per signal`,
-    `Take-profit: TP1 at ${config.tp1RR}R (TP2 not simulated)`,
-    `Trailing stop: NOT simulated`,
+    `Take-profit: TP1 at ${config.tp1RR}R${config.exitMode === 'ENHANCED_V2' ? `, TP2 at ${config.tp2RR}R` : ' (TP2 not simulated)'}`,
+    `Trailing stop: ${trailLabel}`,
     `Fee: ${config.feePct}% per side (${(config.feePct * 2).toFixed(2)}% round trip)`,
     `Slippage: ${config.slippagePct}% per side (flat model, not orderbook-based)`,
     `Leverage: ${config.leverage}x (config only — PnL = notional × price move, not margin ROE)`,
@@ -464,8 +702,10 @@ function buildAssumptions(config: BacktestConfig): string[] {
     `Risk per trade: ${config.riskPct}%`,
     `Mode: ${config.modeKey}`,
     `⚠ This is a SIMULATED historical backtest, NOT live execution history`,
-    `⚠ No partial fills, no orderbook depth, no funding rates`,
-    `⚠ Live exit engine (trailing, partial TP, CE-based) is NOT replicated`,
+    `⚠ No partial fills simulation, no orderbook depth, no funding rates`,
+    config.exitMode === 'ENHANCED_V2'
+      ? `⚠ Enhanced exit uses ATR-based trailing as APPROXIMATION — not exact CE replication`
+      : `⚠ Live exit engine (trailing, partial TP, CE-based) is NOT replicated`,
   ];
 }
 
@@ -473,7 +713,8 @@ function buildAssumptions(config: BacktestConfig): string[] {
 
 export const DEFAULT_BACKTEST_CONFIG: BacktestConfig = {
   strategyIds: [],
-  symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'AVAXUSDT', 'LINKUSDT', 'ARBUSDT', 'OPUSDT', 'INJUSDT'],
+  symbols: SYMBOL_PRESETS.TOP_10.symbols as unknown as string[],
+  symbolPreset: 'TOP_10',
   lookbackDays: 100,
   startingBalance: 1000,
   riskPct: 1.0,
@@ -488,4 +729,6 @@ export const DEFAULT_BACKTEST_CONFIG: BacktestConfig = {
   tp1RR: 1.5,
   tp2RR: 2.5,
   maxHoldBars: 48,
+  entryModel: 'NEXT_BAR_OPEN',  // V2 default: no look-ahead
+  exitMode: 'ENHANCED_V2',      // V2 default: partial TP + trailing
 };

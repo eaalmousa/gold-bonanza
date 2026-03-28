@@ -413,9 +413,19 @@ function evaluateCoreBreakout(
     const effectiveScoreMin = cfg.scoreMin + missingFlowPenalty;
     if (score < effectiveScoreMin) return null;
 
-    // ─── ENTRY/RISK ──────────────────────────────────────
     const triggerPrice = close15 * 1.0010;
     const riskPerTrade = balance * activeMode.riskPct;
+
+    // ── Hard guard: zero balance blocks all sizing ──
+    if (!balance || balance <= 0 || !isFinite(balance)) {
+      debugLog.push('REJECT: balance is zero or invalid — cannot compute LONG breakout size');
+      return null;
+    }
+    if (!riskPerTrade || riskPerTrade <= 0) {
+      debugLog.push('REJECT: riskPerTrade is zero — check balance and riskPct config');
+      return null;
+    }
+
     const stopBase     = Math.max(loCoil, e20! * (1 - 0.002));
     const atrStop      = triggerPrice - (atr! * 1.8);
     const minAtrStop   = triggerPrice - (atr! * 1.2);
@@ -428,8 +438,14 @@ function evaluateCoreBreakout(
     const qty         = riskPerTrade / stopDistance;
     const sizeUSDT    = qty * triggerPrice;
 
+    // ── Min notional guard ──
+    if (qty <= 0 || sizeUSDT < 5.0) {
+      debugLog.push(`REJECT: Computed qty=${qty.toFixed(4)} sizeUSDT=${sizeUSDT.toFixed(2)} — below minimum notional`);
+      return null;
+    }
+
     const zoneDistancePct = ((close15 - breakLevel) / breakLevel) * 100;
-    debugLog.push(`ACCEPT: LONG BREAKOUT score=${score} timing=${entryTiming}`);
+    debugLog.push(`ACCEPT: LONG BREAKOUT score=${score} timing=${entryTiming} qty=${qty.toFixed(4)} sizeUSDT=${sizeUSDT.toFixed(2)}`);
 
     return {
       kind: 'SUPER_SNIPER', side: 'LONG', score, reasons,
@@ -557,6 +573,17 @@ function evaluateCoreBreakout(
 
     const triggerPrice = close15 * (1 - 0.0010);
     const riskPerTrade = balance * activeMode.riskPct;
+
+    // ── Hard guard: zero balance blocks all sizing ──
+    if (!balance || balance <= 0 || !isFinite(balance)) {
+      debugLog.push('REJECT: balance is zero or invalid — cannot compute SHORT breakout size');
+      return null;
+    }
+    if (!riskPerTrade || riskPerTrade <= 0) {
+      debugLog.push('REJECT: riskPerTrade is zero — check balance and riskPct config');
+      return null;
+    }
+
     const stopBase     = Math.min(hiCoil, e20! * (1 + 0.002));
     const atrStop      = triggerPrice + (atr! * 1.8);
     const minAtrStop   = triggerPrice + (atr! * 1.2);
@@ -569,8 +596,14 @@ function evaluateCoreBreakout(
     const qty         = riskPerTrade / stopDistance;
     const sizeUSDT    = qty * triggerPrice;
 
+    // ── Min notional guard ──
+    if (qty <= 0 || sizeUSDT < 5.0) {
+      debugLog.push(`REJECT: Computed qty=${qty.toFixed(4)} sizeUSDT=${sizeUSDT.toFixed(2)} — below minimum notional`);
+      return null;
+    }
+
     const zoneDistancePct = ((breakLevel - close15) / breakLevel) * 100;
-    debugLog.push(`ACCEPT: SHORT BREAKOUT score=${score} timing=${entryTiming}`);
+    debugLog.push(`ACCEPT: SHORT BREAKOUT score=${score} timing=${entryTiming} qty=${qty.toFixed(4)} sizeUSDT=${sizeUSDT.toFixed(2)}`);
 
     return {
       kind: 'SUPER_SNIPER', side: 'SHORT', score, reasons,

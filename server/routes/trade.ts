@@ -131,20 +131,50 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
   // ── Use frontend-supplied qty/leverage where present; fallback to env config ─
   const lev = frontendLeverage ?? parseInt(process.env.LEVERAGE || '10', 10);
   let   qty = frontendQty;
+
+  // ── Pre-execution balance/qty audit log ─────────────────────────────────────
+  const balFromBinance = await getBalance().catch(() => 0);
+  const riskPctEnv = parseFloat(process.env.RISK_PER_TRADE || '0.04');
+
   if (!qty || qty <= 0) {
     // Recompute from risk profile if frontend didn't send a valid qty
-    const bal    = await getBalance().catch(() => 0);
-    const risk   = parseFloat(process.env.RISK_PER_TRADE || '0.04');
-    qty          = Math.max(0.001, (bal * risk * lev) / entryPrice);
+    const intendedRisk = balFromBinance * riskPctEnv * lev;
+    qty = intendedRisk > 0 ? intendedRisk / entryPrice : 0;
+    console.log(`[Trade:open] qty recomputed | balance=$${balFromBinance.toFixed(2)} | riskPct=${riskPctEnv} | lev=${lev} | intendedRisk=$${intendedRisk.toFixed(2)} | rawQty=${qty.toFixed(6)}`);
   }
 
-  // ── Minimum Notional Guard (Exchange Compliance) ───────────────────────────
-  // Binance minimum is 5.00 USDT.
-  const currentNotional = qty * entryPrice;
-  if (currentNotional < 5.00) {
-    console.warn(`[Trade:open] REJECT: Order for ${symbol} has notional ${currentNotional.toFixed(2)} USDT < 5.00. (Check sizing logic).`);
-    return res.status(400).json({ error: `Notional Too Small: ${currentNotional.toFixed(2)} USDT < 5.00 min.` });
+  // ── Structured local pre-execution validation (before any Binance call) ─────
+  const notional = qty * entryPrice;
+
+  if (!balFromBinance || balFromBinance <= 0) {
+    const reason = `Blocked: balance is zero ($${balFromBinance}) — cannot size order`;
+    console.warn(`[Trade:open] PRE-EXEC BLOCK: ${symbol} — ${reason}`);
+    tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED] ${symbol} — ${reason}`);
+    return res.status(400).json({
+      error: reason,
+      debug: { symbol, balance: balFromBinance, riskPct: riskPctEnv, leverage: lev, qty, notional }
+    });
   }
+  if (!qty || qty <= 0) {
+    const reason = `Blocked: computed quantity is zero — check balance ($${balFromBinance.toFixed(2)}) and risk config`;
+    console.warn(`[Trade:open] PRE-EXEC BLOCK: ${symbol} — ${reason}`);
+    tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED] ${symbol} — ${reason}`);
+    return res.status(400).json({
+      error: reason,
+      debug: { symbol, balance: balFromBinance, riskPct: riskPctEnv, leverage: lev, qty, notional }
+    });
+  }
+  if (notional < 5.00) {
+    const reason = `Blocked: below minimum executable notional ($${notional.toFixed(2)} < $5.00) — qty=${qty.toFixed(6)} @ ${entryPrice}`;
+    console.warn(`[Trade:open] PRE-EXEC BLOCK: ${symbol} — ${reason}`);
+    tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED] ${symbol} — ${reason}`);
+    return res.status(400).json({
+      error: reason,
+      debug: { symbol, balance: balFromBinance, riskPct: riskPctEnv, leverage: lev, qty, notional }
+    });
+  }
+
+  console.log(`[Trade:open] PRE-EXEC PASS: ${symbol} | balance=$${balFromBinance.toFixed(2)} | qty=${qty.toFixed(6)} | notional=$${notional.toFixed(2)} | lev=${lev}x`);
 
   // ── Precision: fetch from exchange info at the correct base URL ──────────────
   function roundTo(v: number, dp: number) { return dp === 0 ? Math.round(v).toString() : v.toFixed(dp); }

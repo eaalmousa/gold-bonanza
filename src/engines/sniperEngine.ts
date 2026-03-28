@@ -209,6 +209,21 @@ function evaluateSniperSignalInner(
 
   const calculateSafeSizing = (s: string, entry: number, sl: number) => {
     const intendedRisk = balance * activeMode.riskPct;
+
+    // ── Hard guard: zero balance means zero risk — never let this reach exchange ──
+    if (!balance || balance <= 0 || !isFinite(balance)) {
+      const trace = `[SIZING_BLOCK:${s}] balance=${balance} riskPct=${activeMode.riskPct} — REJECT: balance is zero or invalid`;
+      console.warn(trace);
+      debugLog.push('REJECT: balance is zero or invalid — cannot compute position size');
+      return null;
+    }
+    if (!intendedRisk || intendedRisk <= 0) {
+      const trace = `[SIZING_BLOCK:${s}] intendedRisk=${intendedRisk} balance=${balance} riskPct=${activeMode.riskPct} — REJECT: risk is zero`;
+      console.warn(trace);
+      debugLog.push('REJECT: intendedRisk is zero — check balance and riskPct config');
+      return null;
+    }
+
     const stopDist = Math.abs(entry - sl);
     const effStopDist = Math.max(stopDist, entry * 0.0035);
     const rawQty = intendedRisk / effStopDist;

@@ -19,11 +19,11 @@ import { apiRequest } from './api';
 function validatePayload(p: ExecutionPayload): string | null {
   if (!p.symbol)             return 'Missing symbol';
   if (!p.side)               return 'Missing side';
-  if (!p.entryPrice || p.entryPrice <= 0) return 'Invalid entryPrice';
-  if (!p.stopLoss   || p.stopLoss   <= 0) return 'Invalid stopLoss';
-  if (!p.takeProfit || p.takeProfit <= 0) return 'Invalid takeProfit';
-  if (!p.qty        || p.qty        <= 0) return 'Invalid qty';
-  if (!p.sizeUSDT   || p.sizeUSDT   <= 0) return 'Invalid sizeUSDT';
+  if (!p.entryPrice || p.entryPrice <= 0) return 'Blocked: invalid entry price';
+  if (!p.stopLoss   || p.stopLoss   <= 0) return 'Blocked: invalid stop loss';
+  if (!p.takeProfit || p.takeProfit <= 0) return 'Blocked: invalid take profit';
+  if (!p.qty        || p.qty        <= 0) return 'Blocked: computed quantity is zero — check balance and risk config';
+  if (!p.sizeUSDT   || p.sizeUSDT   <= 0) return 'Blocked: risk capital is zero — check balance and risk config';
 
   // Strict direction geometry
   if (p.side === 'LONG'  && p.stopLoss  >= p.entryPrice) return 'LONG: stopLoss must be below entryPrice';

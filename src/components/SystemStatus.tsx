@@ -28,6 +28,27 @@ export default function SystemStatus() {
   // CANONICAL count — same formula used in Header.tsx and CommandSyncHub.tsx
   const counts = getCanonicalPositionCount(binancePositions, activeTrades, pipelineSignals);
 
+  const [isSwitchingEnv, setIsSwitchingEnv] = useState(false);
+  const handleSwapEnv = async (target: 'LIVE' | 'TESTNET') => {
+    if (backendEnvironment?.isTestnet === (target === 'TESTNET')) return;
+    
+    if (target === 'LIVE') {
+       if (!window.confirm("DANGER: You are switching the VPS Scout to LIVE server with REAL keys.\nAre you absolutely sure?")) return;
+    } else {
+       if (!window.confirm("Switching VPS Scout to TESTNET. Proceed?")) return;
+    }
+
+    setIsSwitchingEnv(true);
+    try {
+      const resp = await api.switchEnvironment(target);
+      alert(resp.message || "Environment swapped successfully. Waiting for reboot...");
+      setTimeout(() => setIsSwitchingEnv(false), 3000);
+    } catch (e: any) {
+      alert(e.message || "Failed to switch environment. Ensure LIVE/TESTNET keys exist in server/.env");
+      setIsSwitchingEnv(false);
+    }
+  };
+
   // Initialize with safe defaults to prevent null-reference crashes before loading finishes
   const [config, setConfig] = useState<any>({
     riskPct:        CANONICAL_DEFAULTS.riskPct,
@@ -230,7 +251,36 @@ export default function SystemStatus() {
 
         {/* VPS Scout Backend Env */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-          <div title="The real environment the headless backend daemon executing your automated strategy is currently pointing to." style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 700, cursor: 'help' }}>VPS SCOUT ENVIRONMENT ⓘ</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div title="The real environment the headless backend daemon executing your automated strategy is currently pointing to." style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 700, cursor: 'help' }}>VPS SCOUT ENVIRONMENT ⓘ</div>
+            
+            {/* Backend Environment Switch Action */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button 
+                disabled={isSwitchingEnv || !backendEnvironment}
+                onClick={() => handleSwapEnv('LIVE')}
+                style={{
+                  padding: '4px 8px', borderRadius: '4px', fontSize: 9, fontWeight: 900,
+                  border: `1px solid ${backendEnvironment && !backendEnvironment.isTestnet ? 'rgba(16,185,129,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                  background: backendEnvironment && !backendEnvironment.isTestnet ? 'rgba(16,185,129,0.15)' : 'rgba(0,0,0,0.5)',
+                  color: backendEnvironment && !backendEnvironment.isTestnet ? '#34d399' : 'var(--text-primary)',
+                  cursor: isSwitchingEnv ? 'wait' : 'pointer', transition: 'all 0.2s', opacity: isSwitchingEnv ? 0.5 : 1
+                }}
+              >LIVE</button>
+              <button 
+                disabled={isSwitchingEnv || !backendEnvironment}
+                onClick={() => handleSwapEnv('TESTNET')}
+                style={{
+                  padding: '4px 8px', borderRadius: '4px', fontSize: 9, fontWeight: 900,
+                  border: `1px solid ${backendEnvironment?.isTestnet ? 'rgba(14,165,233,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                  background: backendEnvironment?.isTestnet ? 'rgba(14,165,233,0.15)' : 'rgba(0,0,0,0.5)',
+                  color: backendEnvironment?.isTestnet ? '#7dd3fc' : 'var(--text-primary)',
+                  cursor: isSwitchingEnv ? 'wait' : 'pointer', transition: 'all 0.2s', opacity: isSwitchingEnv ? 0.5 : 1
+                }}
+              >DEMO</button>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span title="Prevents accidental live browser executions unless explicitly toggled ON." style={{ 
               fontSize: 11, fontWeight: 900, letterSpacing: '0.1em', padding: '4px 10px', borderRadius: 'var(--radius-full)', 

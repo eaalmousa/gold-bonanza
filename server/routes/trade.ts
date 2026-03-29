@@ -9,6 +9,9 @@ import {
   latestMarketState
 } from '../lib/autoTrader';
 
+import fs from 'fs';
+import path from 'path';
+
 export const tradeRouter = Router();
 
 // Single live base URL — no demo/test endpoints
@@ -87,6 +90,52 @@ tradeRouter.get('/config', requireAuth, (req: any, res: any) => {
     circuitBreakerEnabled: TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED,
     activeModeId: TRADER_CONFIG.ACTIVE_MODE_ID
   });
+});
+
+tradeRouter.post('/environment', requireAuth, (req: any, res: any) => {
+  const { target } = req.body;
+  if (!['LIVE', 'TESTNET'].includes(target)) {
+    return res.status(400).json({ error: 'Invalid environment target' });
+  }
+
+  const keyPrefix = target === 'LIVE' ? 'BINANCE_LIVE_' : 'BINANCE_TESTNET_';
+  const baseUrl = target === 'LIVE' ? 'https://fapi.binance.com' : 'https://testnet.binancefuture.com';
+
+  const envPath = path.resolve(process.cwd(), '.env');
+  if (!fs.existsSync(envPath)) return res.status(500).json({ error: 'Backend .env missing' });
+
+  const envRaw = fs.readFileSync(envPath, 'utf8');
+  let newKey = '';
+  let newSecret = '';
+
+  envRaw.split('\n').forEach(line => {
+    if (line.startsWith(`${keyPrefix}API_KEY=`)) newKey = line.split('=')[1].trim();
+    if (line.startsWith(`${keyPrefix}API_SECRET=`)) newSecret = line.split('=')[1].trim();
+  });
+
+  if (!newKey || !newSecret) {
+    return res.status(400).json({
+      error: `Missing ${target} credentials. Please add ${keyPrefix}API_KEY and ${keyPrefix}API_SECRET safely to your server/.env to enable hot-swapping.`
+    });
+  }
+
+  let updatedEnv = envRaw
+    .replace(/^BINANCE_BASE_URL=.*$/m, `BINANCE_BASE_URL=${baseUrl}`)
+    .replace(/^BINANCE_API_KEY=.*$/m, `BINANCE_API_KEY=${newKey}`)
+    .replace(/^BINANCE_API_SECRET=.*$/m, `BINANCE_API_SECRET=${newSecret}`);
+
+  try {
+    fs.writeFileSync(envPath, updatedEnv, 'utf8');
+    toggleAutoTrade(false); // safety shutdown
+    res.json({ success: true, message: `Environment swapped to ${target}. Restarting daemon.` });
+    
+    setTimeout(() => {
+      console.log(`[Architecture] Restarting PM2 process to boot into ${target} environment.`);
+      process.exit(0);
+    }, 1000);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to rewrite .env file.' });
+  }
 });
 
 tradeRouter.post('/config', requireAuth, (req: any, res: any) => {

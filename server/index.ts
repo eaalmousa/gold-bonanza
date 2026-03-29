@@ -17,7 +17,7 @@ import { tradeLogs } from './lib/autoTrader';
 const app = express();
 
 // DIAGNOSTIC CHECKPOINT: Immediately on server boot
-tradeLogs.unshift(`[ServerBoot] BOOT ENV READ: process.env.BINANCE_BASE_URL = ${process.env.BINANCE_BASE_URL}`);
+tradeLogs.unshift(`[ServerBoot] BOOT READ: BASE_URL=${process.env.BINANCE_BASE_URL}, HAS_KEY=${!!process.env.BINANCE_API_KEY}, HAS_SECRET=${!!process.env.BINANCE_API_SECRET}`);
 
 // Production CORS: Allow only your Vercel deployment
 const ALLOWED_ORIGIN = 'https://gold-bonanza-xi.vercel.app';

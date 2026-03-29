@@ -17,13 +17,17 @@ export function getRateLimitStatus() {
 
 const getApiKey = (url?: string) => {
   const isTest = url?.includes('testnet') || url?.includes('demo-fapi') || process.env.BINANCE_BASE_URL?.includes('testnet');
-  if (isTest) return process.env.BINANCE_TEST_API_KEY;
+  if (isTest) {
+    return process.env.BINANCE_TESTNET_API_KEY || process.env.BINANCE_TEST_API_KEY || process.env.BINANCE_API_KEY;
+  }
   return process.env.BINANCE_API_KEY;
 };
 
 const getApiSecret = (url?: string) => {
   const isTest = url?.includes('testnet') || url?.includes('demo-fapi') || process.env.BINANCE_BASE_URL?.includes('testnet');
-  if (isTest) return process.env.BINANCE_TEST_API_SECRET;
+  if (isTest) {
+    return process.env.BINANCE_TESTNET_API_SECRET || process.env.BINANCE_TEST_API_SECRET || process.env.BINANCE_API_SECRET;
+  }
   return process.env.BINANCE_API_SECRET;
 };
 

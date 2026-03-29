@@ -105,18 +105,24 @@ tradeRouter.post('/environment', requireAuth, (req: any, res: any) => {
   // preventing PM2 root working directory mismatch bugs.
   const envPath = path.join(__dirname, '../.env');
   
-  if (!fs.existsSync(envPath)) return res.status(500).json({ error: `Backend .env missing at ${envPath}` });
+  if (!fs.existsSync(envPath)) {
+    tradeLogs.unshift(`[EnvSwap] Error: Backend .env missing at ${envPath}`);
+    return res.status(500).json({ error: `Backend .env missing at ${envPath}` });
+  }
 
   const envRaw = fs.readFileSync(envPath, 'utf8');
-  let newKey = '';
-  let newSecret = '';
+  
+  // Regex to tolerate spaces, quotes, and 'export ' prefixes seamlessly
+  const keyRegex = new RegExp(`^\\s*(?:export\\s+)?${keyPrefix}API_KEY\\s*=\\s*['"]?([^'"\\r\\n]+)['"]?`, 'im');
+  const secretRegex = new RegExp(`^\\s*(?:export\\s+)?${keyPrefix}API_SECRET\\s*=\\s*['"]?([^'"\\r\\n]+)['"]?`, 'im');
+  
+  const keyMatch = envRaw.match(keyRegex);
+  const secretMatch = envRaw.match(secretRegex);
 
-  envRaw.split('\n').forEach(rawLine => {
-    const line = rawLine.trim();
-    if (line.startsWith(`${keyPrefix}API_KEY=`)) newKey = line.substring(line.indexOf('=') + 1).trim();
-    if (line.startsWith(`${keyPrefix}API_SECRET=`)) newSecret = line.substring(line.indexOf('=') + 1).trim();
-  });
+  const newKey = keyMatch ? keyMatch[1] : '';
+  const newSecret = secretMatch ? secretMatch[1] : '';
 
+  tradeLogs.unshift(`[EnvSwap] Target: ${target} | Read OK. Keys Found? ${!!newKey}/${!!newSecret}`);
   console.log(`[Diagnostic] Environment Switcher Request:`);
   console.log(` - Target: ${target}`);
   console.log(` - Path read: ${envPath}`);
@@ -124,8 +130,11 @@ tradeRouter.post('/environment', requireAuth, (req: any, res: any) => {
   console.log(` - Found ${keyPrefix}API_SECRET? ${!!newSecret}`);
 
   if (!newKey || !newSecret) {
+    const rawLines = envRaw.split('\n').filter(l => l.includes(keyPrefix)).map(l => l.substring(0, Math.min(l.length, 30)) + '...');
+    const dbgMsg = `File read from: ${envPath}. Searched for ${keyPrefix}API_KEY. Lines containing prefix found in file: ${rawLines.length > 0 ? JSON.stringify(rawLines) : 'None'}`;
+    tradeLogs.unshift(`[EnvSwap] Failed: Missing ${target} credentials. Debug: ${dbgMsg}`);
     return res.status(400).json({
-      error: `Missing ${target} credentials. Please add ${keyPrefix}API_KEY and ${keyPrefix}API_SECRET safely to your server/.env to enable hot-swapping.`
+      error: `Missing TESTNET credentials. Please add BINANCE_TESTNET_API_KEY and BINANCE_TESTNET_API_SECRET safely to your server/.env to enable hot-swapping.\n\nDiagnostic: ${dbgMsg}`
     });
   }
 

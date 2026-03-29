@@ -101,17 +101,27 @@ tradeRouter.post('/environment', requireAuth, (req: any, res: any) => {
   const keyPrefix = target === 'LIVE' ? 'BINANCE_LIVE_' : 'BINANCE_TESTNET_';
   const baseUrl = target === 'LIVE' ? 'https://fapi.binance.com' : 'https://testnet.binancefuture.com';
 
-  const envPath = path.resolve(process.cwd(), '.env');
-  if (!fs.existsSync(envPath)) return res.status(500).json({ error: 'Backend .env missing' });
+  // FIX: Force path resolution to the explicit server/.env via __dirname, 
+  // preventing PM2 root working directory mismatch bugs.
+  const envPath = path.join(__dirname, '../.env');
+  
+  if (!fs.existsSync(envPath)) return res.status(500).json({ error: `Backend .env missing at ${envPath}` });
 
   const envRaw = fs.readFileSync(envPath, 'utf8');
   let newKey = '';
   let newSecret = '';
 
-  envRaw.split('\n').forEach(line => {
-    if (line.startsWith(`${keyPrefix}API_KEY=`)) newKey = line.split('=')[1].trim();
-    if (line.startsWith(`${keyPrefix}API_SECRET=`)) newSecret = line.split('=')[1].trim();
+  envRaw.split('\n').forEach(rawLine => {
+    const line = rawLine.trim();
+    if (line.startsWith(`${keyPrefix}API_KEY=`)) newKey = line.substring(line.indexOf('=') + 1).trim();
+    if (line.startsWith(`${keyPrefix}API_SECRET=`)) newSecret = line.substring(line.indexOf('=') + 1).trim();
   });
+
+  console.log(`[Diagnostic] Environment Switcher Request:`);
+  console.log(` - Target: ${target}`);
+  console.log(` - Path read: ${envPath}`);
+  console.log(` - Found ${keyPrefix}API_KEY? ${!!newKey}`);
+  console.log(` - Found ${keyPrefix}API_SECRET? ${!!newSecret}`);
 
   if (!newKey || !newSecret) {
     return res.status(400).json({

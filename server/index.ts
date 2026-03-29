@@ -12,8 +12,12 @@ import cors from 'cors';
 import { authRouter } from './routes/auth';
 import { tradeRouter } from './routes/trade';
 import './lib/autoTrader';
+import { tradeLogs } from './lib/autoTrader';
 
 const app = express();
+
+// DIAGNOSTIC CHECKPOINT: Immediately on server boot
+tradeLogs.unshift(`[ServerBoot] BOOT ENV READ: process.env.BINANCE_BASE_URL = ${process.env.BINANCE_BASE_URL}`);
 
 // Production CORS: Allow only your Vercel deployment
 const ALLOWED_ORIGIN = 'https://gold-bonanza-xi.vercel.app';

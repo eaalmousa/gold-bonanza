@@ -24,12 +24,25 @@ function resolveBaseUrl(): string {
 tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
   const isTest = process.env.BINANCE_BASE_URL?.includes('testnet') || process.env.BINANCE_BASE_URL?.includes('demo-fapi') ? true : false;
   
+  // DIAGNOSTIC CHECKPOINT: inside /status response path
+  let fileBaseUrl = 'NOT_FOUND_IN_FILE';
+  let fileLines = 0;
+  try {
+    const envDisk = fs.readFileSync(path.join(__dirname, '../.env'), 'utf8');
+    const bMatch = envDisk.match(/^\s*(?:export\s+)?BINANCE_BASE_URL\s*=\s*(.*)$/im);
+    if (bMatch) fileBaseUrl = bMatch[1].trim();
+    fileLines = envDisk.split('\n').length;
+  } catch(e) { fileBaseUrl = 'FILE_READ_ERROR'; }
+
+  
   res.json({
     enabled: TRADER_CONFIG.ENABLED,
     autoTrading: TRADER_CONFIG.ENABLED,
     backendEnvironment: {
       isTestnet: isTest,
-      baseUrl: process.env.BINANCE_BASE_URL || 'https://fapi.binance.com'
+      baseUrl: process.env.BINANCE_BASE_URL || 'https://fapi.binance.com',
+      diagnosticFileTruth: fileBaseUrl,
+      diagnosticLineCount: fileLines
     },
     logs: tradeLogs,
     config: {
@@ -138,13 +151,34 @@ tradeRouter.post('/environment', requireAuth, (req: any, res: any) => {
     });
   }
 
-  let updatedEnv = envRaw
-    .replace(/^BINANCE_BASE_URL=.*$/m, `BINANCE_BASE_URL=${baseUrl}`)
-    .replace(/^BINANCE_API_KEY=.*$/m, `BINANCE_API_KEY=${newKey}`)
-    .replace(/^BINANCE_API_SECRET=.*$/m, `BINANCE_API_SECRET=${newSecret}`);
+  let updatedEnv = envRaw;
+
+  const injectOrReplace = (envText: string, key: string, val: string) => {
+    const regex = new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=.*$`, 'im');
+    if (regex.test(envText)) {
+      return envText.replace(regex, `${key}=${val}`);
+    } else {
+      return envText + `\n${key}=${val}\n`;
+    }
+  };
+
+  updatedEnv = injectOrReplace(updatedEnv, 'BINANCE_BASE_URL', baseUrl);
+  updatedEnv = injectOrReplace(updatedEnv, 'BINANCE_API_KEY', newKey);
+  updatedEnv = injectOrReplace(updatedEnv, 'BINANCE_API_SECRET', newSecret);
+
+  // DIAGNOSTIC CHECKPOINT: before file write
+  const activeBaseBefore = (envRaw.match(/^\s*(?:export\s+)?BINANCE_BASE_URL\s*=\s*(.*)$/im) || [])[1] || 'MISSING';
+  const activeBaseAfter = (updatedEnv.match(/^\s*(?:export\s+)?BINANCE_BASE_URL\s*=\s*(.*)$/im) || [])[1] || 'MISSING';
+  tradeLogs.unshift(`[EnvDebug] Before write: BASE_URL=${activeBaseBefore}. After internal string mod: BASE_URL=${activeBaseAfter}`);
 
   try {
     fs.writeFileSync(envPath, updatedEnv, 'utf8');
+    
+    // DIAGNOSTIC CHECKPOINT: after file write
+    const actualDiskNow = fs.readFileSync(envPath, 'utf8');
+    const diskBaseAfter = (actualDiskNow.match(/^\s*(?:export\s+)?BINANCE_BASE_URL\s*=\s*(.*)$/im) || [])[1] || 'MISSING';
+    tradeLogs.unshift(`[EnvDebug] After write to disk. Readback proves BASE_URL=${diskBaseAfter}`);
+
     toggleAutoTrade(false); // safety shutdown
     res.json({ success: true, message: `Environment swapped to ${target}. Restarting daemon.` });
     

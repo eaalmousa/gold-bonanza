@@ -296,13 +296,17 @@ export default function SystemStatus() {
             <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 900, letterSpacing: '0.2em' }}>
               Base: <span style={{ 
                 color: !backendEnvironment ? 'var(--text-muted)' : backendEnvironment.isTestnet ? '#38bdf8' : 'var(--green)',
-                textShadow: !backendEnvironment ? 'none' : backendEnvironment.isTestnet ? '0 0 5px rgba(56,189,248,0.5)' : '0 0 5px rgba(16,185,129,0.5)'
               }}>{!backendEnvironment ? 'OFFLINE' : backendEnvironment.isTestnet ? 'TESTNET' : 'LIVE'}</span>
             </span>
           </div>
           {backendEnvironment?.baseUrl && (
              <div style={{ fontSize: 8, color: 'var(--text-muted)', opacity: 0.7, fontFamily: 'monospace' }}>
-               {backendEnvironment.baseUrl.replace('https://', '')}
+               Env Memory: {backendEnvironment.baseUrl.replace('https://', '')}
+             </div>
+          )}
+          {(backendEnvironment as any)?.diagnosticFileTruth && (
+             <div style={{ fontSize: 8, color: 'gold', opacity: 0.8, fontFamily: 'monospace' }}>
+               File Disk: {(backendEnvironment as any).diagnosticFileTruth.replace('https://', '')}
              </div>
           )}
         </div>

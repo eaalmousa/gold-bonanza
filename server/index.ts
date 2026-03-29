@@ -1,4 +1,12 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+
+// FIX: Force PM2 to drop stale memory context across process.exit() restarts.
+// PM2 re-injects stale environment variables natively, preventing the switcher from 
+// exposing the newly written .env keys. `override: true` mass-overwrites PM2's shadow memory.
+dotenv.config({ path: path.join(__dirname, '.env'), override: true });
+
+
 import express from 'express';
 import cors from 'cors';
 import { authRouter } from './routes/auth';

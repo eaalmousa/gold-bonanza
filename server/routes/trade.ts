@@ -192,7 +192,7 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
     console.log(`[Trade:open] qty recomputed | balance=$${balFromBinance.toFixed(2)} | riskPct=${riskPctEnv} | lev=${lev} | intendedRisk=$${intendedRisk.toFixed(2)} | rawQty=${qty.toFixed(6)}`);
   }
 
-  // ── Idempotency Duplicate Rejection ──────────────────────────────────────────
+  // ── Idempotency Duplicate Rejection (Synchronous) ──────────────────────────
   const RECENT_COOLDOWN_MS = 60 * 1000;
   const sigKey = `${symbol}_${side}_${entryType || 'UNKNOWN'}`;
   const lastTime = recentSignals.get(sigKey);
@@ -203,21 +203,35 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
     return res.status(429).json({ error: 'BLOCKED_DUPLICATE_SIGNAL: The same signal was triggered locally within the last 60 seconds.' });
   }
 
-  // ── Hard Backend Capacity Guard (Positions + InFlight) ───────────────────────
-  let currentPositions: any[] = [];
+  // ── Hard Capacity Pre-check (Synchronous) ──────────────────────────────────
+  if (inFlightExecutions >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
+    tradeLogs.unshift(`[${new Date().toISOString()}] [CAP_BLOCK_PRECHECK] ${symbol} — In-flight capacity saturated (${inFlightExecutions}/${TRADER_CONFIG.MAX_CONCURRENT_TRADES}).`);
+    return res.status(429).json({ error: `CAP_BLOCK_PRECHECK: Saturated in-flight limits.` });
+  }
+
+  // >>> RESERVE CAPACITY SYNCHRONOUSLY BEFORE AWAIT <<<
+  inFlightExecutions++;
+  recentSignals.set(sigKey, now);
+
+  // Note: we can now use try...finally to ensure cleanup if anything below fails
   try {
-    currentPositions = await getPositions();
-  } catch (err) {
-    tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED] ${symbol} — Failed to fetch exchange positions for hard capacity check.`);
-    return res.status(500).json({ error: 'Failed to fetch current positions for limit check.' });
-  }
-  
-  const activeCount = currentPositions.length + inFlightExecutions;
-  if (activeCount >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
-    console.warn(`[Trade:open] PRE-EXEC BLOCK: ${symbol} — Capacity Reached (Active: ${currentPositions.length}, InFlight: ${inFlightExecutions}, Max: ${TRADER_CONFIG.MAX_CONCURRENT_TRADES})`);
-    tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED_MAX_TRADES] ${symbol} — Capacity Reached (${activeCount}/${TRADER_CONFIG.MAX_CONCURRENT_TRADES})`);
-    return res.status(429).json({ error: `BLOCKED_MAX_TRADES: Capacity constraint reached. Allowed: ${TRADER_CONFIG.MAX_CONCURRENT_TRADES}. Active Exchange: ${currentPositions.length}, InFlight: ${inFlightExecutions}.` });
-  }
+    // ── Hard Capacity Post-sync Guard ──────────────────────────────────────────
+    let currentPositions: any[] = [];
+    try {
+      currentPositions = await getPositions();
+    } catch (err) {
+      tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED] ${symbol} — Failed to fetch exchange positions for hard capacity check.`);
+      return res.status(500).json({ error: 'Failed to fetch current positions for limit check.' });
+    }
+    
+    // We subtract 1 from inFlightExecutions because we already counted THIS request
+    const trueActiveCount = currentPositions.length + (inFlightExecutions - 1);
+    
+    if (trueActiveCount >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
+      console.warn(`[Trade:open] POST-SYNC BLOCK: ${symbol} — Capacity Reached (Active: ${currentPositions.length}, InFlight: ${inFlightExecutions - 1}, Max: ${TRADER_CONFIG.MAX_CONCURRENT_TRADES})`);
+      tradeLogs.unshift(`[${new Date().toISOString()}] [CAP_BLOCK_POSTSYNC] ${symbol} — Exchange Positions (${currentPositions.length}) capped limit.`);
+      return res.status(429).json({ error: `CAP_BLOCK_POSTSYNC: Capacity constraint reached. Allowed: ${TRADER_CONFIG.MAX_CONCURRENT_TRADES}. Active Exchange: ${currentPositions.length}.` });
+    }
 
   // ── Structured local pre-execution validation (before any Binance call) ─────
   const notional = qty * entryPrice;
@@ -274,10 +288,7 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
   console.log('[Trade:open] Outbound payload:', JSON.stringify(auditPayload, null, 2));
   tradeLogs.unshift(`[${new Date().toISOString()}] [LIVE] SUBMITTING: ${symbol} ${side}`);
 
-  // Lock backend concurrency tracking
-  inFlightExecutions++;
-  recentSignals.set(sigKey, now);
-
+  // The try block around this is already open above, we just need to nest the try-catch for binance logic
   try {
     // 1. Set leverage
     await binanceRequest('POST', '/fapi/v1/leverage', { symbol, leverage: lev }, baseUrl);
@@ -403,8 +414,11 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
       failedAt:         Date.now(),
       submittedPayload: auditPayload
     });
+
+  } // <-- Closes the inner try block for binance logic catch
+
   } finally {
-    // Release in-flight lock after execution loop completes heavily
+    // Release in-flight lock for outer try
     inFlightExecutions--;
   }
 });

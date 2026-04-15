@@ -149,7 +149,7 @@ export const useTradingStore = create<TradingState>()((set, get) => ({
     { label: 'EXECUTION RELAY', value: 100.0, status: 'ok' },
   ],
   cloudHydrationStatus: 'PENDING' as 'PENDING' | 'SYNCED' | 'FAILED',
-  isTabLeader: true, // Optimistically true until election
+  isTabLeader: false, // Waits for election
   marketRegime: 'RANGING' as MarketRegime,
   lastScanAt: null as number | null,
   orderFlowSnapshots: {},
@@ -565,42 +565,79 @@ export const useTradingStore = create<TradingState>()((set, get) => ({
 }));
 
 // ============================================
-// Multi-Tab Leader Election
+// Multi-Tab Leader Election (BroadcastChannel)
 // ============================================
 if (typeof window !== 'undefined') {
   const TAB_ID = Math.random().toString(36).slice(2, 9);
+  const channel = new BroadcastChannel('gb_tab_election');
   
-  const pingLeader = () => {
-    const leaderId = localStorage.getItem('gb_leader_tab_id');
-    const leaderTs = parseInt(localStorage.getItem('gb_leader_ts') || '0', 10);
-    const now = Date.now();
-    
-    // Assume leader if NO leader, or stale leader (>3000ms), or we are the leader
-    if (!leaderId || (now - leaderTs > 3000) || leaderId === TAB_ID) {
-      if (leaderId !== TAB_ID) {
-        console.log(`[Tab Election] Tab ${TAB_ID} assumed CONTROLLER role.`);
-      }
-      localStorage.setItem('gb_leader_tab_id', TAB_ID);
-      localStorage.setItem('gb_leader_ts', now.toString());
-      if (!useTradingStore.getState().isTabLeader) {
-        useTradingStore.setState({ isTabLeader: true });
-      }
-    } else {
-      // We are a viewer tab
-      if (useTradingStore.getState().isTabLeader) {
-        console.warn(`[Tab Election] Leader heartbeat detected from ${leaderId}. Falling back to VIEWER role.`);
+  let isLeader = false;
+  useTradingStore.setState({ isTabLeader: false }); // Init as viewer safely
+  
+  let leaderTimeout: NodeJS.Timeout;
+  let heartbeatTimeout: NodeJS.Timeout;
+
+  const assumeLeader = () => {
+    isLeader = true;
+    useTradingStore.setState({ isTabLeader: true });
+    console.log(`[Tab Election] Tab ${TAB_ID} assumed CONTROLLER role. LEADER_ELECTED`);
+    channel.postMessage({ type: 'I_AM_LEADER', tabId: TAB_ID });
+  };
+
+  const startElection = () => {
+    channel.postMessage({ type: 'WHO_IS_LEADER', tabId: TAB_ID });
+    clearTimeout(leaderTimeout);
+    leaderTimeout = setTimeout(() => assumeLeader(), 500); // 500ms to yield
+  };
+
+  channel.onmessage = (msg) => {
+    if (msg.data.type === 'I_AM_LEADER' || msg.data.type === 'HEARTBEAT') {
+      if (msg.data.tabId !== TAB_ID) {
+        if (isLeader) {
+           console.log(`[Tab Election] Ousted by newer leader. VIEWER_MODE_FORCED`);
+        }
+        clearTimeout(leaderTimeout);
+        clearTimeout(heartbeatTimeout);
+        
+        isLeader = false;
         useTradingStore.setState({ isTabLeader: false });
+
+        // If the leader crashes and skips heartbeat/resignation:
+        heartbeatTimeout = setTimeout(() => {
+          console.warn(`[Tab Election] Leader heartbeat timeout. LEADER_STOLEN`);
+          startElection();
+        }, 30000); // 30s timeout
       }
     }
+
+    if (msg.data.type === 'WHO_IS_LEADER') {
+      if (isLeader) {
+        channel.postMessage({ type: 'I_AM_LEADER', tabId: TAB_ID });
+      }
+    }
+
+    if (msg.data.type === 'LEADER_RESIGNED') {
+      // Leader closed tab. Let's elect among viewers. Random delay to avoid storms.
+      clearTimeout(heartbeatTimeout);
+      setTimeout(() => {
+        if (!isLeader) startElection();
+      }, Math.random() * 500);
+    }
   };
-  
-  pingLeader();
-  setInterval(pingLeader, 1000);
-  
+
+  // Broadcast presence
+  startElection();
+
+  // Leader heartbeat to keep viewers dormant
+  setInterval(() => {
+    if (isLeader) {
+      channel.postMessage({ type: 'HEARTBEAT', tabId: TAB_ID });
+    }
+  }, 10000);
+
   window.addEventListener('beforeunload', () => {
-    if (localStorage.getItem('gb_leader_tab_id') === TAB_ID) {
-      localStorage.removeItem('gb_leader_tab_id');
-      localStorage.removeItem('gb_leader_ts');
+    if (isLeader) {
+      channel.postMessage({ type: 'LEADER_RESIGNED', tabId: TAB_ID });
     }
   });
 }

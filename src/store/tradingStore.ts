@@ -565,79 +565,101 @@ export const useTradingStore = create<TradingState>()((set, get) => ({
 }));
 
 // ============================================
-// Multi-Tab Leader Election (BroadcastChannel)
+// Multi-Tab Leader Election (Hybrid localStorage + BroadcastChannel)
 // ============================================
+// localStorage = synchronous ground truth on boot (instant check)
+// BroadcastChannel = live coordination between running tabs
 if (typeof window !== 'undefined') {
-  const TAB_ID = Math.random().toString(36).slice(2, 9);
-  const channel = new BroadcastChannel('gb_tab_election');
-  
+  const TAB_ID = `tab_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const LS_LEADER_ID = 'gb_leader_tab_id';
+  const LS_LEADER_TS = 'gb_leader_ts';
+  const LEADER_STALE_MS = 5000;
+  const ELECTION_WAIT_MS = 2000;
+
   let isLeader = false;
-  useTradingStore.setState({ isTabLeader: false }); // Init as viewer safely
-  
-  let leaderTimeout: NodeJS.Timeout;
-  let heartbeatTimeout: NodeJS.Timeout;
+  let channel: BroadcastChannel | null = null;
+  try { channel = new BroadcastChannel('gb_tab_election'); } catch { /* fallback to LS only */ }
+
+  useTradingStore.setState({ isTabLeader: false });
+
+  const existingLeaderId = localStorage.getItem(LS_LEADER_ID);
+  const existingLeaderTs = parseInt(localStorage.getItem(LS_LEADER_TS) || '0', 10);
+  const leaderIsFresh = existingLeaderId && (Date.now() - existingLeaderTs < LEADER_STALE_MS);
 
   const assumeLeader = () => {
+    if (isLeader) return;
     isLeader = true;
+    localStorage.setItem(LS_LEADER_ID, TAB_ID);
+    localStorage.setItem(LS_LEADER_TS, Date.now().toString());
     useTradingStore.setState({ isTabLeader: true });
-    console.log(`[Tab Election] Tab ${TAB_ID} assumed CONTROLLER role. LEADER_ELECTED`);
-    channel.postMessage({ type: 'I_AM_LEADER', tabId: TAB_ID });
+    console.log(`[Tab Election] ${TAB_ID} LEADER_ELECTED`);
+    if (channel) channel.postMessage({ type: 'I_AM_LEADER', tabId: TAB_ID });
   };
+
+  const becomeViewer = (reason: string) => {
+    isLeader = false;
+    useTradingStore.setState({ isTabLeader: false });
+    console.log(`[Tab Election] ${TAB_ID} ${reason}`);
+  };
+
+  let electionTimer: ReturnType<typeof setTimeout> | null = null;
 
   const startElection = () => {
-    channel.postMessage({ type: 'WHO_IS_LEADER', tabId: TAB_ID });
-    clearTimeout(leaderTimeout);
-    leaderTimeout = setTimeout(() => assumeLeader(), 500); // 500ms to yield
+    if (channel) channel.postMessage({ type: 'WHO_IS_LEADER', tabId: TAB_ID });
+    if (electionTimer) clearTimeout(electionTimer);
+    electionTimer = setTimeout(() => { assumeLeader(); }, ELECTION_WAIT_MS);
   };
 
-  channel.onmessage = (msg) => {
-    if (msg.data.type === 'I_AM_LEADER' || msg.data.type === 'HEARTBEAT') {
-      if (msg.data.tabId !== TAB_ID) {
-        if (isLeader) {
-           console.log(`[Tab Election] Ousted by newer leader. VIEWER_MODE_FORCED`);
-        }
-        clearTimeout(leaderTimeout);
-        clearTimeout(heartbeatTimeout);
-        
+  if (leaderIsFresh) {
+    console.log(`[Tab Election] ${TAB_ID} detected live leader ${existingLeaderId} (${Date.now() - existingLeaderTs}ms ago). VIEWER_MODE_FORCED`);
+    setTimeout(() => {
+      const ts = parseInt(localStorage.getItem(LS_LEADER_TS) || '0', 10);
+      if (Date.now() - ts >= LEADER_STALE_MS && !isLeader) {
+        console.warn(`[Tab Election] Stale leader on re-check. LEADER_STOLEN`);
+        startElection();
+      }
+    }, LEADER_STALE_MS + 500);
+  } else {
+    startElection();
+  }
+
+  if (channel) {
+    channel.onmessage = (msg) => {
+      const { type, tabId } = msg.data;
+      if ((type === 'I_AM_LEADER' || type === 'HEARTBEAT') && tabId !== TAB_ID) {
+        if (electionTimer) { clearTimeout(electionTimer); electionTimer = null; }
+        if (isLeader) becomeViewer('VIEWER_MODE_FORCED');
         isLeader = false;
         useTradingStore.setState({ isTabLeader: false });
-
-        // If the leader crashes and skips heartbeat/resignation:
-        heartbeatTimeout = setTimeout(() => {
-          console.warn(`[Tab Election] Leader heartbeat timeout. LEADER_STOLEN`);
-          startElection();
-        }, 30000); // 30s timeout
       }
-    }
-
-    if (msg.data.type === 'WHO_IS_LEADER') {
-      if (isLeader) {
-        channel.postMessage({ type: 'I_AM_LEADER', tabId: TAB_ID });
+      if (type === 'WHO_IS_LEADER' && isLeader) {
+        channel!.postMessage({ type: 'I_AM_LEADER', tabId: TAB_ID });
       }
-    }
+      if (type === 'LEADER_RESIGNED') {
+        setTimeout(() => { if (!isLeader) startElection(); }, 200 + Math.random() * 800);
+      }
+    };
+  }
 
-    if (msg.data.type === 'LEADER_RESIGNED') {
-      // Leader closed tab. Let's elect among viewers. Random delay to avoid storms.
-      clearTimeout(heartbeatTimeout);
-      setTimeout(() => {
-        if (!isLeader) startElection();
-      }, Math.random() * 500);
-    }
-  };
-
-  // Broadcast presence
-  startElection();
-
-  // Leader heartbeat to keep viewers dormant
   setInterval(() => {
     if (isLeader) {
-      channel.postMessage({ type: 'HEARTBEAT', tabId: TAB_ID });
+      localStorage.setItem(LS_LEADER_ID, TAB_ID);
+      localStorage.setItem(LS_LEADER_TS, Date.now().toString());
+      if (channel) channel.postMessage({ type: 'HEARTBEAT', tabId: TAB_ID });
+    } else {
+      const ts = parseInt(localStorage.getItem(LS_LEADER_TS) || '0', 10);
+      if (Date.now() - ts >= LEADER_STALE_MS) {
+        console.warn(`[Tab Election] Leader heartbeat expired. LEADER_STOLEN`);
+        startElection();
+      }
     }
-  }, 10000);
+  }, 2000);
 
   window.addEventListener('beforeunload', () => {
     if (isLeader) {
-      channel.postMessage({ type: 'LEADER_RESIGNED', tabId: TAB_ID });
+      localStorage.removeItem(LS_LEADER_ID);
+      localStorage.removeItem(LS_LEADER_TS);
+      if (channel) channel.postMessage({ type: 'LEADER_RESIGNED', tabId: TAB_ID });
     }
   });
 }

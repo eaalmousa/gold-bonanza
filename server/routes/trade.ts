@@ -18,6 +18,34 @@ export const tradeRouter = Router();
 let inFlightExecutions = 0;
 const recentSignals = new Map<string, number>();
 
+// Async mutex: serializes the check-positions-then-reserve critical section
+// so only ONE request at a time can evaluate capacity and claim a slot.
+class ExecutionMutex {
+  private queue: (() => void)[] = [];
+  private locked = false;
+
+  async acquire(): Promise<() => void> {
+    return new Promise<() => void>(resolve => {
+      const tryAcquire = () => {
+        if (!this.locked) {
+          this.locked = true;
+          resolve(() => {
+            this.locked = false;
+            if (this.queue.length > 0) {
+              const next = this.queue.shift()!;
+              next();
+            }
+          });
+        } else {
+          this.queue.push(tryAcquire);
+        }
+      };
+      tryAcquire();
+    });
+  }
+}
+const executionMutex = new ExecutionMutex();
+
 // Dynamic execution URL resolution mapped to the execution mode state
 function resolveBaseUrl(): string {
   if (TRADER_CONFIG.BACKEND_EXECUTION_MODE === 'LIVE') return 'https://fapi.binance.com';
@@ -203,83 +231,96 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
     return res.status(429).json({ error: 'BLOCKED_DUPLICATE_SIGNAL: The same signal was triggered locally within the last 60 seconds.' });
   }
 
-  // ── Hard Capacity Pre-check (Synchronous) ──────────────────────────────────
+  // ── Synchronous Pre-check (fast reject before mutex wait) ─────────────────
   if (inFlightExecutions >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
-    tradeLogs.unshift(`[${new Date().toISOString()}] [CAP_BLOCK_PRECHECK] ${symbol} — In-flight capacity saturated (${inFlightExecutions}/${TRADER_CONFIG.MAX_CONCURRENT_TRADES}).`);
-    return res.status(429).json({ error: `CAP_BLOCK_PRECHECK: Saturated in-flight limits.` });
+    tradeLogs.unshift(`[${new Date().toISOString()}] [CAP_BLOCK_PRECHECK] ${symbol} — In-flight ${inFlightExecutions} >= max ${TRADER_CONFIG.MAX_CONCURRENT_TRADES}.`);
+    return res.status(429).json({ error: `CAP_BLOCK_PRECHECK: In-flight ${inFlightExecutions} >= max ${TRADER_CONFIG.MAX_CONCURRENT_TRADES}.` });
   }
 
-  // >>> RESERVE CAPACITY SYNCHRONOUSLY BEFORE AWAIT <<<
-  inFlightExecutions++;
-  recentSignals.set(sigKey, now);
-
-  // Note: we can now use try...finally to ensure cleanup if anything below fails
+  // ── ACQUIRE MUTEX: serialize check-then-reserve ───────────────────────────
+  const releaseMutex = await executionMutex.acquire();
+  let reserved = false;
   try {
-    // ── Hard Capacity Post-sync Guard ──────────────────────────────────────────
+    // Re-check inflight after acquiring mutex (another request may have reserved while we waited)
+    if (inFlightExecutions >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
+      tradeLogs.unshift(`[${new Date().toISOString()}] [CAP_BLOCK_PRECHECK] ${symbol} — Post-mutex in-flight ${inFlightExecutions} >= max ${TRADER_CONFIG.MAX_CONCURRENT_TRADES}.`);
+      releaseMutex();
+      return res.status(429).json({ error: `CAP_BLOCK_PRECHECK: Post-mutex in-flight ${inFlightExecutions} >= max ${TRADER_CONFIG.MAX_CONCURRENT_TRADES}.` });
+    }
+
+    // Fetch real exchange positions while holding the mutex
     let currentPositions: any[] = [];
     try {
       currentPositions = await getPositions();
     } catch (err) {
-      tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED] ${symbol} — Failed to fetch exchange positions for hard capacity check.`);
+      tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED] ${symbol} — Failed to fetch exchange positions.`);
+      releaseMutex();
       return res.status(500).json({ error: 'Failed to fetch current positions for limit check.' });
     }
-    
-    // We subtract 1 from inFlightExecutions because we already counted THIS request
-    const trueActiveCount = currentPositions.length + (inFlightExecutions - 1);
-    
-    if (trueActiveCount >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
-      console.warn(`[Trade:open] POST-SYNC BLOCK: ${symbol} — Capacity Reached (Active: ${currentPositions.length}, InFlight: ${inFlightExecutions - 1}, Max: ${TRADER_CONFIG.MAX_CONCURRENT_TRADES})`);
-      tradeLogs.unshift(`[${new Date().toISOString()}] [CAP_BLOCK_POSTSYNC] ${symbol} — Exchange Positions (${currentPositions.length}) capped limit.`);
-      return res.status(429).json({ error: `CAP_BLOCK_POSTSYNC: Capacity constraint reached. Allowed: ${TRADER_CONFIG.MAX_CONCURRENT_TRADES}. Active Exchange: ${currentPositions.length}.` });
+
+    // Audit: if exchange already exceeds cap from external causes
+    if (currentPositions.length > TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
+      console.error(`[Trade:open] CAP_EXCEEDED_ACTUAL: Exchange has ${currentPositions.length} positions, max is ${TRADER_CONFIG.MAX_CONCURRENT_TRADES}`);
+      tradeLogs.unshift(`[${new Date().toISOString()}] [CAP_EXCEEDED_ACTUAL] Exchange=${currentPositions.length} > Max=${TRADER_CONFIG.MAX_CONCURRENT_TRADES}`);
     }
 
-  // ── Structured local pre-execution validation (before any Binance call) ─────
+    // Hard capacity: exchange positions + other pending in-flight (this request is NOT counted yet)
+    const totalActive = currentPositions.length + inFlightExecutions;
+    if (totalActive >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
+      console.warn(`[Trade:open] CAP_BLOCK_POSTSYNC: ${symbol} — Exchange=${currentPositions.length}, InFlight=${inFlightExecutions}, Max=${TRADER_CONFIG.MAX_CONCURRENT_TRADES}`);
+      tradeLogs.unshift(`[${new Date().toISOString()}] [CAP_BLOCK_POSTSYNC] ${symbol} — Total ${totalActive} >= Max ${TRADER_CONFIG.MAX_CONCURRENT_TRADES}`);
+      releaseMutex();
+      return res.status(429).json({ error: `CAP_BLOCK_POSTSYNC: Exchange=${currentPositions.length} + InFlight=${inFlightExecutions} = ${totalActive} >= Max ${TRADER_CONFIG.MAX_CONCURRENT_TRADES}.` });
+    }
+
+    // RESERVE SLOT: only reached if check passed while holding mutex
+    inFlightExecutions++;
+    recentSignals.set(sigKey, now);
+    reserved = true;
+    console.log(`[Trade:open] SLOT RESERVED for ${symbol}. InFlight=${inFlightExecutions}, Exchange=${currentPositions.length}, Max=${TRADER_CONFIG.MAX_CONCURRENT_TRADES}`);
+  } finally {
+    releaseMutex();
+  }
+
+  // ── Validation (after mutex released, slot is reserved) ──────────────────
   const notional = qty * entryPrice;
 
   if (!balFromBinance || balFromBinance <= 0) {
     const reason = `Blocked: balance is zero ($${balFromBinance}) — cannot size order`;
     console.warn(`[Trade:open] PRE-EXEC BLOCK: ${symbol} — ${reason}`);
     tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED] ${symbol} — ${reason}`);
-    return res.status(400).json({
-      error: reason,
-      debug: { symbol, balance: balFromBinance, riskPct: riskPctEnv, leverage: lev, qty, notional }
-    });
+    if (reserved) inFlightExecutions--;
+    return res.status(400).json({ error: reason, debug: { symbol, balance: balFromBinance, riskPct: riskPctEnv, leverage: lev, qty, notional } });
   }
   if (!qty || qty <= 0) {
     const reason = `Blocked: computed quantity is zero — check balance ($${balFromBinance.toFixed(2)}) and risk config`;
     console.warn(`[Trade:open] PRE-EXEC BLOCK: ${symbol} — ${reason}`);
     tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED] ${symbol} — ${reason}`);
-    return res.status(400).json({
-      error: reason,
-      debug: { symbol, balance: balFromBinance, riskPct: riskPctEnv, leverage: lev, qty, notional }
-    });
+    if (reserved) inFlightExecutions--;
+    return res.status(400).json({ error: reason, debug: { symbol, balance: balFromBinance, riskPct: riskPctEnv, leverage: lev, qty, notional } });
   }
   if (notional < 5.00) {
     const reason = `Blocked: below minimum executable notional ($${notional.toFixed(2)} < $5.00) — qty=${qty.toFixed(6)} @ ${entryPrice}`;
     console.warn(`[Trade:open] PRE-EXEC BLOCK: ${symbol} — ${reason}`);
     tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED] ${symbol} — ${reason}`);
-    return res.status(400).json({
-      error: reason,
-      debug: { symbol, balance: balFromBinance, riskPct: riskPctEnv, leverage: lev, qty, notional }
-    });
+    if (reserved) inFlightExecutions--;
+    return res.status(400).json({ error: reason, debug: { symbol, balance: balFromBinance, riskPct: riskPctEnv, leverage: lev, qty, notional } });
   }
 
   console.log(`[Trade:open] PRE-EXEC PASS: ${symbol} | balance=$${balFromBinance.toFixed(2)} | qty=${qty.toFixed(6)} | notional=$${notional.toFixed(2)} | lev=${lev}x`);
 
-  // ── Precision: fetch from exchange info at the correct base URL ──────────────
+  // ── Precision: fetch from exchange info ─────────────────────────────────────
   function roundTo(v: number, dp: number) { return dp === 0 ? Math.round(v).toString() : v.toFixed(dp); }
   let pricePrec = 2, qtyPrec = 3;
   try {
-    console.log(`[Trade:open] Fetching ExchangeInfo from: ${baseUrl}/fapi/v1/exchangeInfo`);
     const info = await fetch(`${baseUrl}/fapi/v1/exchangeInfo`).then(r => r.json()) as any;
-    console.log(`[Trade:open] ExchangeInfo fetched. Symbols count: ${info?.symbols?.length ?? 0}`);
     const sym  = info?.symbols?.find((s: any) => s.symbol === symbol);
     if (sym) { pricePrec = sym.pricePrecision; qtyPrec = sym.quantityPrecision; }
   } catch (err: any) {
     console.warn(`[Trade:open] Warning: Failed to fetch ExchangeInfo (${err.message}). Using defaults.`);
   }
 
-  // ── Audit log BEFORE any submission ──────────────────────────────────────────
+  // ── Audit log ───────────────────────────────────────────────────────────────
   const auditPayload = {
     symbol, side, entryPrice, stopLoss, 
     qty: roundTo(qty, qtyPrec), leverage: lev, mode: 'LIVE', baseUrl,
@@ -288,7 +329,6 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
   console.log('[Trade:open] Outbound payload:', JSON.stringify(auditPayload, null, 2));
   tradeLogs.unshift(`[${new Date().toISOString()}] [LIVE] SUBMITTING: ${symbol} ${side}`);
 
-  // The try block around this is already open above, we just need to nest the try-catch for binance logic
   try {
     // 1. Set leverage
     await binanceRequest('POST', '/fapi/v1/leverage', { symbol, leverage: lev }, baseUrl);
@@ -316,87 +356,60 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
     }, baseUrl);
     console.log('[Trade:open] SL order response:', JSON.stringify(stopOrder));
 
-    // ── DYNAMIC TP CALCULATION (Respects Live UI Settings) ──
+    // ── DYNAMIC TP CALCULATION ──
     let tp1Order = null;
     let tp2Order = null;
 
     if (TRADER_CONFIG.TP_ENABLED) {
-      const riskDist = Math.abs(entryPrice - stopLoss);
       const isLong = side === 'LONG';
       const closeSide = isLong ? 'SELL' : 'BUY';
 
-      // ── TP Safety Checks ──────────────────────────────────────
       const SAFE_DEFAULT_RR = 1.5;
       let tp1RR = TRADER_CONFIG.TP1_RR;
       let tp2RR = TRADER_CONFIG.TP2_RR;
-      if (!tp1RR || !isFinite(tp1RR) || tp1RR <= 0) { console.warn(`[Trade:open] TP1_RR invalid (${tp1RR}), using safe default`); tp1RR = SAFE_DEFAULT_RR; }
-      if (!tp2RR || !isFinite(tp2RR) || tp2RR <= 0) { console.warn(`[Trade:open] TP2_RR invalid (${tp2RR}), using safe default`); tp2RR = SAFE_DEFAULT_RR * 2; }
+      if (!tp1RR || !isFinite(tp1RR) || tp1RR <= 0) { tp1RR = SAFE_DEFAULT_RR; }
+      if (!tp2RR || !isFinite(tp2RR) || tp2RR <= 0) { tp2RR = SAFE_DEFAULT_RR * 2; }
       const appliedTpStr = TRADER_CONFIG.TP1_ONLY ? `${tp1RR}% (100%)` : `${tp1RR}% & ${tp2RR}% (50/50)`;
 
-      // ── TP Debug Audit Log ─────────────────────────────────────
       console.log(`[TP_DEBUG:ROUTE] ${symbol} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1Pct=${tp1RR}% | tp2Pct=${tp2RR}% | appliedRatios=${appliedTpStr}`);
       tradeLogs.unshift(`[TP_DEBUG] ${symbol} tpEnabled=true tp1Only=${TRADER_CONFIG.TP1_ONLY} tp1Pct=${tp1RR}% tp2Pct=${tp2RR}% appliedRatios=${appliedTpStr}`);
 
-      // ── Re-calculate dynamically from ACTUAL Binance Fill ──
       let actualEntryPrice = parseFloat(entryOrder.avgPrice);
       if (!actualEntryPrice || isNaN(actualEntryPrice) || actualEntryPrice <= 0) {
-        actualEntryPrice = entryPrice; // Fallback if Binance response is delayed
+        actualEntryPrice = entryPrice;
       }
       
-      // Fixed Percentage Target Math (Ignoring Risk/Stop Distance)
       const tp1Pct = tp1RR / 100;
       const calcTp1 = isLong ? actualEntryPrice * (1 + tp1Pct) : actualEntryPrice * (1 - tp1Pct);
 
       if (TRADER_CONFIG.TP1_ONLY) {
-        // CLOSE 100% AT TP1
         tp1Order = await binanceRequest('POST', '/fapi/v1/order', {
-          symbol,
-          side:          closeSide,
-          type:          'TAKE_PROFIT_MARKET',
-          stopPrice:     roundTo(calcTp1, pricePrec),
-          closePosition: 'true',
-          timeInForce:   'GTE_GTC'
+          symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
+          stopPrice: roundTo(calcTp1, pricePrec), closePosition: 'true', timeInForce: 'GTE_GTC'
         }, baseUrl);
         console.log('[Trade:open] TP1 Full order response:', JSON.stringify(tp1Order));
       } else {
-        // TWO-STAGE TP (50% each)
         const tp2Pct = tp2RR / 100;
         const calcTp2 = isLong ? actualEntryPrice * (1 + tp2Pct) : actualEntryPrice * (1 - tp2Pct);
-        // Note: For partial exits, DO NOT use closePosition='true'. Use quantity + reduceOnly.
         const halfQty = roundTo(qty * 0.5, qtyPrec);
 
         tp1Order = await binanceRequest('POST', '/fapi/v1/order', {
-          symbol,
-          side:          closeSide,
-          type:          'TAKE_PROFIT_MARKET',
-          stopPrice:     roundTo(calcTp1, pricePrec),
-          quantity:      halfQty,
-          reduceOnly:    'true',
-          timeInForce:   'GTE_GTC'
+          symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
+          stopPrice: roundTo(calcTp1, pricePrec), quantity: halfQty, reduceOnly: 'true', timeInForce: 'GTE_GTC'
         }, baseUrl);
-        console.log('[Trade:open] TP1 (50%) order response:', JSON.stringify(tp1Order));
 
         tp2Order = await binanceRequest('POST', '/fapi/v1/order', {
-          symbol,
-          side:          closeSide,
-          type:          'TAKE_PROFIT_MARKET',
-          stopPrice:     roundTo(calcTp2, pricePrec),
-          quantity:      halfQty, // other 50%
-          reduceOnly:    'true',
-          timeInForce:   'GTE_GTC'
+          symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
+          stopPrice: roundTo(calcTp2, pricePrec), quantity: halfQty, reduceOnly: 'true', timeInForce: 'GTE_GTC'
         }, baseUrl);
-        console.log('[Trade:open] TP2 (50%) order response:', JSON.stringify(tp2Order));
       }
     }
 
     tradeLogs.unshift(`[${new Date().toISOString()}] [LIVE] ✅ SUBMITTED: ${symbol} ${side} orderId=${entryOrder.orderId}`);
 
     return res.json({
-      success:    true,
-      mode:       'LIVE',
-      baseUrl,
-      orderId:    entryOrder.orderId,
-      clientOrderId: entryOrder.clientOrderId,
+      success: true, mode: 'LIVE', baseUrl,
+      orderId: entryOrder.orderId, clientOrderId: entryOrder.clientOrderId,
       orders: { entry: entryOrder, stopLoss: stopOrder, takeProfit: tp1Order, takeProfit2: tp2Order },
       submittedPayload: auditPayload
     });
@@ -405,21 +418,12 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
     const errMsg = e?.message ?? 'Unknown error';
     tradeLogs.unshift(`[${new Date().toISOString()}] [LIVE] ❌ FAILED: ${symbol} — ${errMsg}`);
     console.error('[Trade:open] Error:', errMsg);
-
     return res.status(500).json({
-      error:            errMsg,
-      mode:            'LIVE',
-      baseUrl,
-      symbol,
-      failedAt:         Date.now(),
-      submittedPayload: auditPayload
+      error: errMsg, mode: 'LIVE', baseUrl, symbol,
+      failedAt: Date.now(), submittedPayload: auditPayload
     });
-
-  } // <-- Closes the inner try block for binance logic catch
-
   } finally {
-    // Release in-flight lock for outer try
-    inFlightExecutions--;
+    if (reserved) inFlightExecutions--;
   }
 });
 

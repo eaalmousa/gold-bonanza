@@ -33,8 +33,8 @@ export function getCanonicalPositionCount(
     return !binanceSymbols.has(t.symbol.toUpperCase());
   });
 
-  const paperTrades = localOnly.filter(t => t.isPaperTrade);
-  const localReal   = localOnly.filter(t => !t.isPaperTrade);
+  const paperTrades = localOnly.filter(t => t.accountMode === 'DEMO');
+  const localReal   = localOnly.filter(t => t.accountMode !== 'DEMO');
 
   // Signals queued by user but not yet submitted to exchange
   const queued = safeSignals.filter((s: any) => s?.status === 'QUEUED');

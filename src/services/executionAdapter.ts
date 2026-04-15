@@ -13,6 +13,37 @@
 
 import type { ExecutionMode, ExecutionPayload, ExecutionResult } from '../types/trading';
 import { apiRequest } from './api';
+import { useTradingStore } from '../store/tradingStore';
+
+export function canPlaceLiveOrder(context: string): boolean {
+  // 1. Global Kill Switch
+  if ((window as any).GB_LIVE_KILL === true) {
+    console.error(`[ExecutionGuard] 🔴 BLOCKED: Global Kill Switch is ACTIVE. Context: ${context}`);
+    return false;
+  }
+
+  const store = useTradingStore.getState();
+
+  // 2. Execution Mode
+  if (store.accountEnvironment !== 'LIVE') {
+    console.error(`[ExecutionGuard] 🔴 BLOCKED: Account Environment is ${store.accountEnvironment}, not LIVE. Context: ${context}`);
+    return false;
+  }
+
+  // 3. Browser explicit live arm
+  if (!store.liveExecutionArmed) {
+    console.error(`[ExecutionGuard] 🔴 BLOCKED: Browser real order arm is OFF. Context: ${context}`);
+    return false;
+  }
+
+  // 4. Backend explicit mismatch guard
+  if (store.backendEnvironment?.isTestnet) {
+    console.error(`[ExecutionGuard] 🔴 BLOCKED: Backend implies it is in TESTNET. Context: ${context}`);
+    return false;
+  }
+
+  return true;
+}
 
 // ─── Guards ──────────────────────────────────────────────────────────────────
 
@@ -117,7 +148,7 @@ async function executeLive(payload: ExecutionPayload): Promise<ExecutionResult> 
 // ─── Main Adapter Entry Point ─────────────────────────────────────────────────
 
 export async function executeOrder(
-  _mode: ExecutionMode,  // always LIVE — kept for compatibility, ignored
+  mode: ExecutionMode,
   payload: ExecutionPayload
 ): Promise<ExecutionResult> {
   const validationError = validatePayload(payload);
@@ -126,10 +157,35 @@ export async function executeOrder(
     return {
       signalId: payload.signalId,
       symbol:   payload.symbol,
-      mode:     'LIVE',
+      mode:     mode,
       status:   'FAILED',
       ts:       Date.now(),
       error:    validationError,
+      payload
+    };
+  }
+
+  if (mode === 'DEMO') {
+    console.log(`[Execution:DEMO] ✅ Local mock order simulated. orderId=${payload.signalId}`);
+    return {
+      signalId: payload.signalId,
+      symbol:   payload.symbol,
+      mode:     'DEMO',
+      status:   'SUBMITTED',
+      ts:       Date.now(),
+      exchangeOrderId: `demo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      payload
+    };
+  }
+
+  if (!canPlaceLiveOrder(`openTrade_${payload.symbol}`)) {
+    return {
+      signalId: payload.signalId,
+      symbol:   payload.symbol,
+      mode:     'LIVE',
+      status:   'FAILED',
+      ts:       Date.now(),
+      error:    'Blocked by safety guard (Live Execution Disabled)',
       payload
     };
   }

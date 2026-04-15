@@ -1,3 +1,5 @@
+import { canPlaceLiveOrder } from './executionAdapter';
+
 let token = localStorage.getItem('gb_token') || '';
 
 export const API_URL = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL)
@@ -65,8 +67,12 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}) {
 
 export const api = {
   login: (password: string) => apiRequest('/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
-  openTrade: (symbol: string, side: string, entryPrice: number, stopLoss: number, takeProfit: number) => 
-    apiRequest('/trade/open', { method: 'POST', body: JSON.stringify({ symbol, side, entryPrice, stopLoss, takeProfit }) }),
+  openTrade: (symbol: string, side: string, entryPrice: number, stopLoss: number, takeProfit: number) => {
+    if (!canPlaceLiveOrder(`api.openTrade_${symbol}`)) {
+      return Promise.reject(new Error('[SAFETY] api.openTrade blocked by canPlaceLiveOrder — use executeOrder() through the store instead'));
+    }
+    return apiRequest('/trade/open', { method: 'POST', body: JSON.stringify({ symbol, side, entryPrice, stopLoss, takeProfit }) });
+  },
   getPositions: () => apiRequest('/trade/positions'),
   getBalance: () => apiRequest('/trade/balance'),
   closeTrade: (symbol: string, side: string, qty: number) => apiRequest('/trade/close', { method: 'POST', body: JSON.stringify({ symbol, side, qty }) }),

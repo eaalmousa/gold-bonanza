@@ -221,10 +221,10 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
     takeProfit, takeProfit2
   } = req.body;
 
-  // ── Live-only guard ──────────────────────────────────────────────────────────
-  if (process.env.ENABLE_LIVE_TRADING !== 'true') {
+  // ── Global Kill Switch & Guard ──────────────────────────────────────────────
+  if ((global as any).GB_LIVE_KILL === true || process.env.ENABLE_LIVE_TRADING !== 'true') {
     return res.status(403).json({
-      error: 'Live trading not enabled. Set ENABLE_LIVE_TRADING=true in server .env.'
+      error: 'Live execution locked by Kill Switch or ENV config.'
     });
   }
 

@@ -249,6 +249,18 @@ export async function evaluateFrontendSignals(signals: any[]) {
     return backendSignalCache;
   }
 
+  // ── Global Kill Switch & Guard ──────────────────────────────────────────────
+  if ((global as any).GB_LIVE_KILL === true || process.env.ENABLE_LIVE_TRADING !== 'true') {
+    logMsg(`[BackendGuard] 🔴 BLOCKED: Live execution locked by Kill Switch or ENV config.`);
+    signals.forEach(s => {
+      if (backendSignalCache[s.id].backendDecision === 'PENDING') {
+         backendSignalCache[s.id].backendDecision = 'BLOCKED_BACKEND';
+         backendSignalCache[s.id].blockerReason = 'Execution Guard Locked';
+      }
+    });
+    return backendSignalCache;
+  }
+
   if (activePos.length >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
     signals.forEach(s => {
       if (backendSignalCache[s.id].backendDecision === 'PENDING') {

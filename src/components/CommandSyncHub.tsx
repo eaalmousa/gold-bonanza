@@ -81,15 +81,14 @@ export default function CommandSyncHub() {
   const filteredPositions = binancePositions;
   const binanceSymbols = new Set(filteredPositions.map((p: any) => p.symbol?.toUpperCase()));
 
-  // Local trades: show unsynced trades not yet on Binance
-  const filteredLocal = activeTrades.filter(t => {
-    return !binanceSymbols.has(t.symbol?.toUpperCase());
-  });
+  // Local trades segregated by mode
+  const filteredLocalLive = activeTrades.filter(t => t.accountMode === 'LIVE' && !binanceSymbols.has(t.symbol?.toUpperCase()));
+  const filteredLocalDemo = activeTrades.filter(t => t.accountMode === 'DEMO');
 
   // Pending: queued signals
   const allPending = pipelineSignals.filter(s => s.status === 'QUEUED');
 
-  const displayCount = filteredPositions.length + filteredLocal.length + allPending.length;
+  const displayCount = filteredPositions.length + filteredLocalLive.length + filteredLocalDemo.length + allPending.length;
 
   return (
     <section>
@@ -271,23 +270,26 @@ export default function CommandSyncHub() {
             );
           })}
 
-          {/* ── Local (manually deployed) trades — full lifecycle ── */}
-          {filteredLocal.map((trade, i) => {
-            // Find prior signals for this same symbol for history display
-            const history = pipelineSignals.filter(s => 
-              s.symbol.toUpperCase() === trade.symbol.toUpperCase() && 
-              s.id !== trade.signalId
-            ).slice(0, 6);
+          {/* ── Demo (Simulated) trades ── */}
+          {filteredLocalDemo.length > 0 && (
+            <div style={{ padding: '4px 0', fontSize: 10, fontWeight: 900, color: 'var(--blue)', letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: -8, marginTop: 8 }}>
+              DEMO / PAPER POSITIONS
+            </div>
+          )}
+          {filteredLocalDemo.map((trade, i) => {
+            const history = pipelineSignals.filter(s => s.symbol.toUpperCase() === trade.symbol.toUpperCase() && s.id !== trade.signalId).slice(0, 6);
+            return <LocalTradeCard key={trade.id} trade={trade} index={filteredPositions.length + allPending.length + i} history={history} onClose={() => handleCloseLocal(trade.id)} isDemo={true} />;
+          })}
 
-            return (
-              <LocalTradeCard
-                key={trade.id}
-                trade={trade}
-                index={filteredPositions.length + i}
-                history={history}
-                onClose={() => handleCloseLocal(trade.id)}
-              />
-            );
+          {/* ── Local (manually deployed) LIVE trades missing from Exchange ── */}
+          {filteredLocalLive.length > 0 && (
+            <div style={{ padding: '4px 0', fontSize: 10, fontWeight: 900, color: 'var(--red)', letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: -8, marginTop: 8 }}>
+              UNSYNCED LIVE POSITIONS (PENDING)
+            </div>
+          )}
+          {filteredLocalLive.map((trade, i) => {
+            const history = pipelineSignals.filter(s => s.symbol.toUpperCase() === trade.symbol.toUpperCase() && s.id !== trade.signalId).slice(0, 6);
+            return <LocalTradeCard key={trade.id} trade={trade} index={filteredPositions.length + allPending.length + filteredLocalDemo.length + i} history={history} onClose={() => handleCloseLocal(trade.id)} isDemo={false} />;
           })}
         </div>
       )}
@@ -306,9 +308,9 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string; bo
 };
 
 function LocalTradeCard({ 
-  trade, index, onClose, history 
+  trade, index, onClose, history, isDemo
 }: { 
-  trade: ActiveTrade; index: number; onClose: () => void; history: SignalRow[] 
+  trade: ActiveTrade; index: number; onClose: () => void; history: SignalRow[]; isDemo?: boolean 
 }) {
   const sym = trade.symbol.replace('USDT', '');
   const meta = STATUS_META[trade.status] ?? STATUS_META['ACTIVE'];
@@ -347,11 +349,11 @@ function LocalTradeCard({
             {trade.leverage}x {trade.side}
             <span style={{ 
               marginLeft: 8, padding: '2px 6px', borderRadius: 4, 
-              background: 'rgba(245,158,11,0.1)', 
-              color: '#f59e0b', fontSize: 9, letterSpacing: '0.1em',
-              border: `1px solid rgba(245,158,11,0.3)`
+              background: isDemo ? 'rgba(14,165,233,0.1)' : 'rgba(244,63,94,0.1)', 
+              color: isDemo ? 'var(--blue)' : 'var(--red)', fontSize: 9, letterSpacing: '0.1em',
+              border: `1px solid ${isDemo ? 'rgba(14,165,233,0.3)' : 'rgba(244,63,94,0.3)'}`
             }}>
-              UNSYNCED
+              {isDemo ? 'SIMULATED DEMO' : 'UNSYNCED LIVE'}
             </span>
           </div>
         </div>

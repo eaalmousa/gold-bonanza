@@ -65,6 +65,15 @@ export default function SystemStatus() {
     circuitBreaker: CANONICAL_DEFAULTS.circuitBreaker,
   });
   const [isLoaded, setIsLoaded] = useState(false);
+  const [killSwitchEn, setKillSwitchEn] = useState(typeof window !== 'undefined' && (window as any).GB_LIVE_KILL === true);
+
+  const toggleKillSwitch = () => {
+    const newState = !killSwitchEn;
+    setKillSwitchEn(newState);
+    if (typeof window !== 'undefined') {
+      (window as any).GB_LIVE_KILL = newState;
+    }
+  };
 
   useEffect(() => {
     api.getAutoTradeConfig()
@@ -310,6 +319,63 @@ export default function SystemStatus() {
              </div>
           )}
         </div>
+      </div>
+
+      {/* ── SAFETY DIAGNOSTICS RECONCILIATION ── */}
+      <div style={{
+        padding: '16px', borderRadius: 'var(--radius-lg)', marginBottom: 24,
+        background: killSwitchEn ? 'rgba(239,68,68,0.1)' : 'rgba(0,0,0,0.3)',
+        border: `1px solid ${killSwitchEn ? 'rgba(239,68,68,0.4)' : 'var(--border-subtle)'}`
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 900, color: 'var(--text-muted)', letterSpacing: '0.2em' }}>
+            EXECUTION RECONCILIATION & SAFETY
+          </div>
+          <button 
+            onClick={toggleKillSwitch}
+            style={{
+              padding: '6px 16px', borderRadius: 'var(--radius-full)', fontSize: 11, fontWeight: 900, letterSpacing: '0.1em',
+              background: killSwitchEn ? 'var(--red)' : 'rgba(0,0,0,0.5)',
+              color: killSwitchEn ? '#fff' : 'var(--red)',
+              border: `1px solid ${killSwitchEn ? 'var(--red)' : 'rgba(239,68,68,0.3)'}`,
+              cursor: 'pointer', transition: 'all 0.2s',
+              boxShadow: killSwitchEn ? '0 0 15px rgba(239,68,68,0.5)' : 'none'
+            }}
+          >
+            {killSwitchEn ? 'KILL SWITCH ACTIVE (LOCKED)' : 'ENGAGE KILL SWITCH'}
+          </button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+          <div style={inputContainerStyle}>
+            <div style={labelStyle}>EXCHANGE SYNC</div>
+            <div style={{ fontSize: 12, fontWeight: 900, color: backendEnvironment ? 'var(--green)' : 'var(--red)' }}>
+              {backendEnvironment ? 'HEALTHY' : 'UNAVAILABLE'}
+            </div>
+          </div>
+          <div style={inputContainerStyle}>
+            <div style={labelStyle}>LIVE POSITIONS (BINANCE)</div>
+            <div style={{ fontSize: 16, fontWeight: 900, color: counts.binance > 0 ? 'var(--gold)' : 'var(--text-muted)' }}>
+              {counts.binance}
+            </div>
+          </div>
+          <div style={inputContainerStyle}>
+            <div style={labelStyle}>DEMO POSITIONS (LOCAL)</div>
+            <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--blue)' }}>
+              {activeTrades.filter(t => t.accountMode === 'DEMO').length}
+            </div>
+          </div>
+          <div style={inputContainerStyle}>
+            <div style={labelStyle}>UNSYNCED LOCAL CARDS</div>
+            <div style={{ fontSize: 16, fontWeight: 900, color: counts.localReal > 0 ? 'var(--red)' : 'var(--text-muted)' }}>
+              {counts.localReal}
+            </div>
+          </div>
+        </div>
+        {counts.localReal > 0 && accountEnvironment === 'LIVE' && !killSwitchEn && (
+           <div style={{ marginTop: 12, fontSize: 11, color: 'var(--red)', fontWeight: 700, padding: '8px', background: 'rgba(239,68,68,0.1)', borderRadius: 4 }}>
+             ⚠️ MISMATCH DETECTED: You have {counts.localReal} local LIVE cards that are missing from the true Binance Exchange positions list. 
+           </div>
+        )}
       </div>
 
       {/* Bottom row */}

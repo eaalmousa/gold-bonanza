@@ -140,6 +140,11 @@ export interface ActiveTrade {
   status: TradeStatus | string;  // string kept for AWAITING_BINANCE compatibility
   dynamicSL?: number;
 
+  // Safety tracking & Strict Labeling
+  accountMode: 'DEMO' | 'LIVE';
+  source: 'FRONTEND' | 'BACKEND' | 'MANUAL' | 'RESTORE' | 'SCANNER';
+  authority: 'LOCAL' | 'EXCHANGE';
+
   // Live tracking & Final Outcomes
   livePrice?: number;
   mfe?: number;              // Max Favorable Excursion in price
@@ -171,8 +176,8 @@ export interface ClosedTrade extends ActiveTrade {
 
 // ─── Execution Adapter ────────────────────────────────────────────────────────
 
-/** Single live execution mode — no paper/demo/test paths */
-export type ExecutionMode = 'LIVE';
+/** Execution mode — LIVE or DEMO */
+export type ExecutionMode = 'LIVE' | 'DEMO';
 
 /** Canonical order payload passed to every execution path */
 export interface ExecutionPayload {

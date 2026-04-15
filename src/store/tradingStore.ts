@@ -39,8 +39,8 @@ interface TradingState {
   activeTrades: ActiveTrade[];
   binancePositions: any[];
 
-  // Execution — always LIVE
-  executionMode: ExecutionMode;
+  // Execution — derived from accountEnvironment (never independently LIVE)
+  readonly executionMode: ExecutionMode;
   executionResults: ExecutionResult[];
   
   // Backend actual environment tracking
@@ -149,8 +149,8 @@ export const useTradingStore = create<TradingState>()(
   orderFlowSnapshots: {},
   backendSignals: {},
 
-  // Execution — hardwired to LIVE
-  executionMode: 'LIVE' as ExecutionMode,
+  // Execution — mirrors accountEnvironment (fail-closed: DEMO by default)
+  executionMode: 'DEMO' as ExecutionMode,
   executionResults: [],
 
   backendEnvironment: null,
@@ -177,7 +177,7 @@ export const useTradingStore = create<TradingState>()(
     set({ activeMode: mode, activeTrades: trades });
   },
 
-  setAccountEnvironment: (env) => set({ accountEnvironment: env, liveExecutionArmed: false }),
+  setAccountEnvironment: (env) => set({ accountEnvironment: env, executionMode: env, liveExecutionArmed: false }),
   setLiveExecutionArmed: (armed) => set({ liveExecutionArmed: armed }),
 
   setEnabledStrategies: (ids) => set({ enabledStrategies: ids }),
@@ -354,11 +354,14 @@ export const useTradingStore = create<TradingState>()(
       entryType:  payload.entryType,
       entryTiming:payload.entryTiming,
       reasons:    payload.reasons,
+      accountMode: state.accountEnvironment,
+      source:     'FRONTEND',
+      authority:  'LOCAL',
       statusHistory: [{ status: 'ACTIVE' as const, ts: Date.now() }]
     });
 
-    // ── Always LIVE ────────────────────────────────────────────────────────────
-    executeOrder('LIVE', payload).then(result => {
+    // ── Mode-Aware Execution ───────────────────────────────────────────────────
+    executeOrder(state.accountEnvironment, payload).then(result => {
       get().addExecutionResult(result);
       if (result.status === 'FAILED') {
         // Roll back the specific trade by ID
@@ -505,9 +508,10 @@ export const useTradingStore = create<TradingState>()(
     const state = get();
     const payload = toExecutionPayload(signal, symbol);
     const fakeId  = `manual_${Date.now()}`;
+    const uniqueTradeId = `tr_${fakeId}`;
 
     state.addActiveTrade({
-      id:         `tr_${fakeId}`,
+      id:         uniqueTradeId,
       signalId:   fakeId,
       symbol,
       kind:       payload.kind || 'MANUAL',
@@ -525,11 +529,21 @@ export const useTradingStore = create<TradingState>()(
       deployedAt: Date.now(),
       status:     'ACTIVE',
       score:      payload.score,
+      accountMode: state.accountEnvironment,
+      source:     'MANUAL',
+      authority:  'LOCAL',
       statusHistory: [{ status: 'ACTIVE' as const, ts: Date.now() }]
     });
 
-    executeOrder('LIVE', payload).then(result => {
+    executeOrder(state.accountEnvironment, payload).then(result => {
       get().addExecutionResult(result);
+      if (result.status === 'FAILED') {
+        // Roll back the manual trade — do not leave orphaned local cards
+        set(s => ({
+          activeTrades: s.activeTrades.filter(t => t.id !== uniqueTradeId)
+        }));
+        console.error(`[ExecAdapter] Rolled back manual trade ${symbol} (ID: ${uniqueTradeId}) — reason: ${result.error}`);
+      }
     });
   }
     }),
@@ -540,9 +554,10 @@ export const useTradingStore = create<TradingState>()(
         isAutoTradeActive: state.isAutoTradeActive,
         isScannerActive: state.isScannerActive,
         balance: state.balance,
-        accountEnvironment: state.accountEnvironment,
         enabledStrategies: state.enabledStrategies,
         strategyPreset: state.strategyPreset
+        // Note: accountEnvironment and liveExecutionArmed are INTENTIONALLY excluded here to 
+        // enforce fail-closed default DEMO on refresh.
       }),
       onRehydrateStorage: () => (state) => {
         if (state && (state as any).activeModeId) {

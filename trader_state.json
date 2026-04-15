@@ -1,4 +1,16 @@
 {
+  "RISK_PER_TRADE": 0.1,
+  "MAX_CONCURRENT_TRADES": 5,
+  "LEVERAGE": 10,
+  "SL_ENABLED": true,
+  "TP_ENABLED": true,
+  "TP1_ONLY": false,
+  "TP1_RR": 1.5,
+  "TP2_RR": 2.5,
   "MIN_SCORE": 85,
-  "ENABLED": true
+  "BTC_GATE_ENABLED": true,
+  "TRAIL_TP_ENABLED": false,
+  "CIRCUIT_BREAKER_ENABLED": false,
+  "ENABLED": true,
+  "ACTIVE_MODE_ID": "BALANCED"
 }

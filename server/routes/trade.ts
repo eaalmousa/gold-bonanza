@@ -14,16 +14,13 @@ import path from 'path';
 
 export const tradeRouter = Router();
 
-// Single live base URL — no demo/test endpoints
-const LIVE_BASE_URL = 'https://fapi.binance.com';
-
+// Dynamic execution URL resolution mapped to the execution mode state
 function resolveBaseUrl(): string {
-  return LIVE_BASE_URL;
+  if (TRADER_CONFIG.BACKEND_EXECUTION_MODE === 'LIVE') return 'https://fapi.binance.com';
+  return 'https://testnet.binancefuture.com'; // DEMO or LOCKED
 }
 
 tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
-  const isTest = process.env.BINANCE_BASE_URL?.includes('testnet') || process.env.BINANCE_BASE_URL?.includes('demo-fapi') ? true : false;
-  
   // DIAGNOSTIC CHECKPOINT: inside /status response path
   let fileBaseUrl = 'NOT_FOUND_IN_FILE';
   let fileLines = 0;
@@ -39,10 +36,10 @@ tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
     enabled: TRADER_CONFIG.ENABLED,
     autoTrading: TRADER_CONFIG.ENABLED,
     backendEnvironment: {
-      isTestnet: isTest,
       baseUrl: process.env.BINANCE_BASE_URL || 'https://fapi.binance.com',
       diagnosticFileTruth: fileBaseUrl,
-      diagnosticLineCount: fileLines
+      diagnosticLineCount: fileLines,
+      executionMode: TRADER_CONFIG.BACKEND_EXECUTION_MODE // 'DEMO' | 'LIVE' | 'LOCKED'
     },
     logs: tradeLogs,
     config: {
@@ -107,88 +104,19 @@ tradeRouter.get('/config', requireAuth, (req: any, res: any) => {
 
 tradeRouter.post('/environment', requireAuth, (req: any, res: any) => {
   const { target } = req.body;
-  if (!['LIVE', 'TESTNET'].includes(target)) {
-    return res.status(400).json({ error: 'Invalid environment target' });
+  if (!['LIVE', 'DEMO', 'LOCKED'].includes(target)) {
+    return res.status(400).json({ error: 'Invalid execution mode target' });
   }
 
-  const keyPrefix = target === 'LIVE' ? 'BINANCE_LIVE_' : 'BINANCE_TESTNET_';
-  const baseUrl = target === 'LIVE' ? 'https://fapi.binance.com' : 'https://testnet.binancefuture.com';
-
-  // FIX: Force path resolution to the explicit server/.env via __dirname, 
-  // preventing PM2 root working directory mismatch bugs.
-  const envPath = path.join(__dirname, '../.env');
+  // Update in-memory and write to trader_state.json via updateTraderConfig
+  updateTraderConfig({ BACKEND_EXECUTION_MODE: target });
   
-  if (!fs.existsSync(envPath)) {
-    tradeLogs.unshift(`[EnvSwap] Error: Backend .env missing at ${envPath}`);
-    return res.status(500).json({ error: `Backend .env missing at ${envPath}` });
+  if (target !== 'LIVE') {
+      toggleAutoTrade(false); // Safety shutdown when leaving LIVE mode
   }
-
-  const envRaw = fs.readFileSync(envPath, 'utf8');
   
-  // Regex to tolerate spaces, quotes, and 'export ' prefixes seamlessly
-  const keyRegex = new RegExp(`^\\s*(?:export\\s+)?${keyPrefix}API_KEY\\s*=\\s*['"]?([^'"\\r\\n]+)['"]?`, 'im');
-  const secretRegex = new RegExp(`^\\s*(?:export\\s+)?${keyPrefix}API_SECRET\\s*=\\s*['"]?([^'"\\r\\n]+)['"]?`, 'im');
-  
-  const keyMatch = envRaw.match(keyRegex);
-  const secretMatch = envRaw.match(secretRegex);
-
-  const newKey = keyMatch ? keyMatch[1] : '';
-  const newSecret = secretMatch ? secretMatch[1] : '';
-
-  tradeLogs.unshift(`[EnvSwap] Target: ${target} | Read OK. Keys Found? ${!!newKey}/${!!newSecret}`);
-  console.log(`[Diagnostic] Environment Switcher Request:`);
-  console.log(` - Target: ${target}`);
-  console.log(` - Path read: ${envPath}`);
-  console.log(` - Found ${keyPrefix}API_KEY? ${!!newKey}`);
-  console.log(` - Found ${keyPrefix}API_SECRET? ${!!newSecret}`);
-
-  if (!newKey || !newSecret) {
-    const rawLines = envRaw.split('\n').filter(l => l.includes(keyPrefix)).map(l => l.substring(0, Math.min(l.length, 30)) + '...');
-    const dbgMsg = `File read from: ${envPath}. Searched for ${keyPrefix}API_KEY. Lines containing prefix found in file: ${rawLines.length > 0 ? JSON.stringify(rawLines) : 'None'}`;
-    tradeLogs.unshift(`[EnvSwap] Failed: Missing ${target} credentials. Debug: ${dbgMsg}`);
-    return res.status(400).json({
-      error: `Missing TESTNET credentials. Please add BINANCE_TESTNET_API_KEY and BINANCE_TESTNET_API_SECRET safely to your server/.env to enable hot-swapping.\n\nDiagnostic: ${dbgMsg}`
-    });
-  }
-
-  let updatedEnv = envRaw;
-
-  const injectOrReplace = (envText: string, key: string, val: string) => {
-    const regex = new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=.*$`, 'im');
-    if (regex.test(envText)) {
-      return envText.replace(regex, `${key}=${val}`);
-    } else {
-      return envText + `\n${key}=${val}\n`;
-    }
-  };
-
-  updatedEnv = injectOrReplace(updatedEnv, 'BINANCE_BASE_URL', baseUrl);
-  updatedEnv = injectOrReplace(updatedEnv, 'BINANCE_API_KEY', newKey);
-  updatedEnv = injectOrReplace(updatedEnv, 'BINANCE_API_SECRET', newSecret);
-
-  // DIAGNOSTIC CHECKPOINT: before file write
-  const activeBaseBefore = (envRaw.match(/^\s*(?:export\s+)?BINANCE_BASE_URL\s*=\s*(.*)$/im) || [])[1] || 'MISSING';
-  const activeBaseAfter = (updatedEnv.match(/^\s*(?:export\s+)?BINANCE_BASE_URL\s*=\s*(.*)$/im) || [])[1] || 'MISSING';
-  tradeLogs.unshift(`[EnvDebug] Before write: BASE_URL=${activeBaseBefore}. After internal string mod: BASE_URL=${activeBaseAfter}`);
-
-  try {
-    fs.writeFileSync(envPath, updatedEnv, 'utf8');
-    
-    // DIAGNOSTIC CHECKPOINT: after file write
-    const actualDiskNow = fs.readFileSync(envPath, 'utf8');
-    const diskBaseAfter = (actualDiskNow.match(/^\s*(?:export\s+)?BINANCE_BASE_URL\s*=\s*(.*)$/im) || [])[1] || 'MISSING';
-    tradeLogs.unshift(`[EnvDebug] After write to disk. Readback proves BASE_URL=${diskBaseAfter}`);
-
-    toggleAutoTrade(false); // safety shutdown
-    res.json({ success: true, message: `Environment swapped to ${target}. Restarting daemon.` });
-    
-    setTimeout(() => {
-      console.log(`[Architecture] Restarting PM2 process to boot into ${target} environment.`);
-      process.exit(0);
-    }, 1000);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to rewrite .env file.' });
-  }
+  tradeLogs.unshift(`[ExecutionMode] Changed dynamically to ${target}`);
+  res.json({ success: true, message: `Backend Execution Mode updated to ${target}.` });
 });
 
 tradeRouter.post('/config', requireAuth, (req: any, res: any) => {
@@ -226,6 +154,13 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
     return res.status(403).json({
       error: 'Live execution locked by Kill Switch or ENV config.'
     });
+  }
+
+  // ── Application-Level Execution Guard ───────────────────────────────────────
+  if (TRADER_CONFIG.BACKEND_EXECUTION_MODE !== 'LIVE') {
+     return res.status(403).json({
+       error: `Live execution rejected because Backend Execution Mode is ${TRADER_CONFIG.BACKEND_EXECUTION_MODE}. Must be LIVE.`
+     });
   }
 
   // ── Validate required fields ─────────────────────────────────────────────────

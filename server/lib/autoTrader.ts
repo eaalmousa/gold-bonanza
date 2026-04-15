@@ -57,7 +57,8 @@ export const TRADER_CONFIG = {
   TRAIL_TP_ENABLED: false,
   CIRCUIT_BREAKER_ENABLED: false,
   ENABLED: false, // Standardized naming to match API
-  ACTIVE_MODE_ID: 'BALANCED'
+  ACTIVE_MODE_ID: 'BALANCED',
+  BACKEND_EXECUTION_MODE: 'DEMO' as 'DEMO' | 'LIVE' | 'LOCKED'
 };
 
 // Canonical Mapping Funnel: Funnels any JSON case into master runtime
@@ -92,6 +93,9 @@ export function applyConfig(c: any) {
   
   if (c.activeModeId !== undefined || c.ACTIVE_MODE_ID !== undefined)
       TRADER_CONFIG.ACTIVE_MODE_ID = c.activeModeId ?? c.ACTIVE_MODE_ID;
+      
+  if (c.backendExecutionMode !== undefined || c.BACKEND_EXECUTION_MODE !== undefined)
+      TRADER_CONFIG.BACKEND_EXECUTION_MODE = c.backendExecutionMode ?? c.BACKEND_EXECUTION_MODE;
 }
 
 // Hardened Persistence Helper (Heals disk case drift)
@@ -111,7 +115,8 @@ const saveState = () => {
       TRAIL_TP_ENABLED: Boolean(TRADER_CONFIG.TRAIL_TP_ENABLED),
       CIRCUIT_BREAKER_ENABLED: Boolean(TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED),
       ENABLED: Boolean(TRADER_CONFIG.ENABLED),
-      ACTIVE_MODE_ID: String(TRADER_CONFIG.ACTIVE_MODE_ID)
+      ACTIVE_MODE_ID: String(TRADER_CONFIG.ACTIVE_MODE_ID),
+      BACKEND_EXECUTION_MODE: String(TRADER_CONFIG.BACKEND_EXECUTION_MODE) as 'DEMO' | 'LIVE' | 'LOCKED'
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(canonicalExport, null, 2));
   } catch (err) {

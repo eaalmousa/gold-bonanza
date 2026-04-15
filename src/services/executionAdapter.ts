@@ -37,8 +37,8 @@ export function canPlaceLiveOrder(context: string): boolean {
   }
 
   // 4. Backend explicit mismatch guard
-  if (store.backendEnvironment?.isTestnet) {
-    console.error(`[ExecutionGuard] 🔴 BLOCKED: Backend implies it is in TESTNET. Context: ${context}`);
+  if (store.backendEnvironment?.executionMode !== 'LIVE') {
+    console.error(`[ExecutionGuard] 🔴 BLOCKED: Backend execution mode is ${store.backendEnvironment?.executionMode || 'UNKNOWN'}, must be LIVE. Context: ${context}`);
     return false;
   }
 

@@ -44,8 +44,8 @@ interface TradingState {
   executionResults: ExecutionResult[];
   
   // Backend actual environment tracking
-  backendEnvironment: { isTestnet: boolean; baseUrl: string } | null;
-  setBackendEnvironment: (env: { isTestnet: boolean; baseUrl: string }) => void;
+  backendEnvironment: { executionMode: 'DEMO' | 'LIVE' | 'LOCKED'; baseUrl?: string; diagnosticFileTruth?: string } | null;
+  setBackendEnvironment: (env: { executionMode: 'DEMO' | 'LIVE' | 'LOCKED'; baseUrl?: string; diagnosticFileTruth?: string }) => void;
   
   // Account Environment
   accountEnvironment: 'DEMO' | 'LIVE';

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { TRADER_CONFIG } from './autoTrader';
 
 // ─── Rate Limit Tracking ──────────────────────────────────────────────────────
 let usedWeight1m     = 0;
@@ -16,22 +17,23 @@ export function getRateLimitStatus() {
 }
 
 const getApiKey = (url?: string) => {
-  const isTest = url?.includes('testnet') || url?.includes('demo-fapi') || process.env.BINANCE_BASE_URL?.includes('testnet');
-  if (isTest) {
-    return process.env.BINANCE_TESTNET_API_KEY || process.env.BINANCE_TEST_API_KEY || process.env.BINANCE_API_KEY;
+  if (TRADER_CONFIG.BACKEND_EXECUTION_MODE === 'LIVE') {
+    return process.env.BINANCE_LIVE_API_KEY || process.env.BINANCE_API_KEY;
   }
-  return process.env.BINANCE_API_KEY;
+  return process.env.BINANCE_TESTNET_API_KEY || process.env.BINANCE_TEST_API_KEY;
 };
 
 const getApiSecret = (url?: string) => {
-  const isTest = url?.includes('testnet') || url?.includes('demo-fapi') || process.env.BINANCE_BASE_URL?.includes('testnet');
-  if (isTest) {
-    return process.env.BINANCE_TESTNET_API_SECRET || process.env.BINANCE_TEST_API_SECRET || process.env.BINANCE_API_SECRET;
+  if (TRADER_CONFIG.BACKEND_EXECUTION_MODE === 'LIVE') {
+    return process.env.BINANCE_LIVE_API_SECRET || process.env.BINANCE_API_SECRET;
   }
-  return process.env.BINANCE_API_SECRET;
+  return process.env.BINANCE_TESTNET_API_SECRET || process.env.BINANCE_TEST_API_SECRET;
 };
 
-const getBaseUrl = () => process.env.BINANCE_BASE_URL || 'https://fapi.binance.com';
+const getBaseUrl = () => {
+  if (TRADER_CONFIG.BACKEND_EXECUTION_MODE === 'LIVE') return 'https://fapi.binance.com';
+  return 'https://testnet.binancefuture.com';
+};
 
 function sign(queryString: string, url?: string): string {
   const secret = getApiSecret(url);

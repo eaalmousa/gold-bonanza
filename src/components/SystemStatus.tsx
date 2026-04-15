@@ -16,7 +16,7 @@ export default function SystemStatus() {
     binancePositions: rawPositions,
     pipelineSignals: rawSignals,
     marketRows: rawRows,
-    backendEnvironment
+    backendEnvironment, setBackendEnvironment
   } = useTradingStore();
 
   const activeTrades    = Array.isArray(rawTrades)    ? rawTrades    : [];
@@ -29,22 +29,31 @@ export default function SystemStatus() {
   const counts = getCanonicalPositionCount(binancePositions, activeTrades, pipelineSignals);
 
   const [isSwitchingEnv, setIsSwitchingEnv] = useState(false);
-  const handleSwapEnv = async (target: 'LIVE' | 'TESTNET') => {
-    if (backendEnvironment?.isTestnet === (target === 'TESTNET')) return;
+  const handleSwapEnv = async (target: 'LIVE' | 'DEMO' | 'LOCKED') => {
+    if (backendEnvironment?.executionMode === target) return;
     
     if (target === 'LIVE') {
-       if (!window.confirm("DANGER: You are switching the VPS Scout to LIVE server with REAL keys.\nAre you absolutely sure?")) return;
-    } else {
-       if (!window.confirm("Switching VPS Scout to TESTNET. Proceed?")) return;
+       const confirm1 = window.confirm("DANGER: You are switching the backend to LIVE execution with REAL capital.\nAre you absolutely sure?");
+       if (!confirm1) return;
+       const confirm2 = window.prompt("Type 'ENABLE LIVE' to confirm:");
+       if (confirm2 !== 'ENABLE LIVE') {
+           alert("Swap cancelled.");
+           return;
+       }
+    } else if (target === 'DEMO') {
+       if (!window.confirm("Switching backend to DEMO mode. Proceed?")) return;
+    } else if (target === 'LOCKED') {
+       if (!window.confirm("Locking backend execution completely. Proceed?")) return;
     }
 
     setIsSwitchingEnv(true);
     try {
       const resp = await api.switchEnvironment(target);
-      alert(resp.message || "Environment swapped successfully. Waiting for reboot...");
-      setTimeout(() => setIsSwitchingEnv(false), 3000);
+      alert(resp.message || `Backend execution mode set to ${target}.`);
+      setBackendEnvironment({ ...backendEnvironment, executionMode: target });
+      setTimeout(() => setIsSwitchingEnv(false), 1000);
     } catch (e: any) {
-      alert(e.message || "Failed to switch environment. Ensure LIVE/TESTNET keys exist in server/.env");
+      alert(e.message || `Failed to switch environment to ${target}.`);
       setIsSwitchingEnv(false);
     }
   };
@@ -215,7 +224,7 @@ export default function SystemStatus() {
       }}>
         {/* Browser Terminal Mode */}
         <div>
-          <div title="Controls how trades originated purely from this UI terminal are placed (Paper/Live)." style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 8, fontWeight: 700, cursor: 'help' }}>BROWSER TERMINAL MODE ⓘ</div>
+          <div title="Controls how trades originated purely from this UI terminal are placed (Paper/Live)." style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 8, fontWeight: 700, cursor: 'help' }}>FRONTEND MODE ⓘ</div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <button 
               onClick={() => setAccountEnvironment('LIVE')}
@@ -243,25 +252,25 @@ export default function SystemStatus() {
             {/* Sync Status Badge */}
             {backendEnvironment && (
               <span style={{ 
-                color: (accountEnvironment === 'DEMO' && backendEnvironment.isTestnet) || (accountEnvironment === 'LIVE' && !backendEnvironment.isTestnet) ? 'var(--green)' : '#f87171', 
-                background: (accountEnvironment === 'DEMO' && backendEnvironment.isTestnet) || (accountEnvironment === 'LIVE' && !backendEnvironment.isTestnet) ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', 
+                color: accountEnvironment === backendEnvironment.executionMode ? 'var(--green)' : '#f87171', 
+                background: accountEnvironment === backendEnvironment.executionMode ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', 
                 padding: '6px 12px',
                 borderRadius: 'var(--radius-md)', fontSize: 9, fontWeight: 800, 
-                border: `1px solid ${(accountEnvironment === 'DEMO' && backendEnvironment.isTestnet) || (accountEnvironment === 'LIVE' && !backendEnvironment.isTestnet) ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                border: `1px solid ${accountEnvironment === backendEnvironment.executionMode ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
                 letterSpacing: '0.05em'
               }}>
-                {(accountEnvironment === 'DEMO' && backendEnvironment.isTestnet) || (accountEnvironment === 'LIVE' && !backendEnvironment.isTestnet) 
+                {accountEnvironment === backendEnvironment.executionMode 
                   ? 'SYNCED ✅' 
-                  : (accountEnvironment === 'DEMO' ? '⚠️ FRONTEND DEMO / BACKEND LIVE MISMATCH' : '⚠️ FRONTEND LIVE / BACKEND DEMO MISMATCH')}
+                  : `⚠️ FRONTEND ${accountEnvironment} / BACKEND ${backendEnvironment.executionMode} MISMATCH`}
               </span>
             )}
           </div>
         </div>
 
-        {/* VPS Scout Backend Env */}
+        {/* Backend Env */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div title="The real environment the headless backend daemon executing your automated strategy is currently pointing to." style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 700, cursor: 'help' }}>VPS SCOUT ENVIRONMENT ⓘ</div>
+            <div title="The real environment the headless backend daemon executing your automated strategy is currently pointing to." style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 700, cursor: 'help' }}>BACKEND EXECUTION MODE ⓘ</div>
             
             {/* Backend Environment Switch Action */}
             <div style={{ display: 'flex', gap: 6 }}>
@@ -270,23 +279,34 @@ export default function SystemStatus() {
                 onClick={() => handleSwapEnv('LIVE')}
                 style={{
                   padding: '4px 8px', borderRadius: '4px', fontSize: 9, fontWeight: 900,
-                  border: `1px solid ${backendEnvironment && !backendEnvironment.isTestnet ? 'rgba(16,185,129,0.5)' : 'rgba(255,255,255,0.1)'}`,
-                  background: backendEnvironment && !backendEnvironment.isTestnet ? 'rgba(16,185,129,0.15)' : 'rgba(0,0,0,0.5)',
-                  color: backendEnvironment && !backendEnvironment.isTestnet ? '#34d399' : 'var(--text-primary)',
+                  border: `1px solid ${backendEnvironment?.executionMode === 'LIVE' ? 'rgba(16,185,129,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                  background: backendEnvironment?.executionMode === 'LIVE' ? 'rgba(16,185,129,0.15)' : 'rgba(0,0,0,0.5)',
+                  color: backendEnvironment?.executionMode === 'LIVE' ? '#34d399' : 'var(--text-primary)',
                   cursor: isSwitchingEnv ? 'wait' : 'pointer', transition: 'all 0.2s', opacity: isSwitchingEnv ? 0.5 : 1
                 }}
               >LIVE</button>
               <button 
                 disabled={isSwitchingEnv || !backendEnvironment}
-                onClick={() => handleSwapEnv('TESTNET')}
+                onClick={() => handleSwapEnv('DEMO')}
                 style={{
                   padding: '4px 8px', borderRadius: '4px', fontSize: 9, fontWeight: 900,
-                  border: `1px solid ${backendEnvironment?.isTestnet ? 'rgba(14,165,233,0.5)' : 'rgba(255,255,255,0.1)'}`,
-                  background: backendEnvironment?.isTestnet ? 'rgba(14,165,233,0.15)' : 'rgba(0,0,0,0.5)',
-                  color: backendEnvironment?.isTestnet ? '#7dd3fc' : 'var(--text-primary)',
+                  border: `1px solid ${backendEnvironment?.executionMode === 'DEMO' ? 'rgba(14,165,233,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                  background: backendEnvironment?.executionMode === 'DEMO' ? 'rgba(14,165,233,0.15)' : 'rgba(0,0,0,0.5)',
+                  color: backendEnvironment?.executionMode === 'DEMO' ? '#7dd3fc' : 'var(--text-primary)',
                   cursor: isSwitchingEnv ? 'wait' : 'pointer', transition: 'all 0.2s', opacity: isSwitchingEnv ? 0.5 : 1
                 }}
               >DEMO</button>
+              <button 
+                disabled={isSwitchingEnv || !backendEnvironment}
+                onClick={() => handleSwapEnv('LOCKED')}
+                style={{
+                  padding: '4px 8px', borderRadius: '4px', fontSize: 9, fontWeight: 900,
+                  border: `1px solid ${backendEnvironment?.executionMode === 'LOCKED' ? 'rgba(244,63,94,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                  background: backendEnvironment?.executionMode === 'LOCKED' ? 'rgba(244,63,94,0.15)' : 'rgba(0,0,0,0.5)',
+                  color: backendEnvironment?.executionMode === 'LOCKED' ? '#f43f5e' : 'var(--text-primary)',
+                  cursor: isSwitchingEnv ? 'wait' : 'pointer', transition: 'all 0.2s', opacity: isSwitchingEnv ? 0.5 : 1
+                }}
+              >LOCKED</button>
             </div>
           </div>
 
@@ -299,23 +319,18 @@ export default function SystemStatus() {
               textShadow: liveExecutionArmed ? '0 0 5px rgba(16,185,129,0.5)' : '0 0 5px rgba(244,63,94,0.5)',
               transition: 'all 0.3s', cursor: 'help'
             }}>
-              BROWSER REAL ORDER ARM: {liveExecutionArmed ? 'ON' : 'OFF'}
+              REAL ORDER ARM: {liveExecutionArmed ? 'ON' : 'OFF'}
             </span>
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>|</span>
             <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 900, letterSpacing: '0.2em' }}>
               Base: <span style={{ 
-                color: !backendEnvironment ? 'var(--text-muted)' : backendEnvironment.isTestnet ? '#38bdf8' : 'var(--green)',
-              }}>{!backendEnvironment ? 'OFFLINE' : backendEnvironment.isTestnet ? 'TESTNET' : 'LIVE'}</span>
+                color: !backendEnvironment ? 'var(--text-muted)' : backendEnvironment.executionMode === 'DEMO' ? '#38bdf8' : backendEnvironment.executionMode === 'LOCKED' ? '#f43f5e' : 'var(--green)',
+              }}>{!backendEnvironment ? 'OFFLINE' : backendEnvironment.executionMode}</span>
             </span>
           </div>
           {backendEnvironment?.baseUrl && (
              <div style={{ fontSize: 8, color: 'var(--text-muted)', opacity: 0.7, fontFamily: 'monospace' }}>
                Env Memory: {backendEnvironment.baseUrl.replace('https://', '')}
-             </div>
-          )}
-          {(backendEnvironment as any)?.diagnosticFileTruth && (
-             <div style={{ fontSize: 8, color: 'gold', opacity: 0.8, fontFamily: 'monospace' }}>
-               File Disk: {(backendEnvironment as any).diagnosticFileTruth.replace('https://', '')}
              </div>
           )}
         </div>

@@ -30,40 +30,62 @@ export default function SystemStatus() {
 
   const [isSwitchingEnv, setIsSwitchingEnv] = useState(false);
   const handleSwapEnv = async (target: 'LIVE' | 'DEMO' | 'LOCKED') => {
-    if (backendEnvironment?.executionMode === target) return;
+    console.log(`[EnvSwap] Click received for target: ${target}`);
+    console.log(`[EnvSwap] Current backend mode: ${backendEnvironment?.executionMode || 'UNKNOWN'}`);
+
+    if (backendEnvironment?.executionMode === target) {
+        console.warn(`[EnvSwap] Early return: backend is already in mode ${target}`);
+        return;
+    }
     
+    // TEMPORARY: Simplified path for debugging (Requirement #3)
     if (target === 'LIVE') {
-       const confirm1 = window.confirm("DANGER: You are switching the backend to LIVE execution with REAL capital.\nAre you absolutely sure?");
-       if (!confirm1) return;
+       console.log(`[EnvSwap] Entering LIVE branch...`);
+       /*
+       console.log(`[EnvSwap] Triggering confirm1...`);
+       const confirm1 = window.confirm("DANGER: You are switching the backend to LIVE execution with REAL capital.\\nAre you absolutely sure?");
+       if (!confirm1) {
+           console.log(`[EnvSwap] confirm1 rejected.`);
+           return;
+       }
+       console.log(`[EnvSwap] Triggering prompt...`);
        const confirm2 = window.prompt("Type 'ENABLE LIVE' to confirm:");
        if (confirm2 !== 'ENABLE LIVE') {
+           console.log(`[EnvSwap] prompt rejected/invalid: "${confirm2}"`);
            alert("Swap cancelled.");
            return;
        }
+       console.log(`[EnvSwap] Confirmation validation passed.`);
+       */
     } else if (target === 'DEMO') {
        if (!window.confirm("Switching backend to DEMO mode. Proceed?")) return;
     } else if (target === 'LOCKED') {
        if (!window.confirm("Locking backend execution completely. Proceed?")) return;
     }
 
+    console.log(`[EnvSwap] Sending POST request to /api/trade/environment with target: ${target}`);
     setIsSwitchingEnv(true);
     try {
       const resp = await api.switchEnvironment(target);
+      console.log(`[EnvSwap] API success response:`, resp);
       alert(resp.message || `Backend execution mode set to ${target}.`);
       
+      console.log(`[EnvSwap] Triggering post-swap status sync...`);
       // Force full backend sync immediately
       try {
          const syncStatus = await api.getAutoTradeStatus();
+         console.log(`[EnvSwap] Sync status response:`, syncStatus);
          if (syncStatus?.backendEnvironment) {
              setBackendEnvironment(syncStatus.backendEnvironment);
          }
       } catch (syncErr) {
-         console.warn("Optimistic fallback: could not fetch full status");
+         console.warn("[EnvSwap] Optimistic fallback: could not fetch full status", syncErr);
          setBackendEnvironment({ ...backendEnvironment, executionMode: target } as any);
       }
       
       setTimeout(() => setIsSwitchingEnv(false), 500);
     } catch (e: any) {
+      console.error(`[EnvSwap] API Failure:`, e);
       alert(e.message || `Failed to switch environment to ${target}.`);
       setIsSwitchingEnv(false);
     }

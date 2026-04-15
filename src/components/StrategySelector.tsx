@@ -12,6 +12,7 @@ import { useTradingStore } from '../store/tradingStore';
 import { getStrategyManifest } from '../engines/strategyInit';
 import { STRATEGY_PRESETS } from '../engines/strategyRegistry';
 import { Layers, ChevronDown, ChevronUp, Zap, Target, TrendingUp, Crosshair, BookOpen } from 'lucide-react';
+import { api } from '../services/api';
 import StrategyDescription from './StrategyDescription';
 
 const CATEGORY_ICONS: Record<string, any> = {
@@ -47,7 +48,9 @@ export default function StrategySelector() {
     if (!preset) return;
     setStrategyPreset(presetId);
     // Empty array = ALL
-    setEnabledStrategies(presetId === 'ALL' ? [] : preset.strategyIds);
+    const newStrategies = presetId === 'ALL' ? [] : preset.strategyIds;
+    setEnabledStrategies(newStrategies);
+    api.updateAutoTradeConfig({ enabledStrategies: newStrategies }).catch(console.error);
   };
 
   const handleToggleStrategy = (id: string) => {
@@ -61,8 +64,10 @@ export default function StrategySelector() {
     // Check if all are enabled → collapse to empty (= ALL)
     const allIds = manifest.map(s => s.id);
     const allEnabled = allIds.every(sid => current.includes(sid));
-    setEnabledStrategies(allEnabled ? [] : current);
+    const newStrategies = allEnabled ? [] : current;
+    setEnabledStrategies(newStrategies);
     setStrategyPreset(allEnabled ? 'ALL' : 'CUSTOM');
+    api.updateAutoTradeConfig({ enabledStrategies: newStrategies }).catch(console.error);
   };
 
   const enabledCount = isAllEnabled ? manifest.length : enabledStrategies.length;

@@ -260,7 +260,10 @@ export default function SystemStatus() {
           <div title="Controls how trades originated purely from this UI terminal are placed (Paper/Live)." style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 8, fontWeight: 700, cursor: 'help' }}>FRONTEND MODE ⓘ</div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <button 
-              onClick={() => setAccountEnvironment('LIVE')}
+              onClick={() => {
+                  setAccountEnvironment('LIVE');
+                  api.updateAutoTradeConfig({ frontendModePref: 'LIVE' }).catch(console.error);
+              }}
               style={{
                 padding: '10px 20px', borderRadius: 'var(--radius-full)', fontSize: 11, fontWeight: 900, letterSpacing: '0.35em',
                 border: `1px solid ${accountEnvironment === 'LIVE' ? 'rgba(16,185,129,0.5)' : 'rgba(255,255,255,0.1)'}`,
@@ -271,7 +274,10 @@ export default function SystemStatus() {
               }}
             >LIVE</button>
             <button 
-              onClick={() => setAccountEnvironment('DEMO')}
+              onClick={() => {
+                  setAccountEnvironment('DEMO');
+                  api.updateAutoTradeConfig({ frontendModePref: 'DEMO' }).catch(console.error);
+              }}
               style={{
                 padding: '10px 20px', borderRadius: 'var(--radius-full)', fontSize: 11, fontWeight: 900, letterSpacing: '0.35em',
                 border: `1px solid ${accountEnvironment === 'DEMO' ? 'rgba(14,165,233,0.5)' : 'rgba(255,255,255,0.1)'}`,
@@ -435,8 +441,8 @@ export default function SystemStatus() {
         <div style={{ flex: 1, minWidth: 220 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)' }}>MAPPING DEPLOYMENTS (EXCHANGE)</div>
-            <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--text-primary)' }}>
-              {realDeployments} / {config.maxTrades} ACTIVE
+            <div style={{ fontSize: 11, fontWeight: 900, color: capacityPct >= 100 ? 'var(--red)' : 'var(--text-primary)' }}>
+              {capacityPct >= 100 ? 'MAX TRADES REACHED - EXECUTION BLOCKED' : `${realDeployments} / ${config.maxTrades} ACTIVE`}
             </div>
           </div>
           <div className="capacity-bar-track">

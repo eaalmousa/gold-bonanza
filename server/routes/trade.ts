@@ -14,6 +14,10 @@ import path from 'path';
 
 export const tradeRouter = Router();
 
+// Module-level idempotency and concurrency state
+let inFlightExecutions = 0;
+const recentSignals = new Map<string, number>();
+
 // Dynamic execution URL resolution mapped to the execution mode state
 function resolveBaseUrl(): string {
   if (TRADER_CONFIG.BACKEND_EXECUTION_MODE === 'LIVE') return 'https://fapi.binance.com';
@@ -55,7 +59,9 @@ tradeRouter.get('/status', requireAuth, (req: any, res: any) => {
       btcGate: TRADER_CONFIG.BTC_GATE_ENABLED,
       trailTp: TRADER_CONFIG.TRAIL_TP_ENABLED,
       circuitBreaker: TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED,
-      activeModeId: TRADER_CONFIG.ACTIVE_MODE_ID
+      activeModeId: TRADER_CONFIG.ACTIVE_MODE_ID,
+      frontendModePref: TRADER_CONFIG.FRONTEND_MODE_PREF,
+      enabledStrategies: TRADER_CONFIG.ENABLED_STRATEGIES
     },
     signals: backendSignalCache,
     latestMarketState,
@@ -186,6 +192,33 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
     console.log(`[Trade:open] qty recomputed | balance=$${balFromBinance.toFixed(2)} | riskPct=${riskPctEnv} | lev=${lev} | intendedRisk=$${intendedRisk.toFixed(2)} | rawQty=${qty.toFixed(6)}`);
   }
 
+  // ── Idempotency Duplicate Rejection ──────────────────────────────────────────
+  const RECENT_COOLDOWN_MS = 60 * 1000;
+  const sigKey = `${symbol}_${side}_${entryType || 'UNKNOWN'}`;
+  const lastTime = recentSignals.get(sigKey);
+  const now = Date.now();
+  if (lastTime && (now - lastTime) < RECENT_COOLDOWN_MS) {
+    console.warn(`[Trade:open] PRE-EXEC BLOCK: ${symbol} — Duplicate signal detected within cooldown`);
+    tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED_DUPLICATE_SIGNAL] ${symbol} — Prevented duplicate execution within 60s.`);
+    return res.status(429).json({ error: 'BLOCKED_DUPLICATE_SIGNAL: The same signal was triggered locally within the last 60 seconds.' });
+  }
+
+  // ── Hard Backend Capacity Guard (Positions + InFlight) ───────────────────────
+  let currentPositions: any[] = [];
+  try {
+    currentPositions = await getPositions();
+  } catch (err) {
+    tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED] ${symbol} — Failed to fetch exchange positions for hard capacity check.`);
+    return res.status(500).json({ error: 'Failed to fetch current positions for limit check.' });
+  }
+  
+  const activeCount = currentPositions.length + inFlightExecutions;
+  if (activeCount >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) {
+    console.warn(`[Trade:open] PRE-EXEC BLOCK: ${symbol} — Capacity Reached (Active: ${currentPositions.length}, InFlight: ${inFlightExecutions}, Max: ${TRADER_CONFIG.MAX_CONCURRENT_TRADES})`);
+    tradeLogs.unshift(`[${new Date().toISOString()}] [BLOCKED_MAX_TRADES] ${symbol} — Capacity Reached (${activeCount}/${TRADER_CONFIG.MAX_CONCURRENT_TRADES})`);
+    return res.status(429).json({ error: `BLOCKED_MAX_TRADES: Capacity constraint reached. Allowed: ${TRADER_CONFIG.MAX_CONCURRENT_TRADES}. Active Exchange: ${currentPositions.length}, InFlight: ${inFlightExecutions}.` });
+  }
+
   // ── Structured local pre-execution validation (before any Binance call) ─────
   const notional = qty * entryPrice;
 
@@ -240,6 +273,10 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
   };
   console.log('[Trade:open] Outbound payload:', JSON.stringify(auditPayload, null, 2));
   tradeLogs.unshift(`[${new Date().toISOString()}] [LIVE] SUBMITTING: ${symbol} ${side}`);
+
+  // Lock backend concurrency tracking
+  inFlightExecutions++;
+  recentSignals.set(sigKey, now);
 
   try {
     // 1. Set leverage
@@ -366,6 +403,9 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
       failedAt:         Date.now(),
       submittedPayload: auditPayload
     });
+  } finally {
+    // Release in-flight lock after execution loop completes heavily
+    inFlightExecutions--;
   }
 });
 

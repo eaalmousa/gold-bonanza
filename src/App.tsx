@@ -32,25 +32,34 @@ function App() {
   const {
     pipelineSignals, marketRows,
     scannerRunning, queueSignal, setBinanceStatus,
-    setAutoTradeActive, setBackendSignals, setBackendEnvironment
+    setAutoTradeActive, setBackendSignals, setBackendEnvironment,
+    setMode, setAccountEnvironment, setEnabledStrategies,
+    cloudHydrationStatus, setCloudHydrationStatus
   } = useTradingStore();
 
   const { scanProgress, lastScanAt, scanError } = useScanner();
   
-  // 1. Initial Sync with Cloud State
+  // 1. Initial Sync with Cloud State (Cross-Device Persistence)
   useEffect(() => {
     const sync = async () => {
       try {
-        const config = await api.getAutoTradeConfig();
-        if (config.enabled !== undefined) {
-          setAutoTradeActive(config.enabled);
-        }
+        const status = await api.getAutoTradeStatus();
+        const conf = status.config || {};
+        
+        // Hydrate Execution/UI State from Server Truth
+        if (conf.activeModeId) setMode(conf.activeModeId);
+        if (conf.frontendModePref) setAccountEnvironment(conf.frontendModePref);
+        if (conf.enabledStrategies) setEnabledStrategies(conf.enabledStrategies);
+        if (typeof status.enabled === 'boolean') setAutoTradeActive(status.enabled);
+        
+        setCloudHydrationStatus('SYNCED');
       } catch (e) {
         console.warn('[Sync] Could not fetch initial state from cloud');
+        setCloudHydrationStatus('FAILED');
       }
     };
     sync();
-  }, [setAutoTradeActive]);
+  }, [setAutoTradeActive, setMode, setAccountEnvironment, setEnabledStrategies, setCloudHydrationStatus]);
 
   // 2. Check binance connectivity
   useEffect(() => {

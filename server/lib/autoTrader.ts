@@ -58,7 +58,9 @@ export const TRADER_CONFIG = {
   CIRCUIT_BREAKER_ENABLED: false,
   ENABLED: false, // Standardized naming to match API
   ACTIVE_MODE_ID: 'BALANCED',
-  BACKEND_EXECUTION_MODE: 'DEMO' as 'DEMO' | 'LIVE' | 'LOCKED'
+  BACKEND_EXECUTION_MODE: 'DEMO' as 'DEMO' | 'LIVE' | 'LOCKED',
+  FRONTEND_MODE_PREF: 'DEMO' as 'DEMO' | 'LIVE',
+  ENABLED_STRATEGIES: [] as string[]
 };
 
 // Canonical Mapping Funnel: Funnels any JSON case into master runtime
@@ -96,6 +98,12 @@ export function applyConfig(c: any) {
       
   if (c.backendExecutionMode !== undefined || c.BACKEND_EXECUTION_MODE !== undefined)
       TRADER_CONFIG.BACKEND_EXECUTION_MODE = c.backendExecutionMode ?? c.BACKEND_EXECUTION_MODE;
+
+  if (c.frontendModePref !== undefined || c.FRONTEND_MODE_PREF !== undefined)
+      TRADER_CONFIG.FRONTEND_MODE_PREF = c.frontendModePref ?? c.FRONTEND_MODE_PREF;
+
+  if (c.enabledStrategies !== undefined || c.ENABLED_STRATEGIES !== undefined)
+      TRADER_CONFIG.ENABLED_STRATEGIES = c.enabledStrategies ?? c.ENABLED_STRATEGIES;
 }
 
 // Hardened Persistence Helper (Heals disk case drift)
@@ -116,7 +124,9 @@ const saveState = () => {
       CIRCUIT_BREAKER_ENABLED: Boolean(TRADER_CONFIG.CIRCUIT_BREAKER_ENABLED),
       ENABLED: Boolean(TRADER_CONFIG.ENABLED),
       ACTIVE_MODE_ID: String(TRADER_CONFIG.ACTIVE_MODE_ID),
-      BACKEND_EXECUTION_MODE: String(TRADER_CONFIG.BACKEND_EXECUTION_MODE) as 'DEMO' | 'LIVE' | 'LOCKED'
+      BACKEND_EXECUTION_MODE: String(TRADER_CONFIG.BACKEND_EXECUTION_MODE) as 'DEMO' | 'LIVE' | 'LOCKED',
+      FRONTEND_MODE_PREF: String(TRADER_CONFIG.FRONTEND_MODE_PREF) as 'DEMO' | 'LIVE',
+      ENABLED_STRATEGIES: TRADER_CONFIG.ENABLED_STRATEGIES
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(canonicalExport, null, 2));
   } catch (err) {

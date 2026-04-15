@@ -3,7 +3,6 @@
 // ============================================
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type {
   ModeConfig, ActiveTrade,
   ExecutionMode, ExecutionResult, MarketRow,
@@ -57,7 +56,14 @@ interface TradingState {
   enabledStrategies: string[];
   strategyPreset: string;
   setEnabledStrategies: (ids: string[]) => void;
-  setStrategyPreset: (preset: string) => void;
+  setMode: (key: string) => void;
+
+  // Cloud Persistence
+  cloudHydrationStatus: 'PENDING' | 'SYNCED' | 'FAILED';
+  setCloudHydrationStatus: (status: 'PENDING' | 'SYNCED' | 'FAILED') => void;
+
+  // Multi-tab execution context
+  isTabLeader: boolean;
 
   // Deal status
   dealStatus: Record<string, string>;
@@ -115,9 +121,7 @@ interface TradingState {
   deployManualSignal: (signal: any, symbol: string) => void;
 }
 
-export const useTradingStore = create<TradingState>()(
-  persist(
-    (set, get) => ({
+export const useTradingStore = create<TradingState>()((set, get) => ({
   balance: 300,
   activeMode: MODES.AGGRESSIVE,
   symbols: [],
@@ -144,6 +148,8 @@ export const useTradingStore = create<TradingState>()(
     { label: 'CVD AGGREGATOR', value: 85.0, status: 'warn' },
     { label: 'EXECUTION RELAY', value: 100.0, status: 'ok' },
   ],
+  cloudHydrationStatus: 'PENDING' as 'PENDING' | 'SYNCED' | 'FAILED',
+  isTabLeader: true, // Optimistically true until election
   marketRegime: 'RANGING' as MarketRegime,
   lastScanAt: null as number | null,
   orderFlowSnapshots: {},
@@ -165,6 +171,7 @@ export const useTradingStore = create<TradingState>()(
 
 
   setBalance: (balance) => set({ balance }),
+  setCloudHydrationStatus: (status) => set({ cloudHydrationStatus: status }),
 
   setMode: (key) => {
     const mode = MODES[key];
@@ -280,6 +287,10 @@ export const useTradingStore = create<TradingState>()(
 
   queueSignal: (id) => {
     const state = get();
+    if (!state.isTabLeader) {
+      console.warn(`[Auto-Trade Tab Guard] Ignored queue request on non-leader tab for signal: ${id} | BLOCKED_SECONDARY_TAB`);
+      return;
+    }
     const target = state.pipelineSignals.find(s => s.id === id);
     if (!target) return;
     if (['PENDING', 'INVALIDATED', 'EXPIRED', 'CANCELLED', 'DEPLOYED'].includes(target.status)) {
@@ -295,6 +306,11 @@ export const useTradingStore = create<TradingState>()(
 
   deploySignal: (signalId) => {
     const state = get();
+
+    if (!state.isTabLeader) {
+      console.warn(`[Auto-Trade Tab Guard] Blocked deploy on non-leader tab for signal: ${signalId} | BLOCKED_SECONDARY_TAB`);
+      return;
+    }
 
     // ── Find exact signal instance by ID ─────────────────────────────────────
     const target = state.pipelineSignals.find(s => s.id === signalId);
@@ -546,25 +562,46 @@ export const useTradingStore = create<TradingState>()(
       }
     });
   }
-    }),
-    {
-      name: 'gold-bonanza-storage',
-      partialize: (state) => ({
-        activeModeId: state.activeMode.key,
-        isAutoTradeActive: state.isAutoTradeActive,
-        isScannerActive: state.isScannerActive,
-        balance: state.balance,
-        enabledStrategies: state.enabledStrategies,
-        strategyPreset: state.strategyPreset
-        // Note: accountEnvironment and liveExecutionArmed are INTENTIONALLY excluded here to 
-        // enforce fail-closed default DEMO on refresh.
-      }),
-      onRehydrateStorage: () => (state) => {
-        if (state && (state as any).activeModeId) {
-          state.activeMode = MODES[(state as any).activeModeId as keyof typeof MODES] || MODES.AGGRESSIVE;
-        }
+}));
+
+// ============================================
+// Multi-Tab Leader Election
+// ============================================
+if (typeof window !== 'undefined') {
+  const TAB_ID = Math.random().toString(36).slice(2, 9);
+  
+  const pingLeader = () => {
+    const leaderId = localStorage.getItem('gb_leader_tab_id');
+    const leaderTs = parseInt(localStorage.getItem('gb_leader_ts') || '0', 10);
+    const now = Date.now();
+    
+    // Assume leader if NO leader, or stale leader (>3000ms), or we are the leader
+    if (!leaderId || (now - leaderTs > 3000) || leaderId === TAB_ID) {
+      if (leaderId !== TAB_ID) {
+        console.log(`[Tab Election] Tab ${TAB_ID} assumed CONTROLLER role.`);
+      }
+      localStorage.setItem('gb_leader_tab_id', TAB_ID);
+      localStorage.setItem('gb_leader_ts', now.toString());
+      if (!useTradingStore.getState().isTabLeader) {
+        useTradingStore.setState({ isTabLeader: true });
+      }
+    } else {
+      // We are a viewer tab
+      if (useTradingStore.getState().isTabLeader) {
+        console.warn(`[Tab Election] Leader heartbeat detected from ${leaderId}. Falling back to VIEWER role.`);
+        useTradingStore.setState({ isTabLeader: false });
       }
     }
-  )
-);
+  };
+  
+  pingLeader();
+  setInterval(pingLeader, 1000);
+  
+  window.addEventListener('beforeunload', () => {
+    if (localStorage.getItem('gb_leader_tab_id') === TAB_ID) {
+      localStorage.removeItem('gb_leader_tab_id');
+      localStorage.removeItem('gb_leader_ts');
+    }
+  });
+}
 

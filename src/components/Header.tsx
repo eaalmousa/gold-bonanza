@@ -8,7 +8,7 @@ export default function Header() {
     isDataLive, activeMode, activeTrades, 
     binancePositions, pipelineSignals, binanceStatus, 
     isAutoTradeActive, setAutoTradeActive,
-    accountEnvironment
+    accountEnvironment, cloudHydrationStatus, isTabLeader
   } = useTradingStore();
 
   // executionMode is always 'LIVE' — no cycle needed
@@ -98,6 +98,31 @@ export default function Header() {
           {activeMode.key}
         </div>
         
+        {/* Persistence Status Badge */}
+        <div style={{
+          padding: '10px 20px',
+          borderRadius: 'var(--radius-full)',
+          fontSize: 10, fontWeight: 900,
+          border: `1px solid ${cloudHydrationStatus === 'SYNCED' ? 'rgba(16,185,129,0.3)' : cloudHydrationStatus === 'PENDING' ? 'rgba(212,175,55,0.3)' : 'rgba(239,68,68,0.3)'}`,
+          background: cloudHydrationStatus === 'SYNCED' ? 'rgba(16,185,129,0.05)' : cloudHydrationStatus === 'PENDING' ? 'rgba(212,175,55,0.05)' : 'rgba(239,68,68,0.05)',
+          color: cloudHydrationStatus === 'SYNCED' ? 'var(--green)' : cloudHydrationStatus === 'PENDING' ? 'var(--gold)' : 'var(--red)',
+          letterSpacing: '0.15em'
+        }}>
+          {cloudHydrationStatus === 'SYNCED' ? 'CLOUD RESTORED' : cloudHydrationStatus === 'PENDING' ? 'FETCHING CLOUD' : 'LOCAL DEFAULTS'}
+        </div>
+
+        {/* Tab Ownership Badge */}
+        <div style={{
+          padding: '10px 20px',
+          borderRadius: 'var(--radius-full)',
+          fontSize: 10, fontWeight: 900,
+          border: `1px solid ${isTabLeader ? 'rgba(52,211,153,0.3)' : 'rgba(55,65,81,0.5)'}`,
+          background: isTabLeader ? 'rgba(52,211,153,0.05)' : 'rgba(17,24,39,0.8)',
+          color: isTabLeader ? '#34d399' : 'var(--text-muted)',
+          letterSpacing: '0.15em'
+        }}>
+          {isTabLeader ? 'CONTROLLER TAB' : 'VIEWER TAB'}
+        </div>
         {/* Account Environment Badge — synced to System Status selection */}
         <div
           style={{

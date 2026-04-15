@@ -97,7 +97,8 @@ export const api = {
     trailTpEnabled?: boolean; 
     circuitBreakerEnabled?: boolean;
     activeModeId?: string;
-    // executionMode removed — always LIVE
+    frontendModePref?: 'DEMO' | 'LIVE';
+    enabledStrategies?: string[];
   }) => 
     apiRequest('/trade/config', { method: 'POST', body: JSON.stringify(config) }),
 };

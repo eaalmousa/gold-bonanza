@@ -50,8 +50,19 @@ export default function SystemStatus() {
     try {
       const resp = await api.switchEnvironment(target);
       alert(resp.message || `Backend execution mode set to ${target}.`);
-      setBackendEnvironment({ ...backendEnvironment, executionMode: target });
-      setTimeout(() => setIsSwitchingEnv(false), 1000);
+      
+      // Force full backend sync immediately
+      try {
+         const syncStatus = await api.getAutoTradeStatus();
+         if (syncStatus?.backendEnvironment) {
+             setBackendEnvironment(syncStatus.backendEnvironment);
+         }
+      } catch (syncErr) {
+         console.warn("Optimistic fallback: could not fetch full status");
+         setBackendEnvironment({ ...backendEnvironment, executionMode: target } as any);
+      }
+      
+      setTimeout(() => setIsSwitchingEnv(false), 500);
     } catch (e: any) {
       alert(e.message || `Failed to switch environment to ${target}.`);
       setIsSwitchingEnv(false);
@@ -252,16 +263,16 @@ export default function SystemStatus() {
             {/* Sync Status Badge */}
             {backendEnvironment && (
               <span style={{ 
-                color: accountEnvironment === backendEnvironment.executionMode ? 'var(--green)' : '#f87171', 
-                background: accountEnvironment === backendEnvironment.executionMode ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', 
+                color: accountEnvironment === (backendEnvironment.executionMode || 'UNKNOWN') ? 'var(--green)' : '#f87171', 
+                background: accountEnvironment === (backendEnvironment.executionMode || 'UNKNOWN') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', 
                 padding: '6px 12px',
                 borderRadius: 'var(--radius-md)', fontSize: 9, fontWeight: 800, 
-                border: `1px solid ${accountEnvironment === backendEnvironment.executionMode ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                border: `1px solid ${accountEnvironment === (backendEnvironment.executionMode || 'UNKNOWN') ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
                 letterSpacing: '0.05em'
               }}>
-                {accountEnvironment === backendEnvironment.executionMode 
+                {accountEnvironment === (backendEnvironment.executionMode || 'UNKNOWN') 
                   ? 'SYNCED ✅' 
-                  : `⚠️ FRONTEND ${accountEnvironment} / BACKEND ${backendEnvironment.executionMode} MISMATCH`}
+                  : `⚠️ FRONTEND ${accountEnvironment} / BACKEND ${backendEnvironment.executionMode || 'UNKNOWN'} MISMATCH`}
               </span>
             )}
           </div>
@@ -324,8 +335,8 @@ export default function SystemStatus() {
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>|</span>
             <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 900, letterSpacing: '0.2em' }}>
               Base: <span style={{ 
-                color: !backendEnvironment ? 'var(--text-muted)' : backendEnvironment.executionMode === 'DEMO' ? '#38bdf8' : backendEnvironment.executionMode === 'LOCKED' ? '#f43f5e' : 'var(--green)',
-              }}>{!backendEnvironment ? 'OFFLINE' : backendEnvironment.executionMode}</span>
+                color: !backendEnvironment ? 'var(--text-muted)' : backendEnvironment.executionMode === 'DEMO' ? '#38bdf8' : backendEnvironment.executionMode === 'LOCKED' ? '#f43f5e' : (backendEnvironment.executionMode === 'LIVE' ? 'var(--green)' : 'var(--text-muted)'),
+              }}>{!backendEnvironment ? 'OFFLINE' : (backendEnvironment.executionMode || 'UNKNOWN')}</span>
             </span>
           </div>
           {backendEnvironment?.baseUrl && (

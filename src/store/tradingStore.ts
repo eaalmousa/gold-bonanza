@@ -567,24 +567,27 @@ export const useTradingStore = create<TradingState>()((set, get) => ({
 // ============================================
 // Multi-Tab Leader Election (Hybrid localStorage + BroadcastChannel)
 // ============================================
-// localStorage = synchronous ground truth on boot (instant check)
-// BroadcastChannel = live coordination between running tabs
+// localStorage = synchronous ground truth on boot (instant check, survives throttling)
+// BroadcastChannel = live coordination (instant resignation handoff)
+// CRITICAL: Chrome throttles background tab setInterval to ~1x/minute.
+// LEADER_STALE_MS must be >> 60s to prevent false takeover.
 if (typeof window !== 'undefined') {
   const TAB_ID = `tab_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const LS_LEADER_ID = 'gb_leader_tab_id';
   const LS_LEADER_TS = 'gb_leader_ts';
-  const LEADER_STALE_MS = 5000;
-  const ELECTION_WAIT_MS = 2000;
+  const LEADER_STALE_MS = 120_000; // 2 minutes — safely above Chrome's 1-min background throttle
+  const ELECTION_WAIT_MS = 2000;   // Wait 2s for any existing leader to respond
 
   let isLeader = false;
   let channel: BroadcastChannel | null = null;
   try { channel = new BroadcastChannel('gb_tab_election'); } catch { /* fallback to LS only */ }
 
-  useTradingStore.setState({ isTabLeader: false });
+  useTradingStore.setState({ isTabLeader: false }); // Always start as VIEWER
 
+  // Synchronous ground truth: is there already a live leader?
   const existingLeaderId = localStorage.getItem(LS_LEADER_ID);
   const existingLeaderTs = parseInt(localStorage.getItem(LS_LEADER_TS) || '0', 10);
-  const leaderIsFresh = existingLeaderId && (Date.now() - existingLeaderTs < LEADER_STALE_MS);
+  const leaderIsFresh = !!existingLeaderId && (Date.now() - existingLeaderTs < LEADER_STALE_MS);
 
   const assumeLeader = () => {
     if (isLeader) return;
@@ -592,14 +595,14 @@ if (typeof window !== 'undefined') {
     localStorage.setItem(LS_LEADER_ID, TAB_ID);
     localStorage.setItem(LS_LEADER_TS, Date.now().toString());
     useTradingStore.setState({ isTabLeader: true });
-    console.log(`[Tab Election] ${TAB_ID} LEADER_ELECTED`);
+    console.log(`[Tab Election] ${TAB_ID} LEADER_ELECTED — CONTROLLER CONFIRMED`);
     if (channel) channel.postMessage({ type: 'I_AM_LEADER', tabId: TAB_ID });
   };
 
   const becomeViewer = (reason: string) => {
     isLeader = false;
     useTradingStore.setState({ isTabLeader: false });
-    console.log(`[Tab Election] ${TAB_ID} ${reason}`);
+    console.log(`[Tab Election] ${TAB_ID} → VIEWER FORCED (${reason})`);
   };
 
   let electionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -611,18 +614,15 @@ if (typeof window !== 'undefined') {
   };
 
   if (leaderIsFresh) {
-    console.log(`[Tab Election] ${TAB_ID} detected live leader ${existingLeaderId} (${Date.now() - existingLeaderTs}ms ago). VIEWER_MODE_FORCED`);
-    setTimeout(() => {
-      const ts = parseInt(localStorage.getItem(LS_LEADER_TS) || '0', 10);
-      if (Date.now() - ts >= LEADER_STALE_MS && !isLeader) {
-        console.warn(`[Tab Election] Stale leader on re-check. LEADER_STOLEN`);
-        startElection();
-      }
-    }, LEADER_STALE_MS + 500);
+    // Another tab is alive — stay as VIEWER, do NOT start any election
+    console.log(`[Tab Election] ${TAB_ID} detected live leader ${existingLeaderId} (age ${Date.now() - existingLeaderTs}ms). VIEWER_MODE_FORCED`);
+    // No stale-recovery timeout here. Viewer tabs passively check via the interval below.
   } else {
+    // No valid leader — start election
     startElection();
   }
 
+  // BroadcastChannel handler for live coordination
   if (channel) {
     channel.onmessage = (msg) => {
       const { type, tabId } = msg.data;
@@ -636,25 +636,30 @@ if (typeof window !== 'undefined') {
         channel!.postMessage({ type: 'I_AM_LEADER', tabId: TAB_ID });
       }
       if (type === 'LEADER_RESIGNED') {
-        setTimeout(() => { if (!isLeader) startElection(); }, 200 + Math.random() * 800);
+        // Leader explicitly closed — safe to start new election immediately
+        console.log(`[Tab Election] ${TAB_ID} received LEADER_RESIGNED. LEADER TAKEOVER starting.`);
+        setTimeout(() => { if (!isLeader) startElection(); }, 200 + Math.random() * 500);
       }
     };
   }
 
+  // Heartbeat loop: leader stamps localStorage; viewer checks for stale leader
   setInterval(() => {
     if (isLeader) {
       localStorage.setItem(LS_LEADER_ID, TAB_ID);
       localStorage.setItem(LS_LEADER_TS, Date.now().toString());
       if (channel) channel.postMessage({ type: 'HEARTBEAT', tabId: TAB_ID });
     } else {
+      // Passive stale check — only triggers if leader truly vanished (crash, no beforeunload)
       const ts = parseInt(localStorage.getItem(LS_LEADER_TS) || '0', 10);
-      if (Date.now() - ts >= LEADER_STALE_MS) {
-        console.warn(`[Tab Election] Leader heartbeat expired. LEADER_STOLEN`);
+      if (ts > 0 && Date.now() - ts >= LEADER_STALE_MS) {
+        console.warn(`[Tab Election] Leader heartbeat expired (${Math.round((Date.now() - ts)/1000)}s). LEADER_STOLEN`);
         startElection();
       }
     }
-  }, 2000);
+  }, 30_000); // Check every 30s — no rush, stale window is 2 minutes
 
+  // Instant resignation on tab close
   window.addEventListener('beforeunload', () => {
     if (isLeader) {
       localStorage.removeItem(LS_LEADER_ID);
@@ -663,4 +668,5 @@ if (typeof window !== 'undefined') {
     }
   });
 }
+
 

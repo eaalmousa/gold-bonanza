@@ -442,7 +442,11 @@ export default function SystemStatus() {
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)' }}>MAPPING DEPLOYMENTS (EXCHANGE)</div>
             <div style={{ fontSize: 11, fontWeight: 900, color: capacityPct >= 100 ? 'var(--red)' : 'var(--text-primary)' }}>
-              {capacityPct >= 100 ? 'MAX TRADES REACHED - EXECUTION BLOCKED' : `${realDeployments} / ${config.maxTrades} ACTIVE`}
+              {realDeployments > config.maxTrades
+                ? `⚠ CAP EXCEEDED ACTUAL: ${realDeployments} / ${config.maxTrades}`
+                : capacityPct >= 100
+                  ? 'MAX TRADES REACHED - EXECUTION BLOCKED'
+                  : `${realDeployments} / ${config.maxTrades} ACTIVE`}
             </div>
           </div>
           <div className="capacity-bar-track">

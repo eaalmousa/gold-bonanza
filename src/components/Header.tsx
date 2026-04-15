@@ -121,7 +121,7 @@ export default function Header() {
           color: isTabLeader ? '#34d399' : 'var(--text-muted)',
           letterSpacing: '0.15em'
         }}>
-          {isTabLeader ? 'CONTROLLER TAB' : 'VIEWER TAB'}
+          {isTabLeader ? '● CONTROLLER CONFIRMED' : '○ VIEWER FORCED'}
         </div>
         {/* Account Environment Badge — synced to System Status selection */}
         <div

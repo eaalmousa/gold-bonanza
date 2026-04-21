@@ -11,6 +11,17 @@ import { initializeSymbolUniverse, setKlinesFetchOverride } from '../../src/serv
 import fs from 'fs';
 import path from 'path';
 
+// ─── Shared audit helper (mirrors formatOrderLog in routes/trade.ts) ─────────
+// Kept here to avoid a circular import between autoTrader ←→ trade.
+function formatOrderLog(res: any): string {
+  if (!res) return 'null';
+  const id     = res.orderId   ?? res.algoId   ?? res.id    ?? 'N/A';
+  const status = res.status    ?? res.algoStatus ?? 'UNKNOWN';
+  const filled = res.executedQty ?? res.qty     ?? '?';
+  const price  = res.avgPrice  ?? res.price   ?? res.stopPrice ?? '?';
+  return `id=${id} status=${status} filledQty=${filled} price=${price}`;
+}
+
 // Inject Hardened Fetcher for Server Lifecycle
 setKlinesFetchOverride(getKlinesResilient);
 
@@ -297,6 +308,11 @@ export async function evaluateFrontendSignals(signals: any[]) {
     if (activePos.length >= TRADER_CONFIG.MAX_CONCURRENT_TRADES) break;
 
     try {
+      const execMode = TRADER_CONFIG.BACKEND_EXECUTION_MODE;
+
+      // ── [ENTRY_REQUEST] ──────────────────────────────────────────────────────
+      logMsg(`[ENTRY_REQUEST] ${sym} ${sig.side} | mode=${execMode} | score=${(row as any).score ?? 'N/A'} | entryType=${(row as any).entryType ?? 'AUTO'} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | slEnabled=${TRADER_CONFIG.SL_ENABLED}`);
+
       logMsg(`🚀 Executing ${sym} ${sig.side}...`);
       const riskUSDT = balance * TRADER_CONFIG.RISK_PER_TRADE;
       const qty = Math.max(0.001, (riskUSDT * TRADER_CONFIG.LEVERAGE) / sig.entryPrice);
@@ -304,15 +320,41 @@ export async function evaluateFrontendSignals(signals: any[]) {
       await setLeverage(sym, TRADER_CONFIG.LEVERAGE);
       const entryRes = await placeMarketOrder(sym, sig.side === 'LONG' ? 'BUY' : 'SELL', qty);
 
+      // ── [ENTRY_FILLED] ───────────────────────────────────────────────────────
+      const entryId        = entryRes.orderId ?? 'N/A';
+      const entryFillPrice = parseFloat(entryRes.avgPrice) || sig.entryPrice;
+      const entryFilledQty = entryRes.executedQty ?? qty.toFixed(3);
+      logMsg(`[ENTRY_FILLED] ${sym} ${sig.side} | ok=true | binanceId=${entryId} | filledQty=${entryFilledQty} | avgPrice=${entryFillPrice} | mode=${execMode}`);
+
       await new Promise(r => setTimeout(r, 1000));
       const closeSide = sig.side === 'LONG' ? 'SELL' : 'BUY';
 
+      // Audit accumulators
+      let slOk = false;
+      let slId: any = 'N/A';
+      let slErr = '';
+      let tpOk = false;
+      let tpId: any = 'N/A';
+      let tpPrice = 0;
+      let tpErr = '';
+
+      // ── SL (independent try/catch) ───────────────────────────────────────────
       if (TRADER_CONFIG.SL_ENABLED) {
-        await placeStopMarket(sym, closeSide, sig.stopLoss);
+        try {
+          const slRes = await placeStopMarket(sym, closeSide, sig.stopLoss);
+          slOk = true;
+          slId = slRes.orderId ?? slRes.algoId ?? 'N/A';
+          logMsg(`[SL_PLACED] ${sym} | binanceId=${slId} | stopPrice=${sig.stopLoss} | closePosition=true | ${formatOrderLog(slRes)}`);
+        } catch (slEx: any) {
+          slErr = slEx?.message ?? 'Unknown SL error';
+          logMsg(`[SL_FAILED] ${sym} | slEnabled=${TRADER_CONFIG.SL_ENABLED} | stopPrice=${sig.stopLoss} | reason="${slErr}"`);
+        }
+      } else {
+        logMsg(`[SL_SKIPPED] ${sym} | slEnabled=false — no SL order placed`);
       }
 
+      // ── TP (independent try/catch per leg) ───────────────────────────────────
       if (TRADER_CONFIG.TP_ENABLED) {
-        const riskDist = Math.abs(sig.entryPrice - sig.stopLoss);
         const isLong = sig.side === 'LONG';
 
         // ── TP Safety Checks ──────────────────────────────────────
@@ -323,43 +365,78 @@ export async function evaluateFrontendSignals(signals: any[]) {
         if (!tp2RR || !isFinite(tp2RR) || tp2RR <= 0) { logMsg(`⚠️ TP2_RR invalid (${tp2RR}), using safe default ${SAFE_DEFAULT_RR * 2}`); tp2RR = SAFE_DEFAULT_RR * 2; }
 
         const appliedTpStr = TRADER_CONFIG.TP1_ONLY ? `${tp1RR}% (100%)` : `${tp1RR}% & ${tp2RR}% (50/50)`;
-
-        // ── TP Debug Audit Log ─────────────────────────────────────
         logMsg(`[TP_DEBUG] ${sym} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1Pct=${tp1RR}% | tp2Pct=${tp2RR}% | appliedRatios=${appliedTpStr}`);
 
-        // ── Re-calculate dynamically from ACTUAL Binance Fill ──
-        let actualEntryPrice = parseFloat(entryRes.avgPrice);
-        if (!actualEntryPrice || isNaN(actualEntryPrice) || actualEntryPrice <= 0) {
-          actualEntryPrice = sig.entryPrice;
-        }
-
-        // Fixed Percentage Target Math (Ignoring Risk/Stop Distance)
-        const tp1Pct = tp1RR / 100;
-        const calcTp1 = isLong ? actualEntryPrice * (1 + tp1Pct) : actualEntryPrice * (1 - tp1Pct);
+        const tp1Pct  = tp1RR / 100;
+        const calcTp1 = isLong ? entryFillPrice * (1 + tp1Pct) : entryFillPrice * (1 - tp1Pct);
+        tpPrice       = calcTp1;
 
         if (TRADER_CONFIG.TP1_ONLY) {
-          await placeTakeProfitMarket(sym, closeSide, calcTp1);
-          logMsg(`[TP_PLACED] ${sym} TP1-ONLY at ${calcTp1.toFixed(6)} (${tp1RR}%)`);
+          try {
+            const tpRes = await placeTakeProfitMarket(sym, closeSide, calcTp1);
+            tpOk = true;
+            tpId = tpRes.orderId ?? tpRes.algoId ?? 'N/A';
+            logMsg(`[TP_PLACED] ${sym} | tp1Only=true | tpPrice=${calcTp1.toFixed(6)} (${tp1RR}%) | binanceId=${tpId} | ${formatOrderLog(tpRes)}`);
+          } catch (tpEx: any) {
+            tpErr = tpEx?.message ?? 'Unknown TP error';
+            logMsg(`[TP_FAILED] ${sym} | tp1Only=true | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tpPrice=${calcTp1.toFixed(6)} | reason="${tpErr}"`);
+          }
         } else {
-          const tp2Pct = tp2RR / 100;
-          const calcTp2 = isLong ? actualEntryPrice * (1 + tp2Pct) : actualEntryPrice * (1 - tp2Pct);
+          const tp2Pct  = tp2RR / 100;
+          const calcTp2 = isLong ? entryFillPrice * (1 + tp2Pct) : entryFillPrice * (1 - tp2Pct);
           const halfQty = qty * 0.5;
-          await placeTakeProfitMarket(sym, closeSide, calcTp1, halfQty);
-          await placeTakeProfitMarket(sym, closeSide, calcTp2, halfQty);
-          logMsg(`[TP_PLACED] ${sym} TP1=${calcTp1.toFixed(6)} (${tp1RR}%, 50%) TP2=${calcTp2.toFixed(6)} (${tp2RR}%, 50%)`);
+
+          // TP1 (50%)
+          try {
+            const tp1Res = await placeTakeProfitMarket(sym, closeSide, calcTp1, halfQty);
+            tpOk = true;
+            tpId = tp1Res.orderId ?? tp1Res.algoId ?? 'N/A';
+            logMsg(`[TP_PLACED] ${sym} | leg=TP1 | tp1Only=false | tpPrice=${calcTp1.toFixed(6)} (${tp1RR}%, 50%) | binanceId=${tpId} | ${formatOrderLog(tp1Res)}`);
+          } catch (tp1Ex: any) {
+            tpErr = tp1Ex?.message ?? 'Unknown TP1 error';
+            logMsg(`[TP_FAILED] ${sym} | leg=TP1 | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tpPrice=${calcTp1.toFixed(6)} | reason="${tpErr}"`);
+          }
+
+          // TP2 (50%)
+          try {
+            const tp2Res = await placeTakeProfitMarket(sym, closeSide, calcTp2, halfQty);
+            const tp2Id = tp2Res.orderId ?? tp2Res.algoId ?? 'N/A';
+            logMsg(`[TP_PLACED] ${sym} | leg=TP2 | tp1Only=false | tpPrice=${calcTp2.toFixed(6)} (${tp2RR}%, 50%) | binanceId=${tp2Id} | ${formatOrderLog(tp2Res)}`);
+          } catch (tp2Ex: any) {
+            const tp2Err = tp2Ex?.message ?? 'Unknown TP2 error';
+            logMsg(`[TP_FAILED] ${sym} | leg=TP2 | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tpPrice=${calcTp2.toFixed(6)} | reason="${tp2Err}"`);
+            if (!tpErr) tpErr = tp2Err;
+          }
         }
       } else {
-        logMsg(`[TP_DEBUG] ${sym} | tpEnabled=false — NO TP orders placed`);
+        logMsg(`[TP_SKIPPED] ${sym} | tpEnabled=false — NO TP orders placed`);
       }
+
+      // ── [EXECUTION_SUMMARY] ──────────────────────────────────────────────────
+      const verdict = slOk && tpOk
+        ? 'ENTRY_OK_TP_OK_SL_OK'
+        : slOk && !tpOk
+          ? 'ENTRY_OK_TP_FAIL_SL_OK'
+          : !slOk && tpOk
+            ? 'ENTRY_OK_TP_OK_SL_FAIL'
+            : 'ENTRY_OK_TP_FAIL_SL_FAIL';
+
+      const tpStr = tpOk ? `tp=OK id=${tpId} @ ${tpPrice.toFixed(6)}`  : `tp=FAIL reason="${tpErr}"`;
+      const slStr = slOk ? `sl=OK id=${slId} @ ${sig.stopLoss}`         : `sl=FAIL reason="${slErr}"`;
+      logMsg(`[EXECUTION_SUMMARY] ${sym} ${sig.side} | entry=OK @ ${entryFillPrice} | ${tpStr} | ${slStr} | mode=${execMode}`);
+      logMsg(`Verdict: ${verdict}`);
 
       backendSignalCache[sigId].backendDecision = 'DEPLOYED_BACKEND';
       backendSignalCache[sigId].deployedOrderId = entryRes.orderId;
+      backendSignalCache[sigId].executionVerdict = verdict;
       activePos.push({ symbol: sym }); // local update to prevent double entry in same block
 
     } catch (err: any) {
+      logMsg(`[EXECUTION_SUMMARY] ${sym} | entry=FAIL reason="${err.message}" | verdict=ENTRY_FAIL`);
       logMsg(`❌ Execution failed for ${sym}: ${err.message}`);
       backendSignalCache[sigId].backendDecision = 'BLOCKED_BACKEND';
       backendSignalCache[sigId].blockerReason = err.message;
+      backendSignalCache[sigId].executionVerdict = 'ENTRY_FAIL';
     }
   }
 

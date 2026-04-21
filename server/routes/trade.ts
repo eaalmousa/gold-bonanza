@@ -14,6 +14,18 @@ import path from 'path';
 
 export const tradeRouter = Router();
 
+// ─── Post-Entry Audit Helper ─────────────────────────────────────────────────
+// Normalises a raw Binance order response into a compact, grep-friendly string.
+// Works for both /fapi/v1/order (trade.ts binanceRequest) and helper responses.
+export function formatOrderLog(res: any): string {
+  if (!res) return 'null';
+  const id      = res.orderId      ?? res.algoId      ?? res.id      ?? 'N/A';
+  const status  = res.status       ?? res.algoStatus  ?? 'UNKNOWN';
+  const filled  = res.executedQty  ?? res.qty          ?? '?';
+  const price   = res.avgPrice     ?? res.price        ?? res.stopPrice ?? '?';
+  return `id=${id} status=${status} filledQty=${filled} price=${price}`;
+}
+
 // Module-level idempotency and concurrency state
 let inFlightExecutions = 0;
 const recentSignals = new Map<string, number>();
@@ -329,39 +341,85 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
   console.log('[Trade:open] Outbound payload:', JSON.stringify(auditPayload, null, 2));
   tradeLogs.unshift(`[${new Date().toISOString()}] [LIVE] SUBMITTING: ${symbol} ${side}`);
 
+  // ── [ENTRY_REQUEST] ──────────────────────────────────────────────────────────
+  const execMode = TRADER_CONFIG.BACKEND_EXECUTION_MODE;
+  const entryReqMsg = `[ENTRY_REQUEST] ${symbol} ${side} | mode=${execMode} | score=${score ?? 'N/A'} | entryType=${entryType ?? 'N/A'} | entryTiming=${entryTiming ?? 'N/A'} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | slEnabled=${TRADER_CONFIG.SL_ENABLED}`;
+  console.log(entryReqMsg);
+  tradeLogs.unshift(`[${new Date().toISOString()}] ${entryReqMsg}`);
+
+  // Audit state variables for the final summary
+  let entryOk   = false;
+  let entryId: string | number = 'N/A';
+  let entryFillPrice = 0;
+  let entryFilledQty = '?';
+  let slOk      = false;
+  let slId: string | number = 'N/A';
+  let slErr     = '';
+  let tpOk      = false;
+  let tpId: string | number = 'N/A';
+  let tpPrice   = 0;
+  let tpErr     = '';
+
+  // Orders returned in API response
+  let entryOrder: any = null;
+  let stopOrder:  any = null;
+  let tp1Order:   any = null;
+  let tp2Order:   any = null;
+
   try {
     // 1. Set leverage
     await binanceRequest('POST', '/fapi/v1/leverage', { symbol, leverage: lev }, baseUrl);
 
     // 2. Market entry order
-    const entryOrder = await binanceRequest('POST', '/fapi/v1/order', {
+    entryOrder = await binanceRequest('POST', '/fapi/v1/order', {
       symbol,
       side:     side === 'LONG' ? 'BUY' : 'SELL',
       type:     'MARKET',
       quantity: roundTo(qty, qtyPrec)
     }, baseUrl);
-    console.log('[Trade:open] Entry order response:', JSON.stringify(entryOrder));
+    entryOk        = true;
+    entryId        = entryOrder.orderId ?? 'N/A';
+    entryFillPrice = parseFloat(entryOrder.avgPrice) || entryPrice;
+    entryFilledQty = entryOrder.executedQty ?? roundTo(qty, qtyPrec);
+
+    const entryFilledMsg = `[ENTRY_FILLED] ${symbol} ${side} | ok=true | binanceId=${entryId} | filledQty=${entryFilledQty} | avgPrice=${entryFillPrice} | mode=${execMode}`;
+    console.log(entryFilledMsg);
+    tradeLogs.unshift(`[${new Date().toISOString()}] ${entryFilledMsg}`);
 
     // Brief pause so position risk is updated before placing stops
     await new Promise(r => setTimeout(r, 1000));
 
-    // 3. Stop-loss
-    const stopOrder = await binanceRequest('POST', '/fapi/v1/order', {
-      symbol,
-      side:          side === 'LONG' ? 'SELL' : 'BUY',
-      type:          'STOP_MARKET',
-      stopPrice:     roundTo(stopLoss, pricePrec),
-      closePosition: 'true',
-      timeInForce:   'GTE_GTC'
-    }, baseUrl);
-    console.log('[Trade:open] SL order response:', JSON.stringify(stopOrder));
+    // 3. Stop-loss (independent try/catch — failures logged, not swallowed)
+    if (TRADER_CONFIG.SL_ENABLED) {
+      try {
+        stopOrder = await binanceRequest('POST', '/fapi/v1/order', {
+          symbol,
+          side:          side === 'LONG' ? 'SELL' : 'BUY',
+          type:          'STOP_MARKET',
+          stopPrice:     roundTo(stopLoss, pricePrec),
+          closePosition: 'true',
+          timeInForce:   'GTE_GTC'
+        }, baseUrl);
+        slOk = true;
+        slId = stopOrder.orderId ?? 'N/A';
+        const slMsg = `[SL_PLACED] ${symbol} | binanceId=${slId} | stopPrice=${roundTo(stopLoss, pricePrec)} | closePosition=true | reduceOnly=N/A | ${formatOrderLog(stopOrder)}`;
+        console.log(slMsg);
+        tradeLogs.unshift(`[${new Date().toISOString()}] ${slMsg}`);
+      } catch (slEx: any) {
+        slErr = slEx?.message ?? 'Unknown SL error';
+        const slFailMsg = `[SL_FAILED] ${symbol} | slEnabled=${TRADER_CONFIG.SL_ENABLED} | stopPrice=${roundTo(stopLoss, pricePrec)} | reason="${slErr}"`;
+        console.error(slFailMsg);
+        tradeLogs.unshift(`[${new Date().toISOString()}] ${slFailMsg}`);
+      }
+    } else {
+      const slSkipMsg = `[SL_SKIPPED] ${symbol} | slEnabled=false — no SL order placed`;
+      console.log(slSkipMsg);
+      tradeLogs.unshift(`[${new Date().toISOString()}] ${slSkipMsg}`);
+    }
 
-    // ── DYNAMIC TP CALCULATION ──
-    let tp1Order = null;
-    let tp2Order = null;
-
+    // 4. TP placement (independent try/catch per TP order)
     if (TRADER_CONFIG.TP_ENABLED) {
-      const isLong = side === 'LONG';
+      const isLong   = side === 'LONG';
       const closeSide = isLong ? 'SELL' : 'BUY';
 
       const SAFE_DEFAULT_RR = 1.5;
@@ -369,46 +427,96 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
       let tp2RR = TRADER_CONFIG.TP2_RR;
       if (!tp1RR || !isFinite(tp1RR) || tp1RR <= 0) { tp1RR = SAFE_DEFAULT_RR; }
       if (!tp2RR || !isFinite(tp2RR) || tp2RR <= 0) { tp2RR = SAFE_DEFAULT_RR * 2; }
+
       const appliedTpStr = TRADER_CONFIG.TP1_ONLY ? `${tp1RR}% (100%)` : `${tp1RR}% & ${tp2RR}% (50/50)`;
+      const tpDebugMsg = `[TP_DEBUG:ROUTE] ${symbol} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1Pct=${tp1RR}% | tp2Pct=${tp2RR}% | appliedRatios=${appliedTpStr}`;
+      console.log(tpDebugMsg);
+      tradeLogs.unshift(`[${new Date().toISOString()}] ${tpDebugMsg}`);
 
-      console.log(`[TP_DEBUG:ROUTE] ${symbol} | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tp1Only=${TRADER_CONFIG.TP1_ONLY} | tp1Pct=${tp1RR}% | tp2Pct=${tp2RR}% | appliedRatios=${appliedTpStr}`);
-      tradeLogs.unshift(`[TP_DEBUG] ${symbol} tpEnabled=true tp1Only=${TRADER_CONFIG.TP1_ONLY} tp1Pct=${tp1RR}% tp2Pct=${tp2RR}% appliedRatios=${appliedTpStr}`);
-
-      let actualEntryPrice = parseFloat(entryOrder.avgPrice);
-      if (!actualEntryPrice || isNaN(actualEntryPrice) || actualEntryPrice <= 0) {
-        actualEntryPrice = entryPrice;
-      }
-      
-      const tp1Pct = tp1RR / 100;
-      const calcTp1 = isLong ? actualEntryPrice * (1 + tp1Pct) : actualEntryPrice * (1 - tp1Pct);
+      const tp1Pct  = tp1RR / 100;
+      const calcTp1 = isLong ? entryFillPrice * (1 + tp1Pct) : entryFillPrice * (1 - tp1Pct);
+      tpPrice       = calcTp1;
 
       if (TRADER_CONFIG.TP1_ONLY) {
-        tp1Order = await binanceRequest('POST', '/fapi/v1/order', {
-          symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
-          stopPrice: roundTo(calcTp1, pricePrec), closePosition: 'true', timeInForce: 'GTE_GTC'
-        }, baseUrl);
-        console.log('[Trade:open] TP1 Full order response:', JSON.stringify(tp1Order));
+        try {
+          tp1Order = await binanceRequest('POST', '/fapi/v1/order', {
+            symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
+            stopPrice: roundTo(calcTp1, pricePrec), closePosition: 'true', timeInForce: 'GTE_GTC'
+          }, baseUrl);
+          tpOk = true;
+          tpId = tp1Order.orderId ?? 'N/A';
+          const tpMsg = `[TP_PLACED] ${symbol} | tp1Only=true | tpPrice=${roundTo(calcTp1, pricePrec)} | reduceOnly=false (closePosition) | binanceId=${tpId} | ${formatOrderLog(tp1Order)}`;
+          console.log(tpMsg);
+          tradeLogs.unshift(`[${new Date().toISOString()}] ${tpMsg}`);
+        } catch (tpEx: any) {
+          tpErr = tpEx?.message ?? 'Unknown TP error';
+          const tpFailMsg = `[TP_FAILED] ${symbol} | tp1Only=true | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tpPrice=${roundTo(calcTp1, pricePrec)} | reduceOnly=false | reason="${tpErr}"`;
+          console.error(tpFailMsg);
+          tradeLogs.unshift(`[${new Date().toISOString()}] ${tpFailMsg}`);
+        }
       } else {
-        const tp2Pct = tp2RR / 100;
-        const calcTp2 = isLong ? actualEntryPrice * (1 + tp2Pct) : actualEntryPrice * (1 - tp2Pct);
+        const tp2Pct  = tp2RR / 100;
+        const calcTp2 = isLong ? entryFillPrice * (1 + tp2Pct) : entryFillPrice * (1 - tp2Pct);
         const halfQty = roundTo(qty * 0.5, qtyPrec);
 
-        tp1Order = await binanceRequest('POST', '/fapi/v1/order', {
-          symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
-          stopPrice: roundTo(calcTp1, pricePrec), quantity: halfQty, reduceOnly: 'true', timeInForce: 'GTE_GTC'
-        }, baseUrl);
+        // TP1 (50%)
+        try {
+          tp1Order = await binanceRequest('POST', '/fapi/v1/order', {
+            symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
+            stopPrice: roundTo(calcTp1, pricePrec), quantity: halfQty, reduceOnly: 'true', timeInForce: 'GTE_GTC'
+          }, baseUrl);
+          tpOk = true;
+          tpId = tp1Order.orderId ?? 'N/A';
+          const tp1Msg = `[TP_PLACED] ${symbol} | leg=TP1 | tp1Only=false | tpPrice=${roundTo(calcTp1, pricePrec)} | reduceOnly=true | qty=${halfQty} | binanceId=${tpId} | ${formatOrderLog(tp1Order)}`;
+          console.log(tp1Msg);
+          tradeLogs.unshift(`[${new Date().toISOString()}] ${tp1Msg}`);
+        } catch (tp1Ex: any) {
+          tpErr = tp1Ex?.message ?? 'Unknown TP1 error';
+          const tp1FailMsg = `[TP_FAILED] ${symbol} | leg=TP1 | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tpPrice=${roundTo(calcTp1, pricePrec)} | reduceOnly=true | qty=${halfQty} | reason="${tpErr}"`;
+          console.error(tp1FailMsg);
+          tradeLogs.unshift(`[${new Date().toISOString()}] ${tp1FailMsg}`);
+        }
 
-        tp2Order = await binanceRequest('POST', '/fapi/v1/order', {
-          symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
-          stopPrice: roundTo(calcTp2, pricePrec), quantity: halfQty, reduceOnly: 'true', timeInForce: 'GTE_GTC'
-        }, baseUrl);
+        // TP2 (50%)
+        try {
+          tp2Order = await binanceRequest('POST', '/fapi/v1/order', {
+            symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
+            stopPrice: roundTo(calcTp2, pricePrec), quantity: halfQty, reduceOnly: 'true', timeInForce: 'GTE_GTC'
+          }, baseUrl);
+          const tp2Logged = `[TP_PLACED] ${symbol} | leg=TP2 | tp1Only=false | tpPrice=${roundTo(calcTp2, pricePrec)} | reduceOnly=true | qty=${halfQty} | binanceId=${tp2Order.orderId ?? 'N/A'} | ${formatOrderLog(tp2Order)}`;
+          console.log(tp2Logged);
+          tradeLogs.unshift(`[${new Date().toISOString()}] ${tp2Logged}`);
+        } catch (tp2Ex: any) {
+          const tp2Err = tp2Ex?.message ?? 'Unknown TP2 error';
+          const tp2FailMsg = `[TP_FAILED] ${symbol} | leg=TP2 | tpEnabled=${TRADER_CONFIG.TP_ENABLED} | tpPrice=${roundTo(calcTp2, pricePrec)} | reduceOnly=true | qty=${halfQty} | reason="${tp2Err}"`;
+          console.error(tp2FailMsg);
+          tradeLogs.unshift(`[${new Date().toISOString()}] ${tp2FailMsg}`);
+          if (!tpErr) tpErr = tp2Err; // record at least one TP failure
+        }
       }
+    } else {
+      const tpSkipMsg = `[TP_SKIPPED] ${symbol} | tpEnabled=false — no TP orders placed`;
+      console.log(tpSkipMsg);
+      tradeLogs.unshift(`[${new Date().toISOString()}] ${tpSkipMsg}`);
     }
 
-    tradeLogs.unshift(`[${new Date().toISOString()}] [LIVE] ✅ SUBMITTED: ${symbol} ${side} orderId=${entryOrder.orderId}`);
+    // ── [EXECUTION_SUMMARY] ─────────────────────────────────────────────────────
+    const verdict = slOk && tpOk
+      ? 'ENTRY_OK_TP_OK_SL_OK'
+      : slOk && !tpOk
+        ? 'ENTRY_OK_TP_FAIL_SL_OK'
+        : !slOk && tpOk
+          ? 'ENTRY_OK_TP_OK_SL_FAIL'
+          : 'ENTRY_OK_TP_FAIL_SL_FAIL';
+
+    const tpStr = tpOk  ? `tp=OK id=${tpId} @ ${roundTo(tpPrice, pricePrec)}`      : `tp=FAIL reason="${tpErr}"`;
+    const slStr = slOk  ? `sl=OK id=${slId} @ ${roundTo(stopLoss, pricePrec)}`     : `sl=FAIL reason="${slErr}"`;
+    const summaryMsg = `[EXECUTION_SUMMARY] ${symbol} ${side} | entry=OK @ ${entryFillPrice} | ${tpStr} | ${slStr} | mode=${execMode}`;
+    console.log(`\n${'='.repeat(80)}\n${summaryMsg}\nVerdict: ${verdict}\n${'='.repeat(80)}\n`);
+    tradeLogs.unshift(`[${new Date().toISOString()}] ${summaryMsg} | verdict=${verdict}`);
 
     return res.json({
-      success: true, mode: 'LIVE', baseUrl,
+      success: true, mode: execMode, baseUrl, verdict,
       orderId: entryOrder.orderId, clientOrderId: entryOrder.clientOrderId,
       orders: { entry: entryOrder, stopLoss: stopOrder, takeProfit: tp1Order, takeProfit2: tp2Order },
       submittedPayload: auditPayload
@@ -416,10 +524,13 @@ tradeRouter.post('/open', requireAuth, async (req: any, res: any) => {
 
   } catch (e: any) {
     const errMsg = e?.message ?? 'Unknown error';
-    tradeLogs.unshift(`[${new Date().toISOString()}] [LIVE] ❌ FAILED: ${symbol} — ${errMsg}`);
-    console.error('[Trade:open] Error:', errMsg);
+    // ── [EXECUTION_SUMMARY] on full entry failure ────────────────────────────
+    const failSummary = `[EXECUTION_SUMMARY] ${symbol} ${side} | entry=FAIL reason="${errMsg}" | mode=${execMode}`;
+    console.error(`\n${'='.repeat(80)}\n${failSummary}\nVerdict: ENTRY_FAIL\n${'='.repeat(80)}\n`);
+    tradeLogs.unshift(`[${new Date().toISOString()}] ${failSummary} | verdict=ENTRY_FAIL`);
+    tradeLogs.unshift(`[${new Date().toISOString()}] [ENTRY_FAILED] ${symbol} — ${errMsg}`);
     return res.status(500).json({
-      error: errMsg, mode: 'LIVE', baseUrl, symbol,
+      error: errMsg, mode: execMode, baseUrl, symbol, verdict: 'ENTRY_FAIL',
       failedAt: Date.now(), submittedPayload: auditPayload
     });
   } finally {

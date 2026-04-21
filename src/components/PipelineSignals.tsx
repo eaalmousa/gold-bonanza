@@ -3,6 +3,7 @@ import type { SignalRow } from '../types/trading';
 import { AlertTriangle, XCircle, ShieldCheck, Crosshair, Zap, BarChart2, TrendingUp, Clock, ShieldAlert } from 'lucide-react';
 import ChartModal from './ChartModal';
 import { useTradingStore } from '../store/tradingStore';
+import { playAlert } from '../services/audioEngine';
 
 interface Props {
   signals: SignalRow[];
@@ -178,9 +179,9 @@ function SignalCard({ row, onDeploy, index, isTruth }: { row: SignalRow; onDeplo
     const isNew = !row.timestamp || (Date.now() - row.timestamp < 60000);
     if (isNew && row.status === 'ACCEPTED') {
       if (sig.kind === 'SUPER_SNIPER') {
-        new Audio('/super_sniper_alert.mp3').play().catch((e) => console.warn('Audio play failed', e));
+        playAlert('/super_sniper_alert.mp3');
       } else {
-        new Audio('/sniper_alert.mp3').play().catch((e) => console.warn('Audio play failed', e));
+        playAlert('/sniper_alert.mp3');
       }
     }
   }, [row.timestamp, row.status, sig.kind]);

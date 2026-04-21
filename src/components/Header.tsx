@@ -1,15 +1,18 @@
 import { useTradingStore } from '../store/tradingStore';
-import { Crosshair, Power, Wifi, WifiOff } from 'lucide-react';
+import { Crosshair, Power, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react';
 import { api } from '../services/api';
 import { getCanonicalPositionCount } from '../utils/positionCount';
+
 
 export default function Header() {
   const { 
     isDataLive, activeMode, activeTrades, 
     binancePositions, pipelineSignals, binanceStatus, 
     isAutoTradeActive, setAutoTradeActive,
-    accountEnvironment, cloudHydrationStatus, isTabLeader
+    accountEnvironment, cloudHydrationStatus, isTabLeader,
+    soundMuted, setSoundMuted
   } = useTradingStore();
+
 
   // executionMode is always 'LIVE' — no cycle needed
   const handleToggleAutoTrade = async () => {
@@ -155,6 +158,26 @@ export default function Header() {
             {getCanonicalPositionCount(positions, trades, signals).queued > 0 && <span style={{ color: 'var(--gold)' }}>{getCanonicalPositionCount(positions, trades, signals).queued} QUEUED</span>}
           </div>
         )}
+
+        {/* SOUND MUTE TOGGLE */}
+        <button
+          id="sound-mute-toggle"
+          onClick={() => setSoundMuted(!soundMuted)}
+          title={soundMuted ? 'Alerts muted — click to unmute' : 'Alerts on — click to mute'}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '10px 20px',
+            borderRadius: 'var(--radius-full)',
+            fontSize: 11, fontWeight: 900,
+            border: `1px solid ${soundMuted ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}`,
+            background: soundMuted ? 'rgba(239,68,68,0.08)' : 'rgba(255,255,255,0.03)',
+            color: soundMuted ? 'var(--red)' : 'var(--text-muted)',
+            letterSpacing: '0.2em', cursor: 'pointer', transition: 'all 0.2s'
+          }}
+        >
+          {soundMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+          SOUND: {soundMuted ? 'OFF' : 'ON'}
+        </button>
 
         {/* KILL SWITCH */}
         <button

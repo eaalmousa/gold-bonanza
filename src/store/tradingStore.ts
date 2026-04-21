@@ -81,9 +81,12 @@ interface TradingState {
   orderFlowSnapshots: Record<string, OrderFlowSnapshot>;
   backendSignals: Record<string, any>;
 
+  // Sound preferences
+  soundMuted: boolean;
+  setSoundMuted: (muted: boolean) => void;
+
   // Actions
   setBalance: (balance: number) => void;
-  setMode: (key: string) => void;
   setSymbols: (symbols: string[]) => void;
   setDataLive: (live: boolean) => void;
   setScannerRunning: (running: boolean) => void;
@@ -155,6 +158,9 @@ export const useTradingStore = create<TradingState>()((set, get) => ({
   orderFlowSnapshots: {},
   backendSignals: {},
 
+  // Sound mute preference — persisted in localStorage
+  soundMuted: typeof window !== 'undefined' ? localStorage.getItem('gb_sound_muted') === 'true' : false,
+
   // Execution — mirrors accountEnvironment (fail-closed: DEMO by default)
   executionMode: 'DEMO' as ExecutionMode,
   executionResults: [],
@@ -173,6 +179,11 @@ export const useTradingStore = create<TradingState>()((set, get) => ({
   setBalance: (balance) => set({ balance }),
   setCloudHydrationStatus: (status) => set({ cloudHydrationStatus: status }),
 
+  setSoundMuted: (muted) => {
+    if (typeof window !== 'undefined') localStorage.setItem('gb_sound_muted', String(muted));
+    set({ soundMuted: muted });
+  },
+
   setMode: (key) => {
     const mode = MODES[key];
     if (!mode) return;
@@ -188,7 +199,7 @@ export const useTradingStore = create<TradingState>()((set, get) => ({
   setLiveExecutionArmed: (armed) => set({ liveExecutionArmed: armed }),
 
   setEnabledStrategies: (ids) => set({ enabledStrategies: ids }),
-  setStrategyPreset: (preset) => set({ strategyPreset: preset }),
+  setStrategyPreset: (preset: string) => set({ strategyPreset: preset }),
 
   setSymbols: (symbols) => set({ symbols }),
   setDataLive: (isDataLive) => set({ isDataLive }),

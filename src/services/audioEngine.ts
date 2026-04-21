@@ -2,8 +2,21 @@
 // Audio Engine — Web Audio API Beeps
 // ============================================
 
+import { useTradingStore } from '../store/tradingStore';
+
 let ctx: AudioContext | null = null;
 let audioUnlocked = false;
+
+// ── Mute Guard ────────────────────────────────────────────────────────────────
+// Reads live from Zustand store so the check is always current without any
+// subscription or re-render dependency.
+function isSoundMuted(): boolean {
+  try {
+    return useTradingStore.getState().soundMuted;
+  } catch {
+    return false;
+  }
+}
 
 function getCtx(): AudioContext {
   if (!ctx) {
@@ -32,6 +45,7 @@ export async function unlockAudio(): Promise<void> {
 
 function createBeep(freq: number, durationMs: number = 180, volume: number = 0.95): void {
   if (!audioUnlocked) return;
+  if (isSoundMuted()) return;           // ← mute guard
   const c = getCtx();
   const now = c.currentTime;
   const osc = c.createOscillator();
@@ -49,16 +63,26 @@ function createBeep(freq: number, durationMs: number = 180, volume: number = 0.9
 
 export function playSniperSound(): void {
   if (!audioUnlocked) return;
+  if (isSoundMuted()) return;           // ← mute guard
   createBeep(880, 180, 0.95);
   setTimeout(() => createBeep(880, 180, 0.95), 220);
 }
 
 export function playSuperSniperSound(): void {
   if (!audioUnlocked) return;
+  if (isSoundMuted()) return;           // ← mute guard
   createBeep(1200, 160, 0.98);
   setTimeout(() => createBeep(1200, 160, 0.98), 200);
   setTimeout(() => createBeep(1200, 160, 0.98), 400);
   setTimeout(() => createBeep(1200, 160, 0.98), 600);
+}
+
+// ── MP3 alert helper ─────────────────────────────────────────────────────────
+// Used by PipelineSignals.tsx for file-based alerts. Centralising here so
+// the mute flag covers both Web Audio and <Audio> paths.
+export function playAlert(src: string): void {
+  if (isSoundMuted()) return;           // ← mute guard
+  new Audio(src).play().catch((e) => console.warn('Audio play failed', e));
 }
 
 export function isAudioUnlocked(): boolean {
